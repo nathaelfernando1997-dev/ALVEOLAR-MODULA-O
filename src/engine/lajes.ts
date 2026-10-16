@@ -205,7 +205,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const bP = sentido ? lados(sentido).pontas.map(l => beiral(l)) : [null, null];
     if (sentido) {
       for (const b of bP) if (b) (b.d > r.beiral + 0.01 ? avisos : infos).push(`beiral de ${br2(b.d)} m pela projeção do projeto${b.d > r.beiral + 0.01 ? ` (maior que ${br2(r.beiral)} m — conferir)` : ''}`);
-      for (const l of lados(sentido).laterais) { const b = beiral(l); if (b) avisos.push(`projeção de ${br2(b.d)} m na lateral dos painéis — painel não balança de lado: girar a laje ou apoiar a borda`); }
+      for (const l of lados(sentido).laterais) { const b = beiral(l); if (b) infos.push(`beiral de ${br2(b.d)} m na lateral pela projeção do projeto (incluído nos painéis)`); }
     }
     if (avisos.length) L.aviso = avisos.join(' · ');
     if (infos.length) L.info = infos.join(' · ');
@@ -214,7 +214,9 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     // largura: divide o outro lado em partes iguais até a largura máxima
     // nas laterais o painel também entra em cima da parede
     const [la0, la1] = lados(esc.sn).laterais;
-    const l0 = esc.p.l0 - apo(la0), l1 = esc.p.l1 + apo(la1), ladoL = l1 - l0;
+    // beiral na lateral: a laje vai até a linha da projeção (divide em mais painéis se passar da largura máxima)
+    const bl0 = beiral(la0), bl1 = beiral(la1);
+    const l0 = bl0 ? bl0.c : esc.p.l0 - apo(la0), l1 = bl1 ? bl1.c : esc.p.l1 + apo(la1), ladoL = l1 - l0;
     const [pa0, pa1] = lados(esc.sn).pontas;
     // folga entre painéis vizinhos para o encaixe
     const f = r.lajeFolga ?? 0.02;
