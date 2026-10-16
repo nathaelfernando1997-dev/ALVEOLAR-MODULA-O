@@ -1,0 +1,59 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #222; background: #f3f5f8; }
+button, .botao { font: inherit; padding: 7px 12px; border: 1px solid #1f4e79; background: #fff; color: #1f4e79; border-radius: 6px; cursor: pointer; display: inline-block; margin: 3px 4px 3px 0; }
+button:hover, .botao:hover { background: #eaf1f9; }
+button:disabled { opacity: .4; cursor: default; }
+input, select { font: inherit; padding: 5px 7px; border: 1px solid #bbb; border-radius: 5px; }
+.topo { display: flex; gap: 16px; align-items: baseline; padding: 10px 16px; background: #1f4e79; color: #fff; flex-wrap: wrap; }
+.topo h1 { font-size: 18px; margin: 0; }
+.topo .arq { opacity: .8; font-size: 13px; }
+.topo .resumo { margin-left: auto; font-size: 13px; background: rgba(255,255,255,.15); padding: 3px 8px; border-radius: 5px; }
+.abas { display: flex; gap: 4px; padding: 8px 16px 0; flex-wrap: wrap; background: #fff; border-bottom: 1px solid #ddd; }
+.abas button { border-radius: 6px 6px 0 0; border-bottom: none; margin: 0; }
+.abas button.on { background: #1f4e79; color: #fff; }
+main { padding: 16px; }
+.card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; max-width: 1100px; }
+.card h2 { margin: 0 0 8px; font-size: 17px; color: #1f4e79; }
+.campo { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.erro { color: #b00; }
+.dica { color: #666; font-size: 13px; }
+.regioes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.regiao { border: 2px solid #ddd; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: #fafafa; }
+.regiao.on { border-color: #1f6fd1; background: #f2f7ff; }
+.regiao .mini { width: 100%; height: 150px; background: #fff; border: 1px solid #eee; }
+.regiao label { font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.regiao input[type=number] { width: 80px; }
+.ordem { display: flex; gap: 4px; }
+.tab td, .tab th { padding: 3px 6px; text-align: left; }
+.tab input { width: 90px; }
+.grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px 16px; }
+.grade label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
+.grade input { width: 90px; }
+.mod { display: grid; grid-template-columns: 320px 1fr; gap: 12px; align-items: start; }
+@media (max-width: 800px) { .mod { grid-template-columns: 1fr; } }
+.lado .pavsel button.on { background: #1f4e79; color: #fff; }
+.acoes label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin: 8px 0; }
+.acoes button { display: block; width: 100%; text-align: left; }
+.planta { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 6px; }
+.planta svg { width: 100%; height: calc(100vh - 190px); min-height: 420px; }
+.pn { cursor: pointer; }
+.pn:hover line { stroke-width: .22; }
+.botoes { display: flex; flex-wrap: wrap; }
+/* folhas A4 deitado */
+.folhas { display: flex; flex-direction: column; gap: 16px; align-items: center; }
+.folha { width: 297mm; height: 210mm; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.15); padding: 8mm; display: flex; flex-direction: column; overflow: hidden; }
+.folha .cab { font-weight: bold; color: #c00; font-size: 12pt; }
+.folha .desenho { flex: 1; display: flex; justify-content: center; align-items: center; min-height: 0; }
+.folha .desenho svg { width: 100%; height: 100%; }
+.folha .vistas { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
+.folha .linha { display: flex; align-items: flex-end; gap: 0; }
+.folha .vista svg { display: block; }
+.folha .rod { display: flex; justify-content: space-between; font-size: 7.5pt; color: #444; }
+@page { size: A4 landscape; margin: 0; }
+@media print {
+  body { background: #fff; }
+  .noprint { display: none !important; }
+  main { padding: 0; }
+  .folhas { gap: 0; }
+  .folha { box-shadow: none; page-break-after: always; break-after: page; }
+}

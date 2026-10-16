@@ -1,0 +1,7 @@
+node_modules
+dist
+*.local
+# projetos de clientes nao vao para o repositorio
+*.dwg
+*.dxf
+*.tsbuildinfo
