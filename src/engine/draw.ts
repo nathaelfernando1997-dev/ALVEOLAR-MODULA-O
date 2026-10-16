@@ -25,10 +25,10 @@ function cotaSvg(X: (x: number) => number, Y: (y: number) => number, o: 'H' | 'V
     `<text x="${k(x - 2)}" y="${k(m)}" font-size="${fs}" fill="${VERM}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3" transform="rotate(-90 ${k(x - 2)} ${k(m)})">${txt}</text>`;
 }
 
-export interface Quadro { vb: string; X: (x: number) => number; Y: (y: number) => number; k: number }
+export interface Quadro { vb: string; X: (x: number) => number; Y: (y: number) => number; k: number; iX: (px: number) => number; iY: (py: number) => number }
 export function quadro(pav: Pavimento, pad = 1.4): Quadro {
   const b = pav.box, x0 = b.x0 - pad, x1 = b.x1 + pad, y0 = b.y0 - pad, y1 = b.y1 + pad, k = 100;
-  return { vb: `0 0 ${((x1 - x0) * k).toFixed(0)} ${((y1 - y0) * k).toFixed(0)}`, X: (x: number) => (x - x0) * k, Y: (y: number) => (y1 - y) * k, k };
+  return { vb: `0 0 ${((x1 - x0) * k).toFixed(0)} ${((y1 - y0) * k).toFixed(0)}`, X: (x: number) => (x - x0) * k, Y: (y: number) => (y1 - y) * k, k, iX: (px: number) => px / k + x0, iY: (py: number) => y1 - py / k };
 }
 // desenho da planta baixa (paredes, portas, janelas) em cinza escuro
 export function arqSvg(q: Quadro, arq: Prim[]): string {

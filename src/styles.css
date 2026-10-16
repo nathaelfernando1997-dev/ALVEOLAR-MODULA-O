@@ -74,3 +74,6 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .tlaje { font-size: 7.5pt; border-collapse: collapse; }
 .tlaje td, .tlaje th { border: 1px solid #ccc; padding: 1px 4px; text-align: right; }
 .tlaje .tot td { font-weight: bold; background: #fff2cc; }
+.acoes button.on { background: #d11; color: #fff; border-color: #d11; }
+.corte-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; background: #f4f6f9; padding: 2px 6px; border-radius: 4px; margin: 3px 0; }
+.corte-item button { width: auto; display: inline-block; padding: 2px 8px; }

@@ -177,13 +177,14 @@ export interface Ajustes {
   juntar: string[];                        // id de trecho que junta com o seguinte no mesmo alinhamento
   naoDividir: string[];                    // não divide automaticamente
   cortes: Record<string, number[]>;        // cortes manuais (distância a partir do início, sem coluna)
+  colunas?: Record<string, number[]>;      // cortes manuais com coluna (distância a partir do início)
   altura: Record<string, number>;          // altura manual do trecho
   vaoTipo: Record<string, string>;         // `${trecho}@${posição}` -> tag (ex.: P04) ou "livre"
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
 }
-export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
+export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, colunas: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
 
 const idTrecho = (pav: string, o: string, c: number, s: number) => `${pav}|${o}|${c.toFixed(2)}|${s.toFixed(2)}`;
 
@@ -200,23 +201,34 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
       const nos = perp.filter(q => q.ps.length && Math.min(...q.ps.map(p => p[0])) - 0.2 <= c && c <= Math.max(...q.ps.map(p => p[1])) + 0.2).map(q => q.c);
       let cur = { s: ps[0][0], vaos: [] as { a: number; b: number; tag: string | null }[] };
       const fecha = (e: number) => { out.push(montar(pav, o, c, cur.s, e, cur.vaos, esp)); };
-      for (let i = 0; i < ps.length - 1; i++) {
-        const a1 = ps[i][1], b0 = ps[i + 1][0], gp = b0 - a1;
-        const inn = nos.filter(n => a1 - 0.03 <= n && n <= b0 + 0.03);
-        let tag: string | null = null;
+      const tagEm = (l: number, h: number) => {
+        let best: string | null = null, bd = 1e9;
         for (const t of tags) {
           const along = o === 'H' ? t.x : t.y, pd = o === 'H' ? t.y - c : t.x - c;
-          if (Math.abs(pd) < 0.6 && along >= a1 - 0.1 && along <= b0 + 0.1 && gp > 0.3) tag = t.text;
+          if (Math.abs(pd) < 0.6 && along >= l - 0.1 && along <= h + 0.1) { const d = Math.abs(along - (l + h) / 2); if (d < bd) { bd = d; best = t.text; } }
         }
-        if ((inn.length && gp <= 0.32) || (gp < 0.2 && !tag)) { fecha(a1); cur = { s: b0, vaos: [] }; continue; }
-        let lo = a1, hi = b0;
-        if (inn.length) {
-          const n = inn[0];
-          if (n - a1 < b0 - n) { fecha(a1); cur = { s: n + r.coluna / 2, vaos: [] }; lo = n + r.coluna / 2; }
-          else hi = n - r.coluna / 2;
+        return best;
+      };
+      for (let i = 0; i < ps.length - 1; i++) {
+        const a1 = ps[i][1], b0 = ps[i + 1][0], gp = b0 - a1;
+        const inn = nos.filter(n => a1 - 0.03 <= n && n <= b0 + 0.03).sort((x, y) => x - y);
+        if (!inn.length) {
+          const tag = gp > 0.3 ? tagEm(a1, b0) : null;
+          if (gp < 0.2 && !tag) { fecha(a1); cur = { s: b0, vaos: [] }; continue; }
+          cur.vaos.push({ a: a1, b: b0, tag });
+          continue;
         }
-        cur.vaos.push({ a: lo, b: hi, tag });
-        if (inn.length && hi < b0) { fecha(hi); cur = { s: b0, vaos: [] }; }
+        // o vão tem encontros de parede: cada encontro vira coluna e cada pedaço entre eles pode ser porta/janela
+        let l = a1;
+        for (const n of inn) {
+          const h = Math.max(l, n - r.coluna / 2);
+          if (h - l > 0.2) cur.vaos.push({ a: l, b: h, tag: tagEm(l, h) });
+          fecha(Math.min(h, Math.max(l, a1)) === a1 && h - l <= 0.2 ? a1 : h);
+          l = Math.min(b0, n + r.coluna / 2);
+          cur = { s: l, vaos: [] };
+        }
+        if (b0 - l > 0.2) cur.vaos.push({ a: l, b: b0, tag: tagEm(l, b0) });
+        else cur = { s: b0, vaos: [] };
       }
       fecha(ps[ps.length - 1][1]);
     }
@@ -246,6 +258,25 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   let res = out.filter(t => t.e - t.s >= r.minParede && !aj.excluir.includes(t.id));
   const proximo = (t: Trecho) => res.filter(x => x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05 && x.s > t.s).sort((a, b) => a.s - b.s)[0];
   const junta = (t: Trecho, nx: Trecho) => { t.e = nx.e; t.vaos.push(...nx.vaos); t.pinado = true; res = res.filter(x => x !== nx); };
+  // trecho que é só a porta/janela (sem parede dos lados) não vira painel: passa direto pelo encontro e junta com a parede vizinha
+  {
+    let mudou = true;
+    while (mudou) {
+      mudou = false;
+      for (const t of [...res]) {
+        if (!res.includes(t) || !t.vaos.length || t.vaos.some(v => v.inteiro)) continue;
+        const solido = (t.e - t.s) - t.vaos.reduce((s, v) => s + (v.b - v.a), 0);
+        if (solido > 0.25) continue;
+        const mesmos = res.filter(x => x !== t && x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05);
+        const ant = mesmos.filter(x => x.e <= t.s + 0.01 && t.s - x.e < 0.35 && !x.vaos.some(v => v.inteiro)).sort((a, b) => b.e - a.e)[0];
+        const prox = mesmos.filter(x => x.s >= t.e - 0.01 && x.s - t.e < 0.35 && !x.vaos.some(v => v.inteiro)).sort((a, b) => a.s - b.s)[0];
+        const viz = ant ?? prox; if (!viz) continue;
+        if (viz === ant) { ant.e = t.e; ant.vaos.push(...t.vaos); ant.pinado = true; }
+        else { prox.s = t.s; prox.vaos.unshift(...t.vaos); prox.pinado = true; prox.id = t.id; }
+        res = res.filter(x => x !== t); mudou = true;
+      }
+    }
+  }
   for (const id of aj.juntar) {
     const t = res.find(x => x.id === id); if (!t) continue;
     const nx = proximo(t); if (nx) junta(t, nx);
@@ -290,8 +321,9 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
       const Lr = sb - sa;
       if (Lr < r.minParede) continue;
       let edges: number[];
-      const manual = (aj.cortes[t.id] || []).map(d => t.s + d).filter(x => x > sa + 0.05 && x < sb - 0.05);
-      if (manual.length) edges = [sa, ...manual.flatMap(x => [x, x]), sb];
+      const manual = [...(aj.cortes[t.id] || []).map(d => ({ x: t.s + d, col: false })), ...((aj.colunas || {})[t.id] || []).map(d => ({ x: t.s + d, col: true }))]
+        .filter(c => c.x > sa + 0.05 && c.x < sb - 0.05).sort((a, b) => a.x - b.x);
+      if (manual.length) edges = [sa, ...manual.flatMap(c => c.col ? [c.x - r.coluna / 2, c.x + r.coluna / 2] : [c.x, c.x]), sb];
       else {
         let n = 1;
         if (!aj.naoDividir.includes(t.id)) while ((Lr - (n - 1) * r.coluna) / n - r.folga > r.larguraMax) n++;
@@ -307,7 +339,10 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
         const pa = edges[i], pb = edges[i + 1], larg = pb - pa - r.folga;
         const rec: Recorte[] = []; let aviso: string | undefined;
         for (const o of ops) {
-          if (!(pa - 0.08 <= o.x0 && o.x1 <= pb + 0.08)) continue;
+          // cada porta/janela fica no painel onde está o seu centro
+          const mo = (o.x0 + o.x1) / 2;
+          if (!(pa - 1e-6 <= mo && mo < pb + 1e-6)) continue;
+          if (o.x0 < pa - 0.08 || o.x1 > pb + 0.08) aviso = `${o.tipo}: cortada pela divisão da parede — mova o corte`;
           let w = Math.min(o.w, larg - 2 * r.boneca); if (w < o.w - 1e-6) aviso = `${o.tipo}: recorte reduzido para caber as bonecas`;
           let dl = Math.min(Math.max(o.x0 - pa, r.boneca), larg - w - r.boneca);
           if (dl < r.boneca - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${r.boneca * 100} cm`; }

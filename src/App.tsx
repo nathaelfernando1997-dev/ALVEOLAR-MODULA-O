@@ -33,6 +33,7 @@ export default function App() {
   const [sel, setSel] = useState<{ trecho: string } | null>(null);
   const [vaoSel, setVaoSel] = useState<string | null>(null);
   const [ambSel, setAmbSel] = useState<string | null>(null);
+  const [cortando, setCortando] = useState<{ trecho: string; coluna: boolean } | null>(null);
 
   const leitura = useMemo(() => (dxf ? ler(dxf, camada) : null), [dxf, camada]);
 
@@ -189,14 +190,16 @@ export default function App() {
             <div className="lado">
               <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setSel(null); setVaoSel(null); setAmbSel(null); }}>{p.nome}</button>)}</div>
               {aba === 'modulacao'
-                ? <Acoes sel={sel} vaoSel={vaoSel} calc={calc} aj={aj} setAj={setAj} quadro={quadro} regras={regras} limpar={() => { setSel(null); setVaoSel(null); }} />
+                ? <Acoes sel={sel} vaoSel={vaoSel} calc={calc} aj={aj} setAj={setAj} quadro={quadro} regras={regras} cortando={cortando} setCortando={setCortando} limpar={() => { setSel(null); setVaoSel(null); setCortando(null); }} />
                 : <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} />}
               <details><summary>Desfazer ajustes</summary>
                 <button onClick={() => { if (confirm('Apagar todos os ajustes manuais deste projeto?')) setAj(AJUSTES_VAZIOS); }}>Apagar todos os ajustes</button>
               </details>
             </div>
             {aba === 'modulacao'
-              ? <PlantaParedes L={leitura} pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} sel={sel} vaoSel={vaoSel} onPainel={t => { setSel({ trecho: t }); setVaoSel(null); }} onVao={k => { setVaoSel(k); setSel(null); }} />
+              ? <PlantaParedes L={leitura} pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} sel={sel} vaoSel={vaoSel} cortando={cortando}
+                  onCorte={(t, along) => { const tr = calc.ts.find(x => x.id === t); if (!tr || !cortando) return; const d = Math.round((along - tr.s) * 100) / 100; const k = cortando.coluna ? 'colunas' : 'cortes'; const m = { ...(aj[k] || {}) }; m[t] = [...(m[t] || []), d].sort((a, b) => a - b); setAj({ ...aj, [k]: m }); setCortando(null); }}
+                  onPainel={t => { setSel({ trecho: t }); setVaoSel(null); }} onVao={k => { setVaoSel(k); setSel(null); setCortando(null); }} />
               : <PlantaLajes pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} ambSel={ambSel} onAmb={setAmbSel} />}
           </section>
         )}
@@ -248,8 +251,9 @@ function Miniatura({ prims, box }: { prims: Prim[]; box: Box }) {
 }
 
 // tela de paredes no layout da planta baixa, com áreas clicáveis por cima
-function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, onPainel, onVao }: {
-  L: Leitura; pav: Pavimento; calc: Calc; arq: Prim[]; sel: { trecho: string } | null; vaoSel: string | null; onPainel: (t: string) => void; onVao: (k: string) => void;
+function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPainel, onVao }: {
+  L: Leitura; pav: Pavimento; calc: Calc; arq: Prim[]; sel: { trecho: string } | null; vaoSel: string | null;
+  cortando: { trecho: string; coluna: boolean } | null; onCorte: (t: string, along: number) => void; onPainel: (t: string) => void; onVao: (k: string) => void;
 }) {
   const q = quadroDe(pav);
   const ps = calc.ps.filter(p => p.pav === pav.id), ts = calc.ts.filter(t => t.pav === pav.id);
@@ -261,7 +265,14 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, onPainel, onVao }: {
         {ps.map(p => {
           const on = sel?.trecho === p.trecho;
           const [x1, y1, x2, y2] = p.o === 'H' ? [p.a, p.c, p.a + p.larg, p.c] : [p.c, p.a, p.c, p.a + p.larg];
-          return <line key={p.num} className="hit" x1={q.X(x1)} y1={q.Y(y1)} x2={q.X(x2)} y2={q.Y(y2)} stroke={on ? 'rgba(230,0,0,.55)' : 'transparent'} strokeWidth={26} onClick={() => onPainel(p.trecho)}><title>Painel {p.num} · {br(p.larg)} × {br(p.H)}</title></line>;
+          return <line key={p.num} className="hit" x1={q.X(x1)} y1={q.Y(y1)} x2={q.X(x2)} y2={q.Y(y2)} stroke={on ? 'rgba(230,0,0,.55)' : 'transparent'} strokeWidth={26}
+            onClick={e => {
+              if (cortando && cortando.trecho === p.trecho) {
+                const svg = (e.target as SVGElement).ownerSVGElement!; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+                const v = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+                onCorte(p.trecho, p.o === 'H' ? q.iX(v.x) : q.iY(v.y));
+              } else onPainel(p.trecho);
+            }}><title>Painel {p.num} · {br(p.larg)} × {br(p.H)}</title></line>;
         })}
         {ts.flatMap(t => t.vaos.map(v => {
           const key = `${t.id}@${((v.a + v.b) / 2).toFixed(2)}`;
@@ -270,7 +281,7 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, onPainel, onVao }: {
           return <rect key={key} className="hit" x={q.X(x)} y={q.Y(y + h)} width={w * q.k} height={h * q.k} fill={on ? 'rgba(204,0,204,.35)' : v.tag ? 'rgba(204,0,204,.08)' : 'rgba(255,170,0,.25)'} stroke={v.tag ? '#c0c' : '#e80'} strokeWidth={2} strokeDasharray={v.tag ? '' : '8 5'} onClick={() => onVao(key)}><title>{v.tag ? `${v.tag}` : 'vão sem etiqueta — clique para definir'}</title></rect>;
         }))}
       </svg>
-      <p className="dica">Clique numa parede para ajustar. Os vãos em laranja não têm etiqueta no projeto: clique para dizer se é porta, janela ou vão livre.</p>
+      <p className="dica">{cortando ? 'Clique no ponto da parede selecionada onde ela deve ser dividida.' : 'Clique numa parede para ajustar. Os vãos em laranja não têm etiqueta no projeto: clique para dizer se é porta, janela ou vão livre.'}</p>
     </div>
   );
 }
@@ -289,8 +300,9 @@ function PlantaLajes({ pav, calc, arq, ambSel, onAmb }: { pav: Pavimento; calc: 
   );
 }
 
-function Acoes({ sel, vaoSel, calc, aj, setAj, quadro, regras, limpar }: {
-  sel: { trecho: string } | null; vaoSel: string | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; quadro: Esquadria[]; regras: Regras; limpar: () => void;
+function Acoes({ sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, setCortando, limpar }: {
+  sel: { trecho: string } | null; vaoSel: string | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; quadro: Esquadria[]; regras: Regras;
+  cortando: { trecho: string; coluna: boolean } | null; setCortando: (c: { trecho: string; coluna: boolean } | null) => void; limpar: () => void;
 }) {
   const [cortes, setCortes] = useState('');
   const t = sel ? calc.ts.find(x => x.id === sel.trecho) : null;
@@ -313,10 +325,16 @@ function Acoes({ sel, vaoSel, calc, aj, setAj, quadro, regras, limpar }: {
     <button onClick={() => tog('juntar')}>{aj.juntar.includes(t.id) ? 'Desfazer pinagem/junção' : 'Pinar no T: passar direto pela próxima parede (sem coluna, sem emenda)'}</button>
     {regras.pinarAuto && <button onClick={() => tog('naoPinar')}>{(aj.naoPinar || []).includes(t.id) ? 'Permitir pinagem automática' : 'Não pinar automaticamente aqui'}</button>}
     <button onClick={() => tog('naoDividir')}>{aj.naoDividir.includes(t.id) ? 'Dividir automaticamente' : 'Não dividir (um painel só)'}</button>
-    <label>Cortes manuais (m a partir do início, separados por ;)
+    <h3>Dividir a parede</h3>
+    <button className={cortando?.trecho === t.id && !cortando.coluna ? 'on' : ''} onClick={() => setCortando(cortando?.trecho === t.id && !cortando.coluna ? null : { trecho: t.id, coluna: false })}>Dividir clicando na planta — sem coluna (emenda)</button>
+    <button className={cortando?.trecho === t.id && cortando.coluna ? 'on' : ''} onClick={() => setCortando(cortando?.trecho === t.id && cortando.coluna ? null : { trecho: t.id, coluna: true })}>Dividir clicando na planta — com coluna de {br(regras.coluna)} m</button>
+    {[...(aj.cortes[t.id] || []).map(d => ({ d, k: 'cortes' as const })), ...((aj.colunas || {})[t.id] || []).map(d => ({ d, k: 'colunas' as const }))].sort((a, b) => a.d - b.d).map(c =>
+      <div key={c.k + c.d} className="corte-item">a {br(c.d)} m do início · {c.k === 'colunas' ? 'com coluna' : 'sem coluna'}
+        <button onClick={() => { const m = { ...(aj[c.k] || {}) }; m[t.id] = (m[t.id] || []).filter(x => x !== c.d); if (!m[t.id].length) delete m[t.id]; setAj({ ...aj, [c.k]: m }); }}>remover</button></div>)}
+    <label>Ou digite as distâncias a partir do início (m, separadas por ;)
       <input value={cortes} onChange={e => setCortes(e.target.value)} placeholder="ex.: 2,82" />
     </label>
-    <button onClick={() => { const v = cortes.split(';').map(s => parseFloat(s.replace(',', '.'))).filter(n => isFinite(n) && n > 0); const c = { ...aj.cortes }; if (v.length) c[t.id] = v; else delete c[t.id]; setAj({ ...aj, cortes: c }); }}>Aplicar cortes</button>
+    <button onClick={() => { const v = cortes.split(';').map(s => parseFloat(s.replace(',', '.'))).filter(n => isFinite(n) && n > 0); const c = { ...aj.cortes }; if (v.length) c[t.id] = v; else delete c[t.id]; setAj({ ...aj, cortes: c }); }}>Aplicar (sem coluna)</button>
     <label>Altura desta parede (m)
       <input type="number" step="0.01" defaultValue={aj.altura[t.id] ?? t.H} key={t.id} onBlur={e => { const v = parseFloat(e.target.value); const a = { ...aj.altura }; if (isFinite(v) && v > 0) a[t.id] = v; else delete a[t.id]; setAj({ ...aj, altura: a }); }} />
     </label>
