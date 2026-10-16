@@ -142,7 +142,7 @@ export default function App() {
     });
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
-    vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras).map((v, i) => ({ ...v, n: i + 1 }));
+    { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv })); }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
 
@@ -421,12 +421,12 @@ function PlantaLajes({ pav, calc, arq, ambSel, onAmb }: { pav: Pavimento; calc: 
 
 function ListaVigas({ V, sel, onSel }: { V: VigaN[]; sel: string | null; onSel: (id: string) => void }) {
   if (!V.length) return <div className="card acoes"><p>Nenhuma viga necessária neste pavimento pelas regras atuais.</p></div>;
-  const reb = V.flatMap(v => v.rebaixos);
+  const reb = V.flatMap(v => v.rebaixos), vg = V.filter(v => v.tipo !== 'trelica'), tr = V.length - vg.length;
   return <div className="card acoes vigas">
-    <h3>{V.length} viga(s) sugerida(s) · {V.filter(v => v.obrigatoria).length} obrigatória(s)</h3>
+    <h3>{vg.length} viga(s) sugerida(s) · {vg.filter(v => v.obrigatoria).length} obrigatória(s){tr ? ` · ${tr} reforço(s) com treliça` : ''}</h3>
     {reb.length > 0 && <p className="erro">Paredes que diminuem de altura: {[...new Map(reb.map(r => [r.painel, r])).values()].sort((a, b) => a.painel - b.painel).map(r => `${r.painel} (${br(r.de)} → ${br(r.para)})`).join(', ')}</p>}
     {V.map(v => <div key={v.id} className={'viga' + (sel === v.id ? ' on' : '') + (v.obrigatoria ? ' obrig' : '')} onClick={() => onSel(v.id)}>
-      <b>V{v.n}</b> {v.obrigatoria ? '· obrigatória' : '· recomendada'} · {br(v.b - v.a)} m
+      <b>{v.tipo === 'trelica' ? 'T' : 'V'}{v.n}</b> {v.tipo === 'trelica' ? '· treliça (sem viga)' : v.obrigatoria ? '· obrigatória' : '· recomendada'} · {br(v.b - v.a)} m
       <div>{v.motivo}</div>
       <div className="dica">Ideia: {v.ideia}</div>
       {v.rebaixos.length > 0 && <div className="dica">Paredes rebaixadas: {v.rebaixos.map(r => `${r.painel} (${br(r.de)} → ${br(r.para)})`).join(', ')}</div>}
@@ -521,10 +521,10 @@ function Folhas({ ativos, calc, leitura, arqDe, nome }: { ativos: Pavimento[]; c
     if (VG.length) {
       const q = quadroDe(pav);
       folhas.push(<div className="folha" key={pav.id + 'g'}>
-        <div className="cab">VIGAS SUGERIDAS — {pav.nome.toUpperCase()}</div>
+        <div className="cab">VIGAS E TRELIÇAS — {pav.nome.toUpperCase()}</div>
         <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + vigasConteudo(VG, q) }} />
-          <div className="tvigas">{VG.map(v => <p key={v.id}><b>V{v.n}</b> ({v.obrigatoria ? 'obrigatória' : 'recomendada'}, {br(v.b - v.a)} m): {v.motivo} <i>{v.ideia}</i>{v.rebaixos.length ? ` Rebaixo: ${v.rebaixos.map(r => `${r.painel} (${br(r.de)}→${br(r.para)})`).join(', ')}.` : ''}</p>)}</div></div>
-        {rod('Sugestões para o engenheiro conferir e dimensionar · vermelho = obrigatória · laranja = recomendada')}
+          <div className="tvigas">{VG.map(v => <p key={v.id}><b>{v.tipo === 'trelica' ? 'T' : 'V'}{v.n}</b> ({v.tipo === 'trelica' ? 'treliça' : v.obrigatoria ? 'obrigatória' : 'recomendada'}, {br(v.b - v.a)} m): {v.motivo} <i>{v.ideia}</i>{v.rebaixos.length ? ` Rebaixo: ${v.rebaixos.map(r => `${r.painel} (${br(r.de)}→${br(r.para)})`).join(', ')}.` : ''}</p>)}</div></div>
+        {rod('Sugestões para o engenheiro conferir e dimensionar · vermelho = viga obrigatória · laranja = recomendada · roxo = treliça de reforço da laje')}
       </div>);
     }
     const P = calc.pl.filter(p => p.pav === pav.id);

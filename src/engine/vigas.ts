@@ -1,13 +1,13 @@
 // Sugestão de vigas e rebaixo das paredes por causa delas.
 // 1) vão sem parede (porta grande, vão livre) sob a laje: viga sobre o vão;
 // 2) laje com vão maior que o painel: viga intermediária no meio do ambiente;
-// 3) parede do pavimento de cima sem parede embaixo (ou laje em balanço): viga sob ela.
+// 3) parede do pavimento de cima sem parede embaixo: sobre a laje, reforço com treliças (sem viga).
 import type { Painel, Pavimento, Regras, Trecho, VaoInteiro } from './model.ts';
 import type { LajeAmb } from './lajes.ts';
 
 export interface Viga {
   id: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number;
-  tipo: 'vao' | 'laje' | 'parede-cima';
+  tipo: 'vao' | 'laje' | 'parede-cima' | 'trelica';   // trelica = reforço da laje sob parede de cima (sem viga)
   obrigatoria: boolean; motivo: string; ideia: string;
   rebaixos: { painel: number; de: number; para: number }[];
 }
@@ -117,33 +117,23 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
           // fora dos ambientes de baixo: laje em balanço; até o beiral permitido não precisa de viga
           const dist = Math.min(...tb.filter(x => x.o === t.o && x.s < b && x.e > a).map(x => Math.abs(x.c - c)), 99);
           if (dist <= r.beiral + 0.01) continue;
+          // parede sobre a laje: treliça; a laje em balanço além do beiral fica como alerta para conferir o apoio
           V.push({
-            id: `${pav.id}-cima-${t.id}-${a.toFixed(2)}`, pav: pav.id, o: t.o, c, a: a - r.vigaApoio, b: b + r.vigaApoio, tipo: 'parede-cima', obrigatoria: true,
-            motivo: `Parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima.nome} em balanço de ${dist < 99 ? br(dist) + ' m' : 'mais de ' + br(r.beiral) + ' m'} (beiral permitido sem viga: ${br(r.beiral)} m).`,
-            ideia: `Viga sob a parede de cima, de ${br(b - a + 2 * r.vigaApoio)} m, ou trazer a parede para dentro até ${br(r.beiral)} m da parede de baixo.`,
+            id: `${pav.id}-tr-${t.id}-${a.toFixed(2)}`, pav: pav.id, o: t.o, c, a, b, tipo: 'trelica', obrigatoria: false,
+            motivo: `Parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima.nome} sobre a laje, ${br(b - a)} m, fora dos ambientes de baixo (balanço de ${dist < 99 ? br(dist) + ' m' : 'mais de ' + br(r.beiral) + ' m'}; beiral sem apoio até ${br(r.beiral)} m).`,
+            ideia: `Reforçar a laje com treliças embaixo da parede — sem viga. Conferir como a laje se apoia nessa área.`,
             rebaixos: [],
           });
           continue;
         }
-        // dentro de um ambiente: se a parede atravessa os painéis, a laje carrega; se corre ao longo do painel, precisa de viga
+        // dentro de um ambiente: a parede de cima fica sobre a laje, sem viga; a laje é reforçada com treliças embaixo dela
         const atravessa = (L.sentido === 'H' && t.o === 'V') || (L.sentido === 'V' && t.o === 'H');
-        if (atravessa) {
-          V.push({
-            id: `${pav.id}-cima-${t.id}-${a.toFixed(2)}`, pav: pav.id, o: t.o, c, a, b, tipo: 'parede-cima', obrigatoria: false,
-            motivo: `Parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima.nome} apoiada na laje (atravessa os painéis), ${br(b - a)} m sem parede embaixo.`,
-            ideia: 'Normalmente a laje alveolar suporta (carga distribuída em vários painéis). Conferir a carga com o engenheiro; se precisar, viga sob ela.',
-            rebaixos: [],
-          });
-        } else {
-          // a viga vai de uma parede do ambiente até a outra (não passa para o ambiente vizinho)
-          const [va, vb] = t.o === 'H' ? [L.x0, L.x1] : [L.y0, L.y1];
-          V.push({
-            id: `${pav.id}-cima-${t.id}-${a.toFixed(2)}`, pav: pav.id, o: t.o, c, a: va, b: vb, tipo: 'parede-cima', obrigatoria: true,
-            motivo: `Parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima.nome} corre ao longo dos painéis da laje, ${br(b - a)} m sem parede embaixo.`,
-            ideia: `Viga sob ela de ${br(vb - va)} m, de uma parede do ambiente até a outra; ou girar o sentido da laje deste ambiente (aba Lajes) para a parede atravessar os painéis.`,
-            rebaixos: reb(cruzando(pav.id, t.o, c, va, vb)),
-          });
-        }
+        V.push({
+          id: `${pav.id}-tr-${t.id}-${a.toFixed(2)}`, pav: pav.id, o: t.o, c, a, b, tipo: 'trelica', obrigatoria: false,
+          motivo: `Parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima.nome} sobre a laje, ${br(b - a)} m sem parede embaixo (${atravessa ? 'atravessa os painéis' : 'ao longo dos painéis'}).`,
+          ideia: `Reforçar a laje com treliças embaixo da parede, ${br(b - a)} m${atravessa ? '' : ', na junta/capa dos painéis sob a parede'} — sem viga.`,
+          rebaixos: [],
+        });
       }
     }
   });

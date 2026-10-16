@@ -145,11 +145,13 @@ import type { Viga } from './vigas.ts';
 export function vigasConteudo(V: (Viga & { n: number })[], q: Quadro, sel: string | null = null): string {
   const { X, Y } = q; const g: string[] = [];
   for (const v of V) {
-    const cor = sel === v.id ? '#0a0' : v.obrigatoria ? '#d11' : '#e67700';
+    const tr = v.tipo === 'trelica';
+    const cor = sel === v.id ? '#0a0' : tr ? '#7a3fb0' : v.obrigatoria ? '#d11' : '#e67700';
     const [x1, y1, x2, y2] = v.o === 'H' ? [v.a, v.c, v.b, v.c] : [v.c, v.a, v.c, v.b];
-    g.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${cor}" stroke-width="14" stroke-opacity=".55" stroke-dasharray="22 8"/>`);
+    // treliça: linha fina em zigue-zague (reforço da laje); viga: faixa tracejada
+    g.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${cor}" stroke-width="${tr ? 6 : 14}" stroke-opacity=".55" stroke-dasharray="${tr ? '4 6' : '22 8'}"/>`);
     const [tx, ty] = v.o === 'H' ? [(X(x1) + X(x2)) / 2, Y(y1) - 14] : [X(x1) + 16, (Y(y1) + Y(y2)) / 2];
-    g.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="20" font-weight="bold" fill="${cor}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="4">V${v.n}</text>`);
+    g.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="20" font-weight="bold" fill="${cor}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="4">${tr ? 'T' : 'V'}${v.n}</text>`);
   }
   return g.join('');
 }

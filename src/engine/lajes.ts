@@ -115,12 +115,12 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       }
       return { vaos, vigas, internas: internas.map(w => w.c), maior: Math.max(...vaos.map(([p, q]) => q - p)), l0, l1 };
     };
-    // parede de cima dentro do ambiente correndo no mesmo sentido dos painéis pede viga; atravessando, a laje carrega
+    // parede de cima dentro do ambiente correndo no mesmo sentido dos painéis pede treliça na junta; atravessando, distribui melhor
     const aoLongo = (sn: 'H' | 'V') => cargas.filter(w => w.o === sn && (sn === 'H' ? w.c > a.y0 + 0.1 && w.c < a.y1 - 0.1 && Math.min(w.b, a.x1) - Math.max(w.a, a.x0) > 0.3
       : w.c > a.x0 + 0.1 && w.c < a.x1 - 0.1 && Math.min(w.b, a.y1) - Math.max(w.a, a.y0) > 0.3)).length;
-    const opcoes = ([podeH ? 'H' : null, podeV ? 'V' : null].filter(Boolean) as ('H' | 'V')[]).map(sn => ({ sn, p: plano(sn), n: plano(sn).vigas.length + aoLongo(sn) }));
-    // escolhe o sentido com menos vigas (contando as das paredes de cima); empate: o menor vão
-    opcoes.sort((x, y) => x.n - y.n || x.p.maior - y.p.maior);
+    const opcoes = ([podeH ? 'H' : null, podeV ? 'V' : null].filter(Boolean) as ('H' | 'V')[]).map(sn => ({ sn, p: plano(sn), n: aoLongo(sn) }));
+    // escolhe o sentido com menos vigas; empate: menos paredes de cima ao longo dos painéis (treliça), depois o menor vão
+    opcoes.sort((x, y) => x.p.vigas.length - y.p.vigas.length || x.n - y.n || x.p.maior - y.p.maior);
     let esc = opcoes[0];
     if (esc && giro.includes(a.id) && opcoes[1]) esc = opcoes[1];
     const sentido = esc ? esc.sn : null;
