@@ -132,7 +132,8 @@ export default function App() {
     const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [] };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
-    const naCaixa = (b: Box, l: { a: number; b: number; c: number; o: 'H' | 'V' }) => { const [x, y] = l.o === 'H' ? [(l.a + l.b) / 2, l.c] : [l.c, (l.a + l.b) / 2]; return x > b.x0 - 0.5 && x < b.x1 + 0.5 && y > b.y0 - 0.5 && y < b.y1 + 0.5; };
+    // linhas do desenho desta planta (a projeção do beiral pode ficar até 2,5 m para fora das paredes)
+    const naCaixa = (b: Box, l: { a: number; b: number; c: number; o: 'H' | 'V' }) => { const [x, y] = l.o === 'H' ? [(l.a + l.b) / 2, l.c] : [l.c, (l.a + l.b) / 2]; return x > b.x0 - 2.5 && x < b.x1 + 2.5 && y > b.y0 - 2.5 && y < b.y1 + 2.5; };
     const pisos: Trecho[] = [];
     ativos.forEach((p, i) => {
       const t = porPav[i], cima = ativos[i + 1], tc = porPav[i + 1] || [];

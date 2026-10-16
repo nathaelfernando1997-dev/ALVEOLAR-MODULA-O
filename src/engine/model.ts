@@ -112,10 +112,26 @@ function linhasDoProjeto(d: Dxf, camadaParede: string, textos: Leitura['textos']
       if (Math.abs(pd) < md) { md = Math.abs(pd); m = g; }
     }
     if (!m) continue;
-    // junta os pedaços alinhados da mesma linha
-    let a = m.a, b = m.b, mudou = true;
-    while (mudou) { mudou = false; for (const g of segs) if (g.layer === m.layer && g.o === m.o && Math.abs(g.c - m.c) < 0.01 && g.a <= b + 0.05 && g.b >= a - 0.05 && (g.a < a - 1e-6 || g.b > b + 1e-6)) { a = Math.min(a, g.a); b = Math.max(b, g.b); mudou = true; } }
-    if (!out.some(l => l.o === m!.o && Math.abs(l.c - m!.c) < 0.02 && Math.abs(l.a - a) < 0.05 && Math.abs(l.b - b) < 0.05)) out.push({ tipo, o: m.o, c: m.c, a, b, texto: t.text });
+    // segue a linha inteira: pedaços da mesma camada ligados pelas pontas (contorno da projeção, com as quinas)
+    const pontas = (g: (typeof segs)[number]): Pt[] => g.o === 'H' ? [[g.a, g.c], [g.b, g.c]] : [[g.c, g.a], [g.c, g.b]];
+    const cadeia = [m], fila = [m];
+    const raio = tipo === 'proj' ? 0.05 : 0;   // a linha de piso fica só no alinhamento
+    while (fila.length) {
+      const g = fila.pop()!;
+      // ponta de um encostando no outro (quina); outra camada só se for linha longa (o contorno às vezes muda de camada)
+      const sobre = (p: Pt, h: (typeof segs)[number]) => h.o === 'H' ? Math.abs(p[1] - h.c) < raio && p[0] >= h.a - raio && p[0] <= h.b + raio : Math.abs(p[0] - h.c) < raio && p[1] >= h.a - raio && p[1] <= h.b + raio;
+      for (const h of segs) {
+        if (cadeia.includes(h) || (h.layer !== g.layer && h.b - h.a < 3)) continue;
+        const liga = (raio > 0 && (pontas(g).some(p => sobre(p, h)) || pontas(h).some(p => sobre(p, g)))) ||
+          (h.layer === g.layer && h.o === g.o && Math.abs(h.c - g.c) < 0.01 && h.a <= g.b + 0.05 && h.b >= g.a - 0.05);
+        if (liga) { cadeia.push(h); fila.push(h); }
+      }
+    }
+    // junta os pedaços alinhados
+    for (const g of cadeia) {
+      const ig = out.find(l => l.tipo === tipo && l.o === g.o && Math.abs(l.c - g.c) < 0.02 && l.a <= g.b + 0.05 && l.b >= g.a - 0.05);
+      if (ig) { ig.a = Math.min(ig.a, g.a); ig.b = Math.max(ig.b, g.b); } else out.push({ tipo, o: g.o, c: g.c, a: g.a, b: g.b, texto: t.text });
+    }
   }
   return out;
 }

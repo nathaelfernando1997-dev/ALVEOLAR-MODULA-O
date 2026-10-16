@@ -130,13 +130,30 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const incluida = !fora.includes(a.id);
     const podeH = a.apoio.o && a.apoio.l, podeV = a.apoio.s && a.apoio.n;
     // projeção da laje (beiral) do lado de fora: até onde a laje vai além da parede
-    const beiral = (lado: 'o' | 'l' | 's' | 'n') => {
+    // o beiral não pode entrar em outro ambiente com laje
+    const invade = (x0: number, x1: number, y0: number, y1: number) => ambs.some(b => b !== a && b.pav === a.pav && !fora.includes(b.id) &&
+      Math.min(b.x1, x1) - Math.max(b.x0, x0) > 0.05 && Math.min(b.y1, y1) - Math.max(b.y0, y0) > 0.05);
+    const latOk = <B extends { c: number }>(l: 'o' | 'l' | 's' | 'n', b: B | null): B | null => {
+      if (!b) return null;
+      const ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[l];
+      return (l === 'o' || l === 'l' ? invade(Math.min(b.c, ed), Math.max(b.c, ed), a.y0, a.y1) : invade(a.x0, a.x1, Math.min(b.c, ed), Math.max(b.c, ed))) ? null : b;
+    };
+    const cands = (lado: 'o' | 'l' | 's' | 'n') => {
       const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? -1 : 1;
       const [r0, r1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
-      if (a.externo && !a.externo[lado]) return null;
-      const c = bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 1.6 && Math.min(b.b, r1) - Math.max(b.a, r0) > 0.3)
-        .sort((p, q) => Math.abs(p.c - ed) - Math.abs(q.c - ed))[0];
-      return c ? { c: c.c, d: Math.abs(c.c - ed) } : null;
+      if (a.externo && !a.externo[lado]) return [];
+      return bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 2.5 && Math.min(b.b, r1) - Math.max(b.a, r0) > 0.3)
+        .sort((p, q) => Math.abs(p.c - ed) - Math.abs(q.c - ed));
+    };
+    // com várias linhas de projeção, fica a que fecha o contorno com a do lado vizinho (quina); senão a mais perto
+    const todos = { o: cands('o'), l: cands('l'), s: cands('s'), n: cands('n') };
+    const quina = (b: LinhaProjeto, c: LinhaProjeto) => [b.a, b.b].some(t => Math.abs(t - c.c) < 0.05) && [c.a, c.b].some(t => Math.abs(t - b.c) < 0.05);
+    const beiral = (lado: 'o' | 'l' | 's' | 'n') => {
+      const cs = todos[lado]; if (!cs.length) return null;
+      const viz = (lado === 'o' || lado === 'l' ? [...todos.s, ...todos.n] : [...todos.o, ...todos.l]);
+      const c = cs.find(b => viz.some(v => quina(b, v))) ?? cs[0];
+      const ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado];
+      return { c: c.c, d: Math.abs(c.c - ed) };
     };
     const lados = (sn: 'H' | 'V') => sn === 'H' ? { pontas: ['o', 'l'] as const, laterais: ['s', 'n'] as const } : { pontas: ['s', 'n'] as const, laterais: ['o', 'l'] as const };
     // apoio em cima da parede: 6 cm onde a parede recebe laje dos dois lados; 10 cm onde só esta laje apoia
@@ -205,7 +222,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const bP = sentido ? lados(sentido).pontas.map(l => beiral(l)) : [null, null];
     if (sentido) {
       for (const b of bP) if (b) (b.d > r.beiral + 0.01 ? avisos : infos).push(`beiral de ${br2(b.d)} m pela projeção do projeto${b.d > r.beiral + 0.01 ? ` (maior que ${br2(r.beiral)} m — conferir)` : ''}`);
-      for (const l of lados(sentido).laterais) { const b = beiral(l); if (b) infos.push(`beiral de ${br2(b.d)} m na lateral pela projeção do projeto (incluído nos painéis)`); }
+      for (const l of lados(sentido).laterais) { const b = latOk(l, beiral(l)); if (b) (b.d > r.beiral + 0.01 ? avisos : infos).push(`beiral de ${br2(b.d)} m na lateral pela projeção do projeto (incluído nos painéis)${b.d > r.beiral + 0.01 ? ` — maior que ${br2(r.beiral)} m, conferir` : ''}`); }
     }
     if (avisos.length) L.aviso = avisos.join(' · ');
     if (infos.length) L.info = infos.join(' · ');
@@ -215,7 +232,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     // nas laterais o painel também entra em cima da parede
     const [la0, la1] = lados(esc.sn).laterais;
     // beiral na lateral: a laje vai até a linha da projeção (divide em mais painéis se passar da largura máxima)
-    const bl0 = beiral(la0), bl1 = beiral(la1);
+    const bl0 = latOk(la0, beiral(la0)), bl1 = latOk(la1, beiral(la1));
     const l0 = bl0 ? bl0.c : esc.p.l0 - apo(la0), l1 = bl1 ? bl1.c : esc.p.l1 + apo(la1), ladoL = l1 - l0;
     const [pa0, pa1] = lados(esc.sn).pontas;
     // folga entre painéis vizinhos para o encaixe
@@ -224,7 +241,11 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     esc.p.vaos.forEach(([s0, s1], iv) => { for (let k = 0; k < n; k++) {
       // nas pontas com beiral o painel vai até a linha da projeção
       const ult = iv === esc.p.vaos.length - 1;
-      const a0 = iv === 0 ? (bP[0] ? bP[0].c : s0 - apo(pa0)) : s0 - r.lajeApoio, a1 = ult ? (bP[1] ? bP[1].c : s1 + apo(pa1)) : s1 + r.lajeApoio, b0 = l0 + k * (w + f), b1 = b0 + w;
+      const b0 = l0 + k * (w + f), b1 = b0 + w;
+      // beiral na ponta: só nas fileiras que não entram em outro ambiente
+      const livre = (p: number, q: number) => !(sentido === 'H' ? invade(Math.min(p, q), Math.max(p, q), b0, b1) : invade(b0, b1, Math.min(p, q), Math.max(p, q)));
+      const e0 = iv === 0 && bP[0] && livre(bP[0].c, s0) ? bP[0].c : null, e1 = ult && bP[1] && livre(s1, bP[1].c) ? bP[1].c : null;
+      const a0 = iv === 0 ? (e0 ?? s0 - apo(pa0)) : s0 - r.lajeApoio, a1 = ult ? (e1 ?? s1 + apo(pa1)) : s1 + r.lajeApoio;
       const [x0, x1, y0, y1] = sentido === 'H' ? [a0, a1, b0, b1] : [b0, b1, a0, a1];
       P.push({ num: 0, amb: a.id, pav: a.pav, x0, x1, y0, y1, comp: a1 - a0, larg: w, sentido: sentido! });
     } });
