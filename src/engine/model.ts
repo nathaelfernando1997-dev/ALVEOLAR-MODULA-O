@@ -13,15 +13,21 @@ export interface Regras {
   espMin: number; espMax: number; // espessura de parede reconhecida (m)
   minParede: number;       // trecho mínimo para virar painel
   naoFabricar: number;     // abaixo disso marca "n fabricar"
+  pinarAuto: boolean;      // no T, pinar a parede que chega e deixar a contínua sem emenda quando couber num painel
+  lajeComp: number;        // comprimento máximo do painel de laje (vão)
+  lajeLarg: number;        // largura máxima do painel de laje
+  lajeApoio: number;       // quanto a laje entra em cima de cada parede de apoio
+  lajeEsp: number;         // espessura da laje (para conferir com os cortes)
 }
 export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
+  pinarAuto: false, lajeComp: 4.5, lajeLarg: 3.0, lajeApoio: 0.06, lajeEsp: 0.15,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
 export interface Box { x0: number; x1: number; y0: number; y1: number }
-export interface Pavimento { id: string; nome: string; box: Box; altura: number; ativo: boolean }
+export interface Pavimento { id: string; nome: string; box: Box; altura: number; ativo: boolean; corte?: boolean }
 
 // ---------------- leitura da planta ----------------
 export interface Leitura {
@@ -112,7 +118,7 @@ function lerQuadro(textos: Leitura['textos'], regioes: Box[]): Esquadria[] {
 
 // ---------------- paredes ----------------
 type Face = { c: number; a: number; b: number };
-type Eixo = { c: number; ps: [number, number][] };
+type Eixo = { c: number; ps: [number, number][]; esp: number };
 
 function faces(ps: Prim[], box: Box) {
   const H: Face[] = [], V: Face[] = [];
@@ -141,30 +147,30 @@ function faces(ps: Prim[], box: Box) {
 }
 
 function eixos(F: Face[], r: Regras): Eixo[] {
-  const pedacos: Face[] = [];
+  const pedacos: (Face & { d: number })[] = [];
   for (let i = 0; i < F.length; i++) for (let j = i + 1; j < F.length; j++) {
     const d = Math.abs(F[i].c - F[j].c);
     if (d < r.espMin || d > r.espMax) continue;
     const lo = Math.max(F[i].a, F[j].a), hi = Math.min(F[i].b, F[j].b);
     // parede grossa (> 22 cm) só com trecho longo: evita juntar linhas de detalhe com a face externa
-    if (hi - lo > 0.03 && (d <= 0.22 || hi - lo >= 0.3)) pedacos.push({ c: (F[i].c + F[j].c) / 2, a: lo, b: hi });
+    if (hi - lo > 0.03 && (d <= 0.22 || hi - lo >= 0.3)) pedacos.push({ c: (F[i].c + F[j].c) / 2, a: lo, b: hi, d });
   }
   pedacos.sort((p, q) => p.c - q.c);
-  const grupos: { cs: number[]; ps: [number, number][] }[] = [];
+  const grupos: { cs: number[]; ps: [number, number][]; ds: number[] }[] = [];
   for (const p of pedacos) {
     const g = grupos.find(g => Math.abs(g.cs.reduce((s, v) => s + v, 0) / g.cs.length - p.c) < 0.07);
-    if (g) { g.cs.push(p.c); g.ps.push([p.a, p.b]); } else grupos.push({ cs: [p.c], ps: [[p.a, p.b]] });
+    if (g) { g.cs.push(p.c); g.ps.push([p.a, p.b]); g.ds.push(p.d); } else grupos.push({ cs: [p.c], ps: [[p.a, p.b]], ds: [p.d] });
   }
   return grupos.map(g => {
     const ps = g.ps.sort((a, b) => a[0] - b[0]);
     const m: [number, number][] = [];
     for (const [lo, hi] of ps) { if (m.length && lo <= m[m.length - 1][1] + 0.02) m[m.length - 1][1] = Math.max(m[m.length - 1][1], hi); else m.push([lo, hi]); }
-    return { c: g.cs.reduce((s, v) => s + v, 0) / g.cs.length, ps: m.filter(([a, b]) => b - a >= 0.03) };
+    return { c: g.cs.reduce((s, v) => s + v, 0) / g.cs.length, ps: m.filter(([a, b]) => b - a >= 0.03), esp: g.ds.reduce((s, v) => s + v, 0) / g.ds.length };
   });
 }
 
 export interface Vao { a: number; b: number; tag: string | null; tipo: string; w: number; x0: number; x1: number; base: number; h: number; inteiro: boolean }
-export interface Trecho { id: string; pav: string; o: 'H' | 'V'; c: number; s: number; e: number; vaos: Vao[]; H: number }
+export interface Trecho { id: string; pav: string; o: 'H' | 'V'; c: number; s: number; e: number; vaos: Vao[]; H: number; esp: number; pinado?: boolean }
 
 export interface Ajustes {
   excluir: string[];                       // ids de trechos excluídos
@@ -173,8 +179,11 @@ export interface Ajustes {
   cortes: Record<string, number[]>;        // cortes manuais (distância a partir do início, sem coluna)
   altura: Record<string, number>;          // altura manual do trecho
   vaoTipo: Record<string, string>;         // `${trecho}@${posição}` -> tag (ex.: P04) ou "livre"
+  naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
+  lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
+  lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
 }
-export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, altura: {}, vaoTipo: {} };
+export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
 
 const idTrecho = (pav: string, o: string, c: number, s: number) => `${pav}|${o}|${c.toFixed(2)}|${s.toFixed(2)}`;
 
@@ -186,11 +195,11 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   const out: Trecho[] = [];
   for (const o of ['H', 'V'] as const) {
     const perp = ax[o === 'H' ? 'V' : 'H'];
-    for (const { c, ps } of ax[o]) {
+    for (const { c, ps, esp } of ax[o]) {
       if (!ps.length || ps[ps.length - 1][1] - ps[0][0] < 0.25) continue;
       const nos = perp.filter(q => q.ps.length && Math.min(...q.ps.map(p => p[0])) - 0.2 <= c && c <= Math.max(...q.ps.map(p => p[1])) + 0.2).map(q => q.c);
       let cur = { s: ps[0][0], vaos: [] as { a: number; b: number; tag: string | null }[] };
-      const fecha = (e: number) => { out.push(montar(pav, o, c, cur.s, e, cur.vaos)); };
+      const fecha = (e: number) => { out.push(montar(pav, o, c, cur.s, e, cur.vaos, esp)); };
       for (let i = 0; i < ps.length - 1; i++) {
         const a1 = ps[i][1], b0 = ps[i + 1][0], gp = b0 - a1;
         const inn = nos.filter(n => a1 - 0.03 <= n && n <= b0 + 0.03);
@@ -212,11 +221,11 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
       fecha(ps[ps.length - 1][1]);
     }
   }
-  function montar(pav: Pavimento, o: 'H' | 'V', c: number, s: number, e: number, vs: { a: number; b: number; tag: string | null }[]): Trecho {
+  function montar(pav: Pavimento, o: 'H' | 'V', c: number, s: number, e: number, vs: { a: number; b: number; tag: string | null }[], esp: number): Trecho {
     const id = idTrecho(pav.id, o, c, s);
     const Hh = aj.altura[id] ?? pav.altura;
     const vaos = vs.map(v => vao(id, v, Hh));
-    return { id, pav: pav.id, o, c, s, e, vaos, H: Hh };
+    return { id, pav: pav.id, o, c, s, e, vaos, H: Hh, esp };
   }
   function vao(id: string, v: { a: number; b: number; tag: string | null }, Hh: number): Vao {
     const key = `${id}@${((v.a + v.b) / 2).toFixed(2)}`;
@@ -235,11 +244,27 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   }
   // ajustes: excluir e juntar
   let res = out.filter(t => t.e - t.s >= r.minParede && !aj.excluir.includes(t.id));
+  const proximo = (t: Trecho) => res.filter(x => x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05 && x.s > t.s).sort((a, b) => a.s - b.s)[0];
+  const junta = (t: Trecho, nx: Trecho) => { t.e = nx.e; t.vaos.push(...nx.vaos); t.pinado = true; res = res.filter(x => x !== nx); };
   for (const id of aj.juntar) {
     const t = res.find(x => x.id === id); if (!t) continue;
-    const nx = res.filter(x => x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05 && x.s > t.s).sort((a, b) => a.s - b.s)[0];
-    if (!nx) continue;
-    t.e = nx.e; t.vaos.push(...nx.vaos); res = res.filter(x => x !== nx);
+    const nx = proximo(t); if (nx) junta(t, nx);
+  }
+  // T pinado automático: a parede contínua passa direto (sem coluna) quando cabe num painel só
+  if (r.pinarAuto) {
+    let mudou = true;
+    while (mudou) {
+      mudou = false;
+      for (const t of [...res].sort((a, b) => a.s - b.s)) {
+        if (!res.includes(t)) continue;
+        const nx = proximo(t);
+        if (!nx || nx.s - t.e > r.coluna + 0.2) continue;
+        if (nx.e - t.s - r.folga > r.larguraMax) continue;
+        if (t.vaos.some(v => v.inteiro) || nx.vaos.some(v => v.inteiro)) continue;
+        if (aj.naoPinar?.includes(t.id)) continue;
+        junta(t, nx); mudou = true;
+      }
+    }
   }
   return res;
 }

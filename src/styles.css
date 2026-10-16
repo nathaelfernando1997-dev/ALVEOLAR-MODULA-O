@@ -57,3 +57,20 @@ main { padding: 16px; }
   .folhas { gap: 0; }
   .folha { box-shadow: none; page-break-after: always; break-after: page; }
 }
+.regiao.corte { border-color: #e80; background: #fff8ef; }
+.grade .chk { grid-column: 1 / -1; justify-content: flex-start; }
+.grade .chk input { width: auto; }
+.card h3 { font-size: 14px; margin: 12px 0 6px; color: #333; }
+.hit { cursor: pointer; }
+.hit:hover { stroke: rgba(230, 0, 0, .3); }
+rect.hit:hover { fill: rgba(204, 0, 204, .2); }
+.avisos { list-style: none; padding: 0; }
+.avisos li { padding: 5px 8px; margin: 3px 0; border-radius: 5px; font-size: 14px; }
+.avisos .ok { background: #eef8ee; color: #1b6b1b; }
+.avisos .atencao { background: #fff6e0; color: #8a5a00; }
+.avisos .erro { background: #fdeaea; color: #a40000; }
+.folha .desenho.lajes { gap: 6mm; align-items: flex-start; }
+.folha .desenho.lajes svg { flex: 1; height: 100%; }
+.tlaje { font-size: 7.5pt; border-collapse: collapse; }
+.tlaje td, .tlaje th { border: 1px solid #ccc; padding: 1px 4px; text-align: right; }
+.tlaje .tot td { font-weight: bold; background: #fff2cc; }

@@ -1,5 +1,6 @@
 // Exporta a modulação em DXF (R12, só LINE e TEXT) para abrir no AutoCAD.
 import type { Painel, Pavimento } from './model.ts';
+import type { PainelLaje } from './lajes.ts';
 
 class W {
   out: string[] = [];
@@ -18,7 +19,7 @@ class W {
 }
 const br = (v: number) => v.toFixed(2).replace('.', ',');
 
-export function exportarDxf(pavs: Pavimento[], ps: Painel[]): string {
+export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = []): string {
   const w = new W();
   let X = 0;
   for (const pav of pavs) {
@@ -50,14 +51,25 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[]): string {
       }
       vx += p.larg + 1.1;
     }
+    // lajes: abaixo da planta
+    const L = pl.filter(p => p.pav === pav.id);
+    for (const p of L) {
+      const x0 = p.x0 + ox, y0 = p.y0 + oy - (b.y1 - b.y0) - 4;
+      w.rect('LAJE', x0, y0, p.x1 - p.x0, p.y1 - p.y0, 5);
+      w.text('LAJE', x0 + (p.x1 - p.x0) / 2, y0 + (p.y1 - p.y0) / 2, .2, `L${p.num}`, 1, 0, true);
+      w.text('LAJE', x0 + (p.x1 - p.x0) / 2, y0 + (p.y1 - p.y0) / 2 - .25, .1, `${br(p.comp)} x ${br(p.larg)}`, 7, 0, true);
+    }
+    if (L.length) w.text('TEXTO', X, -(b.y1 - b.y0) - 3, .3, `LAJE SOBRE ${pav.nome.toUpperCase()}`);
     X = lx + 30;
   }
   return w.str();
 }
 
-export function exportarCsv(ps: Painel[], pavs: Pavimento[]): string {
+export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = []): string {
   const nome = new Map(pavs.map(p => [p.id, p.nome]));
   const linhas = ['Painel;Pavimento;Largura (m);Altura (m);Área (m²);Recortes;Observação'];
   for (const p of ps) linhas.push([p.num, nome.get(p.pav), br(p.larg), br(p.H), br(p.larg * p.H), p.recortes.map(r => `${r.tipo} ${br(r.w)}x${br(r.h)} (base ${br(r.base)}, lateral ${br(r.dl)})`).join(' | '), p.aviso || ''].join(';'));
+  linhas.push('', 'Laje;Sobre o pavimento;Comprimento (m);Largura (m);Área (m²)');
+  for (const p of pl) linhas.push([`L${p.num}`, nome.get(p.pav), br(p.comp), br(p.larg), br(p.comp * p.larg)].join(';'));
   return '﻿' + linhas.join('\r\n');
 }

@@ -7,11 +7,13 @@ O arquivo é lido no próprio navegador (não vai para servidor). Os ajustes de 
 ## Como usar
 
 1. **Arquivo** – abra o DXF (no AutoCAD: *Salvar como → DXF*) e confira a camada das paredes.
-2. **Pavimentos** – marque as plantas baixas, dê nome e pé-direito. A ordem define a numeração.
+2. **Desenhos** – diga o que é cada desenho: planta baixa (com nome e pé-direito) ou corte. A ordem define a numeração.
 3. **Portas e janelas** – confira o quadro de aberturas lido do projeto.
 4. **Regras** – largura máxima, coluna, desconto, bonecas e acréscimos dos recortes.
-5. **Modulação** – revise na planta: clique numa parede para excluir (shaft, platibanda), juntar com a próxima, não dividir, cortar em pontos manuais ou mudar a altura; clique num vão para dizer se é porta, janela ou vão livre.
-6. **Impressão e arquivos** – folhas A4 (planta de montagem e vistas dos painéis), DXF da modulação, lista de painéis em CSV e os ajustes em JSON.
+5. **Paredes** – revise na planta baixa: clique numa parede para excluir (shaft, platibanda, torre), pinar no T (passar direto, sem emenda), não dividir, cortar em pontos manuais ou mudar a altura; clique num vão para dizer se é porta, janela ou vão livre.
+6. **Lajes** – painéis por ambiente, vencendo o menor vão entre paredes, com apoio em cima de cada parede; tire a laje de vazios/áreas externas ou gire o sentido.
+7. **Cortes** – marque os cortes na aba Desenhos; o sistema lê as cotas verticais e confere pés-direitos, laje e alturas de portas/janelas.
+8. **Impressão e arquivos** – folhas A4 (planta de montagem, vistas dos painéis e lajes), DXF da modulação, lista de painéis em CSV e os ajustes em JSON.
 
 ## Regras padrão
 
@@ -20,6 +22,8 @@ O arquivo é lido no próprio navegador (não vai para servidor). Os ajustes de 
 - 5 cm a menos em cada painel.
 - Recortes: +10 cm na largura; porta = boneca 0,10 + altura do quadro; janela desce 5 cm abaixo do peitoril e sobe 5 cm acima.
 - Boneca de 10 cm nas laterais e embaixo dos recortes (retirada na obra).
+- T pinado (opcional, automático ou parede a parede): a parede contínua passa sem coluna e a outra é pinada nela.
+- Laje: comprimento máximo 4,50 m, largura máxima 3,00 m, apoio de 6 cm em cima de cada parede; vãos maiores recebem viga sugerida (conferir com o engenheiro).
 
 ## Desenvolvimento
 

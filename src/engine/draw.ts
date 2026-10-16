@@ -4,7 +4,7 @@ import type { Painel, Pavimento, VaoInteiro, Leitura } from './model.ts';
 
 const br = (v: number) => v.toFixed(2).replace('.', ',');
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-const AZUL = '#1a3fd6', VERM = '#d11', ROSA = '#c0c', CINZA = '#9a9a9a';
+const AZUL = '#1a3fd6', VERM = '#d11', ROSA = '#c0c', CINZA = '#6b6b6b';
 
 type Caixa = [number, number, number, number]; // x0,y0,x1,y1 (metros, planta)
 const livre = (occ: Caixa[], b: Caixa) => occ.every(o => b[2] <= o[0] || b[0] >= o[2] || b[3] <= o[1] || b[1] >= o[3]);
@@ -25,13 +25,23 @@ function cotaSvg(X: (x: number) => number, Y: (y: number) => number, o: 'H' | 'V
     `<text x="${k(x - 2)}" y="${k(m)}" font-size="${fs}" fill="${VERM}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3" transform="rotate(-90 ${k(x - 2)} ${k(m)})">${txt}</text>`;
 }
 
-// planta de montagem (impressão)
+export interface Quadro { vb: string; X: (x: number) => number; Y: (y: number) => number; k: number }
+export function quadro(pav: Pavimento, pad = 1.4): Quadro {
+  const b = pav.box, x0 = b.x0 - pad, x1 = b.x1 + pad, y0 = b.y0 - pad, y1 = b.y1 + pad, k = 100;
+  return { vb: `0 0 ${((x1 - x0) * k).toFixed(0)} ${((y1 - y0) * k).toFixed(0)}`, X: (x: number) => (x - x0) * k, Y: (y: number) => (y1 - y) * k, k };
+}
+// desenho da planta baixa (paredes, portas, janelas) em cinza escuro
+export function arqSvg(q: Quadro, arq: Prim[]): string {
+  return arq.map(p => `<polyline points="${p.pts.map(v => `${q.X(v[0]).toFixed(1)},${q.Y(v[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${CINZA}" stroke-width="1.3"/>`).join('');
+}
+// planta de montagem: planta baixa + número dos painéis + cotas
 export function plantaSvg(L: Leitura, pav: Pavimento, ps: Painel[], vaos: VaoInteiro[], arq: Prim[]): string {
-  const b = pav.box, pad = 1.4;
-  const x0 = b.x0 - pad, x1 = b.x1 + pad, y0 = b.y0 - pad, y1 = b.y1 + pad, k = 100;
-  const X = (x: number) => (x - x0) * k, Y = (y: number) => (y1 - y) * k;
-  const g: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${((x1 - x0) * k).toFixed(0)} ${((y1 - y0) * k).toFixed(0)}">`];
-  for (const p of arq) g.push(`<polyline points="${p.pts.map(q => `${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${CINZA}" stroke-width="1"/>`);
+  const q = quadro(pav);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${q.vb}">${plantaConteudo(L, pav, ps, vaos, arq, q)}</svg>`;
+}
+export function plantaConteudo(L: Leitura, pav: Pavimento, ps: Painel[], vaos: VaoInteiro[], arq: Prim[], q: Quadro): string {
+  const b = pav.box, { X, Y, k } = q;
+  const g: string[] = [arqSvg(q, arq)];
   const tags = L.tags.filter(t => t.x > b.x0 - 0.5 && t.x < b.x1 + 0.5 && t.y > b.y0 - 0.5 && t.y < b.y1 + 0.5);
   const occ: Caixa[] = [];
   for (const t of tags) { occ.push([t.x - 0.25, t.y - 0.13, t.x + 0.25, t.y + 0.13]); g.push(`<text x="${X(t.x)}" y="${Y(t.y) + 7}" font-size="20" fill="${ROSA}" text-anchor="middle">${esc(t.text)}</text>`); }
@@ -74,7 +84,6 @@ export function plantaSvg(L: Leitura, pav: Pavimento, ps: Painel[], vaos: VaoInt
     g.push(cotaSvg(X, Y, p.o, p.a, p.b, p.c, ch[0] * ch[1], t, 15));
   }
   void vaos;
-  g.push('</svg>');
   return g.join('');
 }
 
@@ -107,3 +116,25 @@ export function vistaSvg(p: Painel): string {
   s.push('</svg>');
   return s.join('');
 }
+
+// planta das lajes: planta baixa + painéis de laje
+import type { LajeAmb, PainelLaje } from './lajes.ts';
+export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro): string {
+  const { X, Y } = q; const g: string[] = [];
+  for (const a of lj) {
+    if (!a.incluida) g.push(`<rect x="${X(a.x0)}" y="${Y(a.y1)}" width="${X(a.x1) - X(a.x0)}" height="${Y(a.y0) - Y(a.y1)}" fill="url(#hach)" stroke="none"/>`);
+    for (const v of a.vigas) g.push(a.sentido === 'H' ? `<line x1="${X(v)}" y1="${Y(a.y0)}" x2="${X(v)}" y2="${Y(a.y1)}" stroke="#e67700" stroke-width="6" stroke-dasharray="16 8"/>` : `<line x1="${X(a.x0)}" y1="${Y(v)}" x2="${X(a.x1)}" y2="${Y(v)}" stroke="#e67700" stroke-width="6" stroke-dasharray="16 8"/>`);
+  }
+  for (const p of P) {
+    const x = X(p.x0), y = Y(p.y1), w = X(p.x1) - X(p.x0), h = Y(p.y0) - Y(p.y1);
+    g.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="rgba(31,111,209,.10)" stroke="${AZUL}" stroke-width="1.6"/>`);
+    // seta do sentido do vão
+    const cx = x + w / 2, cy = y + h / 2;
+    if (p.sentido === 'H') g.push(`<line x1="${cx - w * 0.3}" y1="${cy + 22}" x2="${cx + w * 0.3}" y2="${cy + 22}" stroke="${AZUL}" stroke-width="1" marker-end="url(#seta)" marker-start="url(#seta)"/>`);
+    else g.push(`<line x1="${cx + 26}" y1="${cy - h * 0.3}" x2="${cx + 26}" y2="${cy + h * 0.3}" stroke="${AZUL}" stroke-width="1" marker-end="url(#seta)" marker-start="url(#seta)"/>`);
+    g.push(`<text x="${cx.toFixed(1)}" y="${(cy - 4).toFixed(1)}" font-size="20" font-weight="bold" fill="${VERM}" text-anchor="middle">L${p.num}</text>`);
+    g.push(`<text x="${cx.toFixed(1)}" y="${(cy + 14).toFixed(1)}" font-size="13" fill="#222" text-anchor="middle">${br(p.comp)} × ${br(p.larg)}</text>`);
+  }
+  return g.join('');
+}
+export const DEFS_LAJE = `<defs><pattern id="hach" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="12" stroke="#ccc" stroke-width="2"/></pattern><marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${AZUL}"/></marker></defs>`;

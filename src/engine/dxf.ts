@@ -20,7 +20,9 @@ export interface Insert {
 
 export interface Block { name: string; base: Pt; ents: Ent[]; inserts: Insert[] }
 
+export interface Cota { valor: number; x: number; y: number; vertical: boolean; p1: Pt; p2: Pt }
 export interface Dxf {
+  cotas: Cota[];
   ents: Ent[];          // entidades do model space (sem INSERT)
   inserts: Insert[];    // INSERTs do model space, com atributos
   blocks: Map<string, Block>;
@@ -45,7 +47,7 @@ export const g = (e: { codes: [number, string][] }, c: number) => { for (const [
 export const gn = (e: { codes: [number, string][] }, c: number, d = 0) => num(g(e, c), d);
 export const gall = (e: { codes: [number, string][] }, c: number) => e.codes.filter(([cc]) => cc === c).map(([, v]) => v);
 
-const GEOM = new Set(['LINE', 'LWPOLYLINE', 'ARC', 'CIRCLE', 'TEXT', 'MTEXT', 'INSERT', 'ATTRIB', 'SOLID', 'POLYLINE', 'VERTEX', 'SEQEND']);
+const GEOM = new Set(['DIMENSION', 'LINE', 'LWPOLYLINE', 'ARC', 'CIRCLE', 'TEXT', 'MTEXT', 'INSERT', 'ATTRIB', 'SOLID', 'POLYLINE', 'VERTEX', 'SEQEND']);
 
 export function parseDxf(text: string): Dxf {
   const P = pairs(text);
@@ -66,6 +68,7 @@ export function parseDxf(text: string): Dxf {
   const blocks = new Map<string, Block>();
   const ents: Ent[] = [];
   const inserts: Insert[] = [];
+  const cotas: Cota[] = [];
   const layers = new Set<string>();
   let section = '';
   let blk: Block | null = null;
@@ -93,6 +96,17 @@ export function parseDxf(text: string): Dxf {
     if (e.type === 'SEQEND') { lastInsert = null; if (polyline) { finishPolyline(); } return; }
     if (e.type === 'POLYLINE') { polyline = { ...e, type: 'LWPOLYLINE', codes: e.codes.filter(([c]) => c === 70 || c === 8) }; return; }
     if (e.type === 'VERTEX') { if (polyline) polyline.codes.push([10, g(e, 10) || '0'], [20, g(e, 20) || '0']); return; }
+    if (e.type === 'DIMENSION') {
+      if (!blk && section === 'ENTITIES') {
+        const p1: Pt = [gn(e, 13), gn(e, 23)], p2: Pt = [gn(e, 14), gn(e, 24)];
+        // medida pela geometria (o código 42 pode vir em outra unidade, conforme o fator da cota)
+        const rot = gn(e, 50);
+        const vertical = Math.abs(Math.abs(rot) - 90) < 1 || (Math.abs(p1[0] - p2[0]) < 1e-6 && Math.abs(p1[1] - p2[1]) > 1e-6);
+        const valor = vertical ? Math.abs(p1[1] - p2[1]) : Math.abs(Math.abs(rot) - 0) < 1 ? Math.abs(p1[0] - p2[0]) : Math.hypot(p1[0] - p2[0], p1[1] - p2[1]);
+        cotas.push({ valor, x: gn(e, 10), y: gn(e, 20), vertical, p1, p2 });
+      }
+      return;
+    }
     layers.add(e.layer);
     if (e.type === 'INSERT') {
       const ins = toInsert(e); lastInsert = ins;
@@ -132,7 +146,7 @@ export function parseDxf(text: string): Dxf {
     }
   }
   close();
-  return { ents, inserts, blocks, layers: [...layers].sort() };
+  return { ents, inserts, blocks, cotas, layers: [...layers].sort() };
 }
 
 // ---------- geometria das entidades ----------
