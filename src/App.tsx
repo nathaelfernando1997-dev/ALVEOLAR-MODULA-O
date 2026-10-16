@@ -9,6 +9,8 @@ import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir } from './engine/cortes.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
+import * as db from './db.ts';
+import type { Projeto, Config } from './db.ts';
 
 type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'cortes' | 'impressao';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
@@ -35,34 +37,60 @@ export default function App() {
   const [vaoSel, setVaoSel] = useState<string | null>(null);
   const [ambSel, setAmbSel] = useState<string | null>(null);
   const [cortando, setCortando] = useState<{ trecho: string; coluna: boolean } | null>(null);
+  const [projId, setProjId] = useState<string | null>(null);
+  const [projNome, setProjNome] = useState('');
+  const [projetos, setProjetos] = useState<Projeto[]>([]);
+  const [pronto, setPronto] = useState(false);
+  const atualizarLista = () => db.listar().then(setProjetos).catch(() => setProjetos([]));
+  useEffect(() => { atualizarLista(); db.pedirPersistencia(); }, []);
 
   const leitura = useMemo(() => (dxf ? ler(dxf, camada) : null), [dxf, camada]);
 
-  const abrir = async (f: File) => {
+  // carrega um DXF (texto) com a configuração salva, ou monta a configuração inicial
+  const carregarTexto = (txt: string, arquivo: string, cfg: Config | null) => {
+    if (!/SECTION/.test(txt.slice(0, 5000))) throw new Error('O arquivo não parece um DXF. No AutoCAD use "Salvar como" > DXF.');
+    const d = parseDxf(txt);
+    setPronto(false);
+    setDxf(d); setNome(arquivo); setSel(null); setVaoSel(null); setAmbSel(null); setCortando(null); setPavSel('');
+    const cam = cfg?.camada ?? (d.layers.find(l => /parede|wall|alven/i.test(l)) || 'PAREDE');
+    setCamada(cam);
+    if (cfg) { setPavs(cfg.pavs); setQuadro(cfg.quadro); setRegras({ ...REGRAS_PADRAO, ...cfg.regras }); setAj({ ...AJUSTES_VAZIOS, ...cfg.ajustes }); }
+    else {
+      const L = ler(d, cam);
+      setPavs(L.regioes.map((b, i) => ({ id: `R${i + 1}`, nome: `Desenho ${i + 1}`, box: b, altura: 2.8, ativo: false, corte: false })));
+      setQuadro(L.quadro); setRegras(REGRAS_PADRAO); setAj(AJUSTES_VAZIOS);
+    }
+    setTimeout(() => setPronto(true), 0);
+  };
+  const novo = async (f: File) => {
     setLendo(true); setErro('');
     try {
       const txt = await f.text();
-      if (!/SECTION/.test(txt.slice(0, 5000))) throw new Error('O arquivo não parece um DXF. No AutoCAD use "Salvar como" > DXF.');
-      const d = parseDxf(txt);
-      setDxf(d); setNome(f.name);
-      const s = (() => { try { return JSON.parse(localStorage.getItem(chave(f.name)) || 'null') as Salvo | null; } catch { return null; } })();
-      const cam = s?.camada ?? (d.layers.find(l => /parede|wall|alven/i.test(l)) || 'PAREDE');
-      setCamada(cam);
-      const L = ler(d, cam);
-      if (s) { setPavs(s.pavs); setQuadro(s.quadro); setRegras({ ...REGRAS_PADRAO, ...s.regras }); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }
-      else {
-        setPavs(L.regioes.map((b, i) => ({ id: `R${i + 1}`, nome: `Desenho ${i + 1}`, box: b, altura: 2.8, ativo: false, corte: false })));
-        setQuadro(L.quadro); setRegras(REGRAS_PADRAO); setAj(AJUSTES_VAZIOS);
-      }
-      setAba('pavimentos');
+      // aproveita ajustes da versão antiga (salvos pelo nome do arquivo)
+      const antigo = (() => { try { return JSON.parse(localStorage.getItem(chave(f.name)) || 'null') as Salvo | null; } catch { return null; } })();
+      carregarTexto(txt, f.name, antigo);
+      const p = await db.criar(f.name.replace(/\.dxf$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
+      setProjId(p.id); setProjNome(p.nome); atualizarLista();
+      setAba(antigo ? 'modulacao' : 'pavimentos');
     } catch (e) { setErro((e as Error).message); }
     setLendo(false);
   };
+  const abrirProjeto = async (id: string) => {
+    setLendo(true); setErro('');
+    try {
+      const p = await db.carregar(id); if (!p) throw new Error('Projeto não encontrado.');
+      carregarTexto(await p.dxf.text(), p.arquivo, p.config);
+      setProjId(p.id); setProjNome(p.nome);
+      setAba(p.config && p.config.pavs.some(x => x.ativo) ? 'modulacao' : 'pavimentos');
+    } catch (e) { setErro((e as Error).message); }
+    setLendo(false);
+  };
+  // salva sozinho a cada alteração
   useEffect(() => {
-    if (!nome) return;
-    try { localStorage.setItem(chave(nome), JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj } satisfies Salvo)); } catch { /* sem espaço */ }
-  }, [nome, camada, pavs, quadro, regras, aj]);
-
+    if (!projId || !pronto) return;
+    const t = setTimeout(() => { db.salvarConfig(projId, { camada, pavs, quadro, regras, ajustes: aj }).then(atualizarLista).catch(() => setErro('Não foi possível salvar no navegador.')); }, 500);
+    return () => clearTimeout(t);
+  }, [projId, pronto, camada, pavs, quadro, regras, aj]);
   const ativos = pavs.filter(p => p.ativo);
   const calc: Calc = useMemo(() => {
     const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [] };
@@ -91,22 +119,41 @@ export default function App() {
     <div className="app">
       <header className="topo noprint">
         <h1>Alveolar Modulação</h1>
-        <span className="arq">{nome || 'nenhum projeto aberto'}</span>
+        <span className="arq">{projNome ? `${projNome} · salvo automaticamente` : 'nenhum projeto aberto'}</span>
         {calc.ps.length > 0 && <Resumo ps={calc.ps} pl={calc.pl} />}
       </header>
       <nav className="abas noprint">{tabs.map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} disabled={k !== 'arquivo' && !dxf} onClick={() => setAba(k)}>{t}{k === 'cortes' && erros > 0 ? ` (${erros})` : ''}</button>)}</nav>
       <main>
         {aba === 'arquivo' && (
+          <>
           <section className="card">
-            <h2>Abrir planta</h2>
-            <p>Envie o projeto em <b>DXF</b> (no AutoCAD: <i>Salvar como → DXF</i>). O arquivo é lido no seu computador e não é enviado para nenhum servidor.</p>
-            <input type="file" accept=".dxf" onChange={e => e.target.files?.[0] && abrir(e.target.files[0])} />
+            <h2>Novo projeto</h2>
+            <p>Envie o projeto em <b>DXF</b> (no AutoCAD: <i>Salvar como → DXF</i>). O arquivo e todos os ajustes ficam salvos neste navegador e não são enviados para nenhum servidor.</p>
+            <input type="file" accept=".dxf" onChange={e => { const f = e.target.files?.[0]; if (f) novo(f); e.target.value = ''; }} />
             {lendo && <p>Lendo o arquivo…</p>}
             {erro && <p className="erro">{erro}</p>}
-            {dxf && <div className="campo"><label>Camada das paredes</label>
+            {dxf && <div className="campo"><label>Camada das paredes do projeto aberto</label>
               <select value={camada} onChange={e => setCamada(e.target.value)}>{dxf.layers.map(l => <option key={l}>{l}</option>)}</select>
               <small>{leitura?.paredes.length} linhas nessa camada · {leitura?.regioes.length} desenhos encontrados</small></div>}
           </section>
+          <section className="card">
+            <h2>Meus projetos</h2>
+            {projetos.length === 0 ? <p className="dica">Nenhum projeto salvo ainda.</p> :
+            <table className="tab projetos"><thead><tr><th>Projeto</th><th>Arquivo</th><th>Atualizado</th><th></th></tr></thead><tbody>
+              {projetos.map(p => <tr key={p.id} className={p.id === projId ? 'atual' : ''}>
+                <td><input defaultValue={p.nome} onBlur={e => { const v = e.target.value.trim(); if (v && v !== p.nome) { db.renomear(p.id, v).then(atualizarLista); if (p.id === projId) setProjNome(v); } }} /></td>
+                <td className="dica">{p.arquivo}</td>
+                <td className="dica">{new Date(p.atualizado).toLocaleString('pt-BR')}</td>
+                <td className="botoes">
+                  <button onClick={() => abrirProjeto(p.id)}>{p.id === projId ? 'Aberto' : 'Abrir'}</button>
+                  <button onClick={async () => { const bl = await db.exportarBackup(p.id); if (bl) { const a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = p.nome + '.modulacao.json'; a.click(); } }}>Baixar cópia</button>
+                  <button onClick={async () => { if (confirm(`Apagar o projeto "${p.nome}"? Isso não pode ser desfeito.`)) { await db.apagar(p.id); if (p.id === projId) { setProjId(null); setDxf(null); setNome(''); } atualizarLista(); } }}>Apagar</button>
+                </td></tr>)}
+            </tbody></table>}
+            <label className="botao">Abrir cópia de projeto (.json)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { const p = await db.importarBackup(f); await atualizarLista(); abrirProjeto(p.id); } catch (er) { setErro((er as Error).message); } e.target.value = ''; }} /></label>
+            <p className="dica">Os projetos ficam guardados neste navegador e neste computador. Para usar em outro computador ou guardar uma cópia, use "Baixar cópia" e depois "Abrir cópia de projeto".</p>
+          </section>
+          </>
         )}
 
         {aba === 'pavimentos' && leitura && (

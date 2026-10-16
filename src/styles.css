@@ -82,3 +82,6 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .zoom svg:active { cursor: grabbing; }
 .zoom-bt { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
 .zoom-bt button { width: 36px; height: 36px; margin: 0; padding: 0; font-size: 20px; line-height: 1; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.projetos td { vertical-align: middle; }
+.projetos input { width: 220px; }
+.projetos tr.atual td { background: #eef5ff; }
