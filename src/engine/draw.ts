@@ -130,13 +130,21 @@ export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro, tr: (Vi
   }
   for (const p of P) {
     const x = X(p.x0), y = Y(p.y1), w = X(p.x1) - X(p.x0), h = Y(p.y0) - Y(p.y1);
-    g.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="rgba(31,111,209,.10)" stroke="${AZUL}" stroke-width="1.6"/>`);
+    if (p.dente) {
+      // painel em L: contorno sem o canto do dente
+      const d = p.dente, cx0 = d.x0 <= p.x0 + 1e-6, cy0 = d.y0 <= p.y0 + 1e-6;
+      const [ix, iy] = [cx0 ? d.x1 : d.x0, cy0 ? d.y1 : d.y0];   // quina de dentro do dente
+      const [ox, oy] = [cx0 ? p.x0 : p.x1, cy0 ? p.y0 : p.y1];   // canto cortado
+      const [qx, qy] = [cx0 ? p.x1 : p.x0, cy0 ? p.y1 : p.y0];   // canto oposto
+      const pts = [[ix, oy], [qx, oy], [qx, qy], [ox, qy], [ox, iy], [ix, iy]].map(([u, v]) => `${X(u).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+      g.push(`<polygon points="${pts}" fill="rgba(31,111,209,.10)" stroke="${AZUL}" stroke-width="1.6"/>`);
+    } else g.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="rgba(31,111,209,.10)" stroke="${AZUL}" stroke-width="1.6"/>`);
     // seta do sentido do vão
     const cx = x + w / 2, cy = y + h / 2;
     if (p.sentido === 'H') g.push(`<line x1="${cx - w * 0.3}" y1="${cy + 22}" x2="${cx + w * 0.3}" y2="${cy + 22}" stroke="${AZUL}" stroke-width="1" marker-end="url(#seta)" marker-start="url(#seta)"/>`);
     else g.push(`<line x1="${cx + 26}" y1="${cy - h * 0.3}" x2="${cx + 26}" y2="${cy + h * 0.3}" stroke="${AZUL}" stroke-width="1" marker-end="url(#seta)" marker-start="url(#seta)"/>`);
     g.push(`<text x="${cx.toFixed(1)}" y="${(cy - 4).toFixed(1)}" font-size="20" font-weight="bold" fill="${VERM}" text-anchor="middle">L${p.num}</text>`);
-    g.push(`<text x="${cx.toFixed(1)}" y="${(cy + 14).toFixed(1)}" font-size="13" fill="#222" text-anchor="middle">${br(p.comp)} × ${br(p.larg)}</text>`);
+    g.push(`<text x="${cx.toFixed(1)}" y="${(cy + 14).toFixed(1)}" font-size="13" fill="#222" text-anchor="middle">${br(p.comp)} × ${br(p.larg)}${p.dente ? ' (dente)' : ''}</text>`);
   }
   // treliças de reforço (paredes de cima sobre a laje): linha roxa em zigue-zague com o número
   for (const t of tr.filter(v => v.tipo === 'trelica')) {

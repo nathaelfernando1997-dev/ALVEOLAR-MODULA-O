@@ -1,6 +1,7 @@
 // Exporta a modulação em DXF (R12, só LINE e TEXT) para abrir no AutoCAD.
 import type { Painel, Pavimento } from './model.ts';
 import type { PainelLaje } from './lajes.ts';
+import { areaLaje } from './lajes.ts';
 
 class W {
   out: string[] = [];
@@ -55,7 +56,13 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
     const L = pl.filter(p => p.pav === pav.id);
     for (const p of L) {
       const x0 = p.x0 + ox, y0 = p.y0 + oy - (b.y1 - b.y0) - 4;
-      w.rect('LAJE', x0, y0, p.x1 - p.x0, p.y1 - p.y0, 5);
+      if (p.dente) {
+        // painel em L
+        const d = p.dente, cx0 = d.x0 <= p.x0 + 1e-6, cy0 = d.y0 <= p.y0 + 1e-6, dx = x0 - p.x0, dy = y0 - p.y0;
+        const [ix, iy, ox2, oy2, qx, qy] = [cx0 ? d.x1 : d.x0, cy0 ? d.y1 : d.y0, cx0 ? p.x0 : p.x1, cy0 ? p.y0 : p.y1, cx0 ? p.x1 : p.x0, cy0 ? p.y1 : p.y0];
+        const pts = [[ix, oy2], [qx, oy2], [qx, qy], [ox2, qy], [ox2, iy], [ix, iy], [ix, oy2]];
+        for (let i = 0; i < pts.length - 1; i++) w.line('LAJE', pts[i][0] + dx, pts[i][1] + dy, pts[i + 1][0] + dx, pts[i + 1][1] + dy, 5);
+      } else w.rect('LAJE', x0, y0, p.x1 - p.x0, p.y1 - p.y0, 5);
       w.text('LAJE', x0 + (p.x1 - p.x0) / 2, y0 + (p.y1 - p.y0) / 2, .2, `L${p.num}`, 1, 0, true);
       w.text('LAJE', x0 + (p.x1 - p.x0) / 2, y0 + (p.y1 - p.y0) / 2 - .25, .1, `${br(p.comp)} x ${br(p.larg)}`, 7, 0, true);
     }
@@ -70,6 +77,6 @@ export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = 
   const linhas = ['Painel;Pavimento;Largura (m);Altura (m);Área (m²);Recortes;Observação'];
   for (const p of ps) linhas.push([p.num, nome.get(p.pav), br(p.larg), br(p.H), br(p.larg * p.H), p.recortes.map(r => `${r.tipo} ${br(r.w)}x${br(r.h)} (base ${br(r.base)}, lateral ${br(r.dl)})`).join(' | '), p.aviso || ''].join(';'));
   linhas.push('', 'Laje;Sobre o pavimento;Comprimento (m);Largura (m);Área (m²)');
-  for (const p of pl) linhas.push([`L${p.num}`, nome.get(p.pav), br(p.comp), br(p.larg), br(p.comp * p.larg)].join(';'));
+  for (const p of pl) linhas.push([`L${p.num}`, nome.get(p.pav), br(p.comp), br(p.larg), br(areaLaje(p)), p.dente ? `dente ${br(p.dente.x1 - p.dente.x0)} x ${br(p.dente.y1 - p.dente.y0)}` : ''].join(';'));
   return '﻿' + linhas.join('\r\n');
 }

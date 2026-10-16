@@ -4,7 +4,7 @@ import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, trechos, paineis, numerar, resumo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
-import { ambientes, modularLajes, numerarLajes, vaziosDeCima } from './engine/lajes.ts';
+import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar } from './engine/vigas.ts';
@@ -370,7 +370,7 @@ export default function App() {
 
 function Resumo({ ps, pl }: { ps: Painel[]; pl: PainelLaje[] }) {
   const r = resumo(ps);
-  const al = pl.reduce((s, p) => s + p.comp * p.larg, 0);
+  const al = pl.reduce((s, p) => s + areaLaje(p), 0);
   return <span className="resumo">Paredes: {r.qtd} painéis · {br(r.bruta)} m² · Lajes: {pl.length} painéis · {br(al)} m² · Total {br(r.bruta + al)} m²</span>;
 }
 
@@ -508,7 +508,7 @@ function Acoes({ sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, setCort
 
 function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento }) {
   const lj = calc.lajes.filter(a => a.pav === pav.id && a.incluida), P = calc.pl.filter(p => p.pav === pav.id);
-  const area = P.reduce((s, p) => s + p.comp * p.larg, 0);
+  const area = P.reduce((s, p) => s + areaLaje(p), 0);
   const tog = (k: 'lajeFora' | 'lajeGiro', id: string) => setAj({ ...aj, [k]: (aj[k] || []).includes(id) ? (aj[k] || []).filter(x => x !== id) : [...(aj[k] || []), id] });
   return <div className="card acoes">
     <h3>Laje sobre {pav.nome}</h3>
@@ -519,7 +519,7 @@ function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: C
       <p>{br(amb.x1 - amb.x0)} × {br(amb.y1 - amb.y0)} m (eixos) · vão {br(amb.vao)} m</p>
       {amb.aviso && <p className="erro">{amb.aviso}</p>}
       {amb.info && <p className="dica">{amb.info}</p>}
-      {P.filter(p => p.amb === amb.id).map(p => <div key={p.num} className="dica">L{p.num}: {br(p.comp)} × {br(p.larg)}</div>)}
+      {P.filter(p => p.amb === amb.id).map(p => <div key={p.num} className="dica">L{p.num}: {br(p.comp)} × {br(p.larg)}{p.dente ? ` · dente ${br(p.dente.x1 - p.dente.x0)} × ${br(p.dente.y1 - p.dente.y0)}` : ''}</div>)}
       <button onClick={() => tog('lajeFora', amb.id)}>{(aj.lajeFora || []).includes(amb.id) ? 'Colocar laje neste ambiente' : 'Sem laje aqui (vazio, área externa)'}</button>
       <button onClick={() => tog('lajeGiro', amb.id)}>Girar o sentido dos painéis</button>
     </> : <p className="dica">Clique num ambiente na planta.</p>}
@@ -567,10 +567,10 @@ function Folhas({ ativos, calc, leitura, arqDe, nome }: { ativos: Pavimento[]; c
         <div className="cab">MODULAÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()}</div>
         <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf) }} />
           <table className="tlaje"><thead><tr><th>Painel</th><th>Comp.</th><th>Larg.</th><th>m²</th></tr></thead><tbody>
-            {P.map(p => <tr key={p.num}><td>L{p.num}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(p.comp * p.larg)}</td></tr>)}
-            <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + p.comp * p.larg, 0))}</td></tr>
+            {P.map(p => <tr key={p.num}><td>L{p.num}{p.dente ? '*' : ''}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(areaLaje(p))}</td></tr>)}
+            <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + areaLaje(p), 0))}</td></tr>
           </tbody></table></div>
-        {rod('Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
+        {rod('Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · * = painel com dente (recorte no canto) · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
       </div>);
       if (TPf.length) folhas.push(<div className="folha" key={pav.id + 't'}>
         <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()}</div>

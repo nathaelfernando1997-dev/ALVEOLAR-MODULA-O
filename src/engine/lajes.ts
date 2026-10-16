@@ -7,7 +7,9 @@ export interface Ambiente { id: string; pav: string; x0: number; x1: number; y0:
   apoio: { o: boolean; l: boolean; s: boolean; n: boolean };  // oeste, leste, sul, norte têm parede
   esp: { o: number; l: number; s: number; n: number };
   externo?: { o: boolean; l: boolean; s: boolean; n: boolean } }  // lado que dá para fora (sem laje do outro lado)
-export interface PainelLaje { num: number; amb: string; pav: string; x0: number; y0: number; x1: number; y1: number; comp: number; larg: number; sentido: 'H' | 'V' }
+export interface PainelLaje { num: number; amb: string; pav: string; x0: number; y0: number; x1: number; y1: number; comp: number; larg: number; sentido: 'H' | 'V';
+  dente?: { x0: number; y0: number; x1: number; y1: number } }   // recorte num canto (painel em L para encaixar)
+export const areaLaje = (p: PainelLaje) => p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0);
 export interface LajeAmb extends Ambiente { incluida: boolean; sentido: 'H' | 'V' | null; vao: number; aviso?: string; info?: string; vigas: number[]; apoiosParede: number[] }
 
 const agrupa = (vs: number[], tol = 0.06) => {
@@ -121,6 +123,7 @@ export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], v
 // cargas = paredes do pavimento de cima sem parede embaixo (coordenadas desta planta)
 export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trecho[] = [], cargas: { o: 'H' | 'V'; c: number; a: number; b: number }[] = [], bordas: LinhaProjeto[] = []): { ambs: LajeAmb[]; paineis: PainelLaje[] } {
   const res: LajeAmb[] = []; const P: PainelLaje[] = [];
+  const dentes: { p: PainelLaje; ponta: 0 | 1; c: number }[] = [];
   const fora = aj.lajeFora || [], giro = aj.lajeGiro || [];
   const esV = r.vigaLargura || 0.15;
   for (const a of ambs) {
@@ -245,12 +248,46 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       // beiral na ponta: só nas fileiras que não entram em outro ambiente
       const livre = (p: number, q: number) => !(sentido === 'H' ? invade(Math.min(p, q), Math.max(p, q), b0, b1) : invade(b0, b1, Math.min(p, q), Math.max(p, q)));
       const e0 = iv === 0 && bP[0] && livre(bP[0].c, s0) ? bP[0].c : null, e1 = ult && bP[1] && livre(s1, bP[1].c) ? bP[1].c : null;
+      const pend0 = iv === 0 && bP[0] && e0 === null ? bP[0].c : null, pend1 = ult && bP[1] && e1 === null ? bP[1].c : null;
       const a0 = iv === 0 ? (e0 ?? s0 - apo(pa0)) : s0 - r.lajeApoio, a1 = ult ? (e1 ?? s1 + apo(pa1)) : s1 + r.lajeApoio;
       const [x0, x1, y0, y1] = sentido === 'H' ? [a0, a1, b0, b1] : [b0, b1, a0, a1];
-      P.push({ num: 0, amb: a.id, pav: a.pav, x0, x1, y0, y1, comp: a1 - a0, larg: w, sentido: sentido! });
+      const pn: PainelLaje = { num: 0, amb: a.id, pav: a.pav, x0, x1, y0, y1, comp: a1 - a0, larg: w, sentido: sentido! };
+      P.push(pn);
+      if (pend0 !== null) dentes.push({ p: pn, ponta: 0, c: pend0 });
+      if (pend1 !== null) dentes.push({ p: pn, ponta: 1, c: pend1 });
     } });
     const maior = Math.max(...P.filter(p => p.amb === a.id).map(p => p.comp), 0);
     if (maior > r.lajeComp + 0.005) L.aviso = (L.aviso ? L.aviso + ' · ' : '') + `painel de ${br2(maior)} m (com o beiral) passa do máximo de ${br2(r.lajeComp)} m — viga intermediária ou beiral menor`;
+  }
+  // beiral que bate em outra laje numa parte da fileira: o painel avança só na parte livre (dente)
+  const f = r.lajeFolga ?? 0.02;
+  for (const { p, ponta, c } of dentes) {
+    const H = p.sentido === 'H';
+    const [w0, w1] = H ? [p.y0, p.y1] : [p.x0, p.x1];            // largura do painel
+    const ed = ponta === 0 ? (H ? p.x0 : p.y0) : (H ? p.x1 : p.y1);
+    const [e0, e1] = [Math.min(c, ed), Math.max(c, ed)];          // faixa do beiral no sentido do vão
+    // partes da largura ocupadas por outros painéis dentro da faixa do beiral
+    const ocup = P.filter(q => q !== p && q.pav === p.pav && Math.min(H ? q.x1 : q.y1, e1) - Math.max(H ? q.x0 : q.y0, e0) > 0.02)
+      .map(q => H ? [q.y0 - f, q.y1 + f] : [q.x0 - f, q.x1 + f]).filter(([u, v]) => v > w0 && u < w1);
+    if (!ocup.length) continue;
+    const lo = Math.min(...ocup.map(o => o[0])), hi = Math.max(...ocup.map(o => o[1]));
+    // a parte livre tem que ficar num lado só da largura (dente num canto)
+    let livre: [number, number] | null = null, corte: [number, number] | null = null;
+    if (lo > w0 + 0.3 && hi >= w1 - 0.01) { livre = [w0, lo]; corte = [lo, w1]; }
+    else if (hi < w1 - 0.3 && lo <= w0 + 0.01) { livre = [hi, w1]; corte = [w0, hi]; }
+    if (!livre || !corte) continue;
+    const semDente = corte[1] - corte[0] < 0.05;   // a outra laje só encosta: avança inteiro
+    if (Math.abs(c - (ponta === 0 ? (H ? p.x1 : p.y1) : (H ? p.x0 : p.y0))) > r.lajeComp + 0.005) continue;   // passaria do comprimento máximo
+    const novo = c;
+    if (H) {
+      if (semDente) { if (ponta === 0) p.x0 = novo; else p.x1 = novo; }
+      else if (ponta === 0) { p.dente = { x0: novo, x1: p.x0, y0: corte[0], y1: corte[1] }; p.x0 = novo; } else { p.dente = { x0: p.x1, x1: novo, y0: corte[0], y1: corte[1] }; p.x1 = novo; }
+      p.comp = p.x1 - p.x0;
+    } else {
+      if (semDente) { if (ponta === 0) p.y0 = novo; else p.y1 = novo; }
+      else if (ponta === 0) { p.dente = { x0: corte[0], x1: corte[1], y0: novo, y1: p.y0 }; p.y0 = novo; } else { p.dente = { x0: corte[0], x1: corte[1], y0: p.y1, y1: novo }; p.y1 = novo; }
+      p.comp = p.y1 - p.y0;
+    }
   }
   return { ambs: res, paineis: P };
 }
