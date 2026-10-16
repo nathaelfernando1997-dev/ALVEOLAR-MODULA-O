@@ -109,11 +109,13 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       for (const pos of L.vigas) {
         const o: 'H' | 'V' = L.sentido === 'H' ? 'V' : 'H';
         const [a, b] = o === 'V' ? [L.y0, L.y1] : [L.x0, L.x1];
+        const sobre = cima ? cargasDeCima([...tb, ...pp], tc).filter(k => k.o === o && Math.abs(k.c - pos) < 0.15 && k.a < b && k.b > a) : [];
         const perto = ts.filter(t => t.pav === pav.id && t.o === o && Math.abs(t.c - pos) < 1.0 && t.s < b && t.e > a).sort((x, y) => Math.abs(x.c - pos) - Math.abs(y.c - pos))[0];
         V.push({
           id: `${pav.id}-laje-${pos.toFixed(2)}`, pav: pav.id, o, c: pos, a, b, tipo: 'laje', obrigatoria: true,
-          motivo: `Ambiente ${br(L.x1 - L.x0)} × ${br(L.y1 - L.y0)} m: mesmo apoiando a laje nas paredes, sobra vão maior que ${br(r.lajeComp)} m.`,
-          ideia: perto ? `Viga no meio do vão, ou estender a parede que está a ${br(Math.abs(perto.c - pos))} m para servir de apoio (sem viga).` : `Viga no meio do vão, apoiada nas paredes das pontas (${br(b - a)} m).`,
+          motivo: `Ambiente ${br(L.x1 - L.x0)} × ${br(L.y1 - L.y0)} m: mesmo apoiando a laje nas paredes, o painel passaria de ${br(r.lajeComp)} m (contando o beiral, se tiver).`,
+          ideia: sobre.length ? `Viga embaixo da parede ${[...new Set(ps.filter(p => sobre.some(k => k.t.id === p.trecho)).map(p => p.num))].join(', ')} do ${cima!.nome} (a viga já carrega a parede), apoiada nas paredes das pontas (${br(b - a)} m).`
+            : perto ? `Viga no meio do vão, ou estender a parede que está a ${br(Math.abs(perto.c - pos))} m para servir de apoio (sem viga).` : `Viga no meio do vão, apoiada nas paredes das pontas (${br(b - a)} m).`,
           rebaixos: reb([...painelEm(pav.id, o, pos, a, b), ...cruzando(pav.id, o, pos, a, b)]),
         });
       }
@@ -124,6 +126,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       const nums = ps.filter(p => p.trecho === t.id).map(p => p.num);
       {
         if (vaos.some(v => v.pav === pav.id && v.o === t.o && Math.abs(v.c - c) < 0.15 && v.a <= a + 0.3 && v.b >= b - 0.3)) continue; // já tem viga do vão
+        if (V.some(v => v.pav === pav.id && v.tipo === 'laje' && v.o === t.o && Math.abs(v.c - c) < 0.15 && v.a <= a + 0.3 && v.b >= b - 0.3)) continue; // em cima da viga da laje
         const m = (a + b) / 2, [mx, my] = t.o === 'H' ? [m, c] : [c, m];
         const L = lajeEm(pav.id, mx, my);
         if (!L) {

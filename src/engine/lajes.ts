@@ -129,6 +129,16 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const lx = cx1 - cx0, ly = cy1 - cy0;
     const incluida = !fora.includes(a.id);
     const podeH = a.apoio.o && a.apoio.l, podeV = a.apoio.s && a.apoio.n;
+    // projeção da laje (beiral) do lado de fora: até onde a laje vai além da parede
+    const beiral = (lado: 'o' | 'l' | 's' | 'n') => {
+      const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? -1 : 1;
+      const [r0, r1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
+      if (a.externo && !a.externo[lado]) return null;
+      const c = bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 1.6 && Math.min(b.b, r1) - Math.max(b.a, r0) > 0.3)
+        .sort((p, q) => Math.abs(p.c - ed) - Math.abs(q.c - ed))[0];
+      return c ? { c: c.c, d: Math.abs(c.c - ed) } : null;
+    };
+    const lados = (sn: 'H' | 'V') => sn === 'H' ? { pontas: ['o', 'l'] as const, laterais: ['s', 'n'] as const } : { pontas: ['s', 'n'] as const, laterais: ['o', 'l'] as const };
     // planeja os apoios num sentido: bordas + paredes internas (a laje apoia nelas) + vigas só onde faltar
     const plano = (sent: 'H' | 'V') => {
       const [ini, fim] = sent === 'H' ? [cx0, cx1] : [cy0, cy1];
@@ -141,30 +151,32 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       for (const w of internas) apoios.push({ a: w.c - w.esp / 2, b: w.c + w.esp / 2 });
       apoios.push({ a: fim, b: fim + 1 });
       const vaos: [number, number][] = []; const vigas: number[] = [];
+      // o beiral entra no comprimento do painel da ponta
+      const [bA, bB] = lados(sent).pontas.map(l => beiral(l));
+      const ap = r.lajeApoio, g = esV - 2 * ap;   // g = folga entre as pontas dos painéis em cima da viga
+      // paredes de cima que cruzam o vão: melhor lugar para a viga (já carrega a parede)
+      const sobCarga = cargas.filter(w => w.o === oParede && Math.min(w.b, l1) - Math.max(w.a, l0) > 0.6 * (l1 - l0)).map(w => w.c);
       for (let k = 0; k < apoios.length - 1; k++) {
         const s0 = apoios[k].b, s1 = apoios[k + 1].a, vao = s1 - s0;
         if (vao <= 0.05) continue;
-        const nV = Math.ceil((vao + 2 * r.lajeApoio) / r.lajeComp - 1e-9);
-        if (nV > 1) {
-          const passo = (vao - (nV - 1) * esV) / nV;
-          for (let m = 0; m < nV; m++) { const q0 = s0 + m * (passo + esV); vaos.push([q0, q0 + passo]); if (m) vigas.push(q0 - esV / 2); }
-        } else vaos.push([s0, s1]);
+        const A = k === 0 && bA ? bA.c : s0 - ap, B = k === apoios.length - 2 && bB ? bB.c : s1 + ap;
+        const nV = Math.ceil((B - A) / r.lajeComp - 1e-9);
+        if (nV <= 1) { vaos.push([s0, s1]); continue; }
+        // uma viga só: tenta embaixo de uma parede de cima, se os dois painéis couberem
+        const cabe = (c: number) => (c - esV / 2 + ap) - A <= r.lajeComp + 1e-6 && B - (c + esV / 2 - ap) <= r.lajeComp + 1e-6;
+        const sc = nV === 2 ? sobCarga.filter(c => c > s0 + 0.5 && c < s1 - 0.5 && cabe(c)).sort((p, q) => Math.abs(p - (A + B) / 2) - Math.abs(q - (A + B) / 2))[0] : undefined;
+        const cs: number[] = [];
+        if (sc !== undefined) cs.push(sc);
+        else { const Pm = (B - A - (nV - 1) * g) / nV; for (let m = 1; m < nV; m++) cs.push(A + m * Pm + (m - 1) * g + esV / 2 - ap); }
+        let q0 = s0;
+        for (const c of cs) { vaos.push([q0, c - esV / 2]); vigas.push(c); q0 = c + esV / 2; }
+        vaos.push([q0, s1]);
       }
       return { vaos, vigas, internas: internas.map(w => w.c), maior: Math.max(...vaos.map(([p, q]) => q - p)), l0, l1 };
     };
     // parede de cima dentro do ambiente correndo no mesmo sentido dos painéis pede treliça na junta; atravessando, distribui melhor
     const aoLongo = (sn: 'H' | 'V') => cargas.filter(w => w.o === sn && (sn === 'H' ? w.c > a.y0 + 0.1 && w.c < a.y1 - 0.1 && Math.min(w.b, a.x1) - Math.max(w.a, a.x0) > 0.3
       : w.c > a.x0 + 0.1 && w.c < a.x1 - 0.1 && Math.min(w.b, a.y1) - Math.max(w.a, a.y0) > 0.3)).length;
-    // projeção da laje (beiral) do lado de fora: até onde a laje vai além da parede
-    const beiral = (lado: 'o' | 'l' | 's' | 'n') => {
-      const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? -1 : 1;
-      const [r0, r1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
-      if (a.externo && !a.externo[lado]) return null;
-      const c = bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 1.6 && Math.min(b.b, r1) - Math.max(b.a, r0) > 0.3)
-        .sort((p, q) => Math.abs(p.c - ed) - Math.abs(q.c - ed))[0];
-      return c ? { c: c.c, d: Math.abs(c.c - ed) } : null;
-    };
-    const lados = (sn: 'H' | 'V') => sn === 'H' ? { pontas: ['o', 'l'] as const, laterais: ['s', 'n'] as const } : { pontas: ['s', 'n'] as const, laterais: ['o', 'l'] as const };
     // beiral na lateral dos painéis não dá (painel só balança na ponta): conta contra o sentido
     const opcoes = ([podeH ? 'H' : null, podeV ? 'V' : null].filter(Boolean) as ('H' | 'V')[]).map(sn => ({ sn, p: plano(sn), n: aoLongo(sn) + lados(sn).laterais.filter(l => beiral(l)).length * 2 }));
     // escolhe o sentido com menos vigas; empate: menos paredes de cima ao longo dos painéis (treliça), depois o menor vão
