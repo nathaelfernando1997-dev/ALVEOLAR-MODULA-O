@@ -17,6 +17,7 @@ export interface Regras {
   lajeComp: number;        // comprimento máximo do painel de laje (vão)
   lajeLarg: number;        // largura máxima do painel de laje
   lajeApoio: number;       // quanto a laje entra em cima de cada parede de apoio
+  lajeFolga?: number;      // folga entre um painel de laje e o vizinho (encaixe)
   lajeEsp: number;         // espessura da laje (para conferir com os cortes)
   vigaAltura: number;      // altura da viga (rebaixo nas paredes embaixo dela)
   vigaLargura: number;     // largura da viga
@@ -27,7 +28,7 @@ export interface Regras {
 export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
-  pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeEsp: 0.15,
+  pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeFolga: 0.02, lajeEsp: 0.15,
   vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vaoViga: 5.0, beiral: 1.0,
 };
 
@@ -43,7 +44,9 @@ export interface Leitura {
   textos: { text: string; x: number; y: number; h: number }[];
   prims: Prim[];                  // geometria toda (para desenhar)
   paredes: Prim[];                // geometria da camada de parede
+  linhas: LinhaProjeto[];         // "LINHA DE PISO" (viga de apoio) e projeções de laje/beiral
 }
+export interface LinhaProjeto { tipo: 'piso' | 'proj'; o: 'H' | 'V'; c: number; a: number; b: number; texto: string }
 
 const TAG_RE = /^[PJ]\s?-?\d{1,2}[A-Z]?$/i;
 const normTag = (t: string) => t.toUpperCase().replace(/[\s-]/g, '');
@@ -78,7 +81,42 @@ export function ler(d: Dxf, camadaParede: string): Leitura {
       if (comp < 0.2 || (doCentro && Math.abs(comp - rr) < 0.06)) prims.push(p);
     }
   }
-  return { regioes, tags, quadro, textos, prims, paredes };
+  return { regioes, tags, quadro, textos, prims, paredes, linhas: linhasDoProjeto(d, camadaParede, textos) };
+}
+
+// linhas indicadas por texto no projeto: "LINHA DE PISO" vira viga de apoio da laje;
+// "PROJ. LAJE / COBERTURA / BEIRAL" marca até onde a laje vai (beiral)
+function linhasDoProjeto(d: Dxf, camadaParede: string, textos: Leitura['textos']): LinhaProjeto[] {
+  const segs: { o: 'H' | 'V'; c: number; a: number; b: number; layer: string }[] = [];
+  for (const e of d.ents) {
+    if (e.layer === camadaParede) continue;
+    for (const p of entPrims(e)) {
+      if (p.kind !== 'line') continue;
+      for (let i = 0; i < p.pts.length - 1; i++) {
+        const [u, w] = [p.pts[i], p.pts[i + 1]];
+        if (Math.abs(u[1] - w[1]) < 0.01 && Math.abs(u[0] - w[0]) > 0.3) segs.push({ o: 'H', c: u[1], a: Math.min(u[0], w[0]), b: Math.max(u[0], w[0]), layer: e.layer });
+        else if (Math.abs(u[0] - w[0]) < 0.01 && Math.abs(u[1] - w[1]) > 0.3) segs.push({ o: 'V', c: u[0], a: Math.min(u[1], w[1]), b: Math.max(u[1], w[1]), layer: e.layer });
+      }
+    }
+  }
+  const out: LinhaProjeto[] = [];
+  for (const t of textos) {
+    const tx = t.text.toUpperCase().replace(/\s+/g, ' ');
+    const tipo = /LINHA DE PISO/.test(tx) ? 'piso' : (/PROJ/.test(tx) && /LAJE|COBERT|BEIRAL|MARQUISE/.test(tx)) || /^BEIRAL/.test(tx) ? 'proj' : null;
+    if (!tipo) continue;
+    let m: (typeof segs)[number] | null = null, md = 0.4;
+    for (const g of segs) {
+      const [al, pd] = g.o === 'H' ? [t.x, t.y - g.c] : [t.y, t.x - g.c];
+      if (al < g.a - 0.6 || al > g.b + 0.6 || g.b - g.a < 0.8) continue;
+      if (Math.abs(pd) < md) { md = Math.abs(pd); m = g; }
+    }
+    if (!m) continue;
+    // junta os pedaços alinhados da mesma linha
+    let a = m.a, b = m.b, mudou = true;
+    while (mudou) { mudou = false; for (const g of segs) if (g.layer === m.layer && g.o === m.o && Math.abs(g.c - m.c) < 0.01 && g.a <= b + 0.05 && g.b >= a - 0.05 && (g.a < a - 1e-6 || g.b > b + 1e-6)) { a = Math.min(a, g.a); b = Math.max(b, g.b); mudou = true; } }
+    if (!out.some(l => l.o === m!.o && Math.abs(l.c - m!.c) < 0.02 && Math.abs(l.a - a) < 0.05 && Math.abs(l.b - b) < 0.05)) out.push({ tipo, o: m.o, c: m.c, a, b, texto: t.text });
+  }
+  return out;
 }
 
 // agrupa as linhas de parede em regiões (cada planta/corte vira uma região)

@@ -4,10 +4,10 @@ import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, trechos, paineis, numerar, resumo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
-import { ambientes, modularLajes, numerarLajes } from './engine/lajes.ts';
+import { ambientes, modularLajes, numerarLajes, vaziosDeCima } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
-import { sugerirVigas, cargasDeCima, trelicasNasLajes } from './engine/vigas.ts';
+import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar } from './engine/vigas.ts';
 import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
@@ -132,17 +132,27 @@ export default function App() {
     const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [] };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
+    const naCaixa = (b: Box, l: { a: number; b: number; c: number; o: 'H' | 'V' }) => { const [x, y] = l.o === 'H' ? [(l.a + l.b) / 2, l.c] : [l.c, (l.a + l.b) / 2]; return x > b.x0 - 0.5 && x < b.x1 + 0.5 && y > b.y0 - 0.5 && y < b.y1 + 0.5; };
+    const pisos: Trecho[] = [];
     ativos.forEach((p, i) => {
-      const t = porPav[i];
+      const t = porPav[i], cima = ativos[i + 1], tc = porPav[i + 1] || [];
       const r = paineis(t, regras, aj);
       vazio.ts.push(...t); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
+      // "LINHA DE PISO" do projeto: viga que serve de apoio para a laje
+      const pp: Trecho[] = leitura.linhas.filter(l => l.tipo === 'piso' && naCaixa(p.box, l))
+        .map(l => ({ id: `${p.id}|piso|${l.c.toFixed(2)}|${l.a.toFixed(2)}`, pav: p.id, o: l.o, c: l.c, s: l.a, e: l.b, vaos: [], H: p.altura, esp: regras.vigaLargura }));
+      pisos.push(...pp);
+      // projeções de laje/beiral desta planta e áreas marcadas VAZIO no pavimento de cima
+      const bordas = leitura.linhas.filter(l => l.tipo === 'proj' && naCaixa(p.box, l));
+      const al = cima && tc.length && t.length ? alinhar(t, tc) : null;
+      const vz = cima && al ? vaziosDeCima(cima, tc, leitura.textos, al.dx, al.dy) : [];
       // o sentido da laje leva em conta as paredes do pavimento de cima
-      const m = modularLajes(ambientes(p, t), regras, aj, t, cargasDeCima(t, porPav[i + 1] || []));
+      const m = modularLajes(ambientes(p, t, pp, vz), regras, aj, [...t, ...pp], cargasDeCima([...t, ...pp], tc), bordas);
       vazio.lajes.push(...m.ambs); vazio.pl.push(...m.paineis);
     });
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
-    { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv })); }
+    { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv })); }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
 
@@ -267,7 +277,7 @@ export default function App() {
             </div>
             <h3>Lajes</h3>
             <div className="grade">
-              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima de cada parede (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima de cada parede (m)'], ['lajeFolga', 'Folga entre painéis de laje (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={regras[k] as number} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>

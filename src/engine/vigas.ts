@@ -7,7 +7,7 @@ import type { LajeAmb, PainelLaje } from './lajes.ts';
 
 export interface Viga {
   id: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number;
-  tipo: 'vao' | 'laje' | 'parede-cima' | 'trelica';   // trelica = reforço da laje sob parede de cima (sem viga)
+  tipo: 'vao' | 'laje' | 'parede-cima' | 'trelica' | 'piso';   // trelica = reforço da laje sob parede de cima (sem viga)
   obrigatoria: boolean; motivo: string; ideia: string;
   rebaixos: { painel: number; de: number; para: number }[];
 }
@@ -51,7 +51,8 @@ export function cargasDeCima(tb: Trecho[], tc: Trecho[]): Carga[] {
   return out;
 }
 
-export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos: VaoInteiro[], lajes: LajeAmb[], r: Regras): Viga[] {
+// pisos = vigas indicadas no projeto ("LINHA DE PISO"), como trechos de apoio
+export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos: VaoInteiro[], lajes: LajeAmb[], r: Regras, pisos: Trecho[] = []): Viga[] {
   const V: Viga[] = [];
   const painelEm = (pav: string, o: 'H' | 'V', c: number, a: number, b: number, tol = 0.12) =>
     ps.filter(p => p.pav === pav && p.o === o && Math.abs(p.c - c) < tol && p.a < b && p.b > a);
@@ -72,6 +73,18 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
   pavs.forEach((pav, ip) => {
     const cima = pavs[ip + 1];
     const tb = ts.filter(t => t.pav === pav.id), tc = cima ? ts.filter(t => t.pav === cima.id) : [];
+    const pp = pisos.filter(t => t.pav === pav.id);
+    // 0) linha de piso do projeto: viga que apoia a laje (e as paredes de cima que estiverem nela)
+    for (const t of pp) {
+      const sobre = cima ? cargasDeCima(tb, tc).filter(k => k.o === t.o && Math.abs(k.c - t.c) < 0.2 && k.a < t.e && k.b > t.s) : [];
+      const nums = [...new Set(ps.filter(p => sobre.some(k => k.t.id === p.trecho)).map(p => p.num))];
+      V.push({
+        id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a: t.s - r.vigaApoio, b: t.e + r.vigaApoio, tipo: 'piso', obrigatoria: true,
+        motivo: `Linha de piso do projeto (${br(t.e - t.s)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
+        ideia: `Viga na linha de piso, de ${br(t.e - t.s + 2 * r.vigaApoio)} m, apoiada nas paredes das pontas (ou pilares). Conferir com o engenheiro.`,
+        rebaixos: [],
+      });
+    }
     const al = tc.length && tb.length ? alinhar(tb, tc) : { dx: 0, dy: 0 };
     const cimaNaLinha = (o: 'H' | 'V', c: number, a: number, b: number) => tc.filter(t => t.o === o && Math.abs(t.c + (o === 'V' ? al.dx : al.dy) - c) < 0.15 &&
       t.s + (o === 'H' ? al.dx : al.dy) < b && t.e + (o === 'H' ? al.dx : al.dy) > a);
@@ -107,7 +120,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
     }
     // 3) paredes do pavimento de cima sem parede embaixo (um pedaço por ambiente de baixo)
     if (!cima || !tb.length || !tc.length) return;
-    for (const { t, c, a, b } of cargasDeCima(tb, tc)) {
+    for (const { t, c, a, b } of cargasDeCima([...tb, ...pp], tc)) {
       const nums = ps.filter(p => p.trecho === t.id).map(p => p.num);
       {
         if (vaos.some(v => v.pav === pav.id && v.o === t.o && Math.abs(v.c - c) < 0.15 && v.a <= a + 0.3 && v.b >= b - 0.3)) continue; // já tem viga do vão
