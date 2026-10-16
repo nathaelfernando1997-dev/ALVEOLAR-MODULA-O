@@ -516,6 +516,8 @@ function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: C
     {amb ? <>
       <h3>Ambiente selecionado</h3>
       <p>{br(amb.x1 - amb.x0)} × {br(amb.y1 - amb.y0)} m (eixos) · vão {br(amb.vao)} m</p>
+      {amb.aviso && <p className="erro">{amb.aviso}</p>}
+      {amb.info && <p className="dica">{amb.info}</p>}
       {P.filter(p => p.amb === amb.id).map(p => <div key={p.num} className="dica">L{p.num}: {br(p.comp)} × {br(p.larg)}</div>)}
       <button onClick={() => tog('lajeFora', amb.id)}>{(aj.lajeFora || []).includes(amb.id) ? 'Colocar laje neste ambiente' : 'Sem laje aqui (vazio, área externa)'}</button>
       <button onClick={() => tog('lajeGiro', amb.id)}>Girar o sentido dos painéis</button>

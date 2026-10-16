@@ -8,7 +8,7 @@ export interface Ambiente { id: string; pav: string; x0: number; x1: number; y0:
   esp: { o: number; l: number; s: number; n: number };
   externo?: { o: boolean; l: boolean; s: boolean; n: boolean } }  // lado que dá para fora (sem laje do outro lado)
 export interface PainelLaje { num: number; amb: string; pav: string; x0: number; y0: number; x1: number; y1: number; comp: number; larg: number; sentido: 'H' | 'V' }
-export interface LajeAmb extends Ambiente { incluida: boolean; sentido: 'H' | 'V' | null; vao: number; aviso?: string; vigas: number[]; apoiosParede: number[] }
+export interface LajeAmb extends Ambiente { incluida: boolean; sentido: 'H' | 'V' | null; vao: number; aviso?: string; info?: string; vigas: number[]; apoiosParede: number[] }
 
 const agrupa = (vs: number[], tol = 0.06) => {
   const s = [...vs].sort((a, b) => a - b); const out: number[] = [];
@@ -198,15 +198,17 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const sentido = esc ? esc.sn : null;
     const L: LajeAmb = { ...a, incluida, sentido, vao: esc ? esc.p.maior : 0, vigas: esc ? esc.p.vigas : [], apoiosParede: esc ? esc.p.internas : [] };
     const br2 = (v: number) => v.toFixed(2).replace('.', ',');
-    const avisos: string[] = [];
+    // aviso = precisa de atenção; info = só para saber (viga já sugerida, beiral dentro do permitido)
+    const avisos: string[] = [], infos: string[] = [];
     if (!sentido) avisos.push('sem parede de apoio nos dois lados');
-    else if (L.vigas.length) avisos.push(`vão de ${br2(sentido === 'H' ? lx : ly)} m: ${L.vigas.length} viga(s) sugerida(s) — conferir com o engenheiro`);
+    else if (L.vigas.length) infos.push(`vão de ${br2(sentido === 'H' ? lx : ly)} m: ${L.vigas.length} viga(s) no meio (aba Vigas)`);
     const bP = sentido ? lados(sentido).pontas.map(l => beiral(l)) : [null, null];
     if (sentido) {
-      for (const b of bP) if (b) avisos.push(`beiral de ${br2(b.d)} m pela projeção do projeto${b.d > r.beiral + 0.01 ? ` (maior que ${br2(r.beiral)} m — conferir)` : ''}`);
+      for (const b of bP) if (b) (b.d > r.beiral + 0.01 ? avisos : infos).push(`beiral de ${br2(b.d)} m pela projeção do projeto${b.d > r.beiral + 0.01 ? ` (maior que ${br2(r.beiral)} m — conferir)` : ''}`);
       for (const l of lados(sentido).laterais) { const b = beiral(l); if (b) avisos.push(`projeção de ${br2(b.d)} m na lateral dos painéis — painel não balança de lado: girar a laje ou apoiar a borda`); }
     }
     if (avisos.length) L.aviso = avisos.join(' · ');
+    if (infos.length) L.info = infos.join(' · ');
     res.push(L);
     if (!incluida || !esc) continue;
     // largura: divide o outro lado em partes iguais até a largura máxima
