@@ -106,13 +106,17 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       const Hb = v.H ?? pav.altura, naParede = Math.max(0, Math.min(hV, Hb - (v.topo ?? Hb)));
       const naLaje = Math.min(r.lajeEsp, hV - naParede), sobe = Math.max(0, hV - naParede - naLaje);
       const cimaPs = cima ? ps.filter(p => p.pav === cima.id && sobre.some(t => t.id === p.trecho) && p.a + (v.o === 'H' ? al.dx : al.dy) < b && p.b + (v.o === 'H' ? al.dx : al.dy) > a) : [];
-      const desconto = sobe > 0.005 ? cimaPs.map(p => ({ painel: p.num, de: p.H, para: Math.max(0, p.H - sobe) })) : [];
-      const partes = `Viga de ${br(hV)} m de altura (10% do vão${hV > w * 0.1 + 0.05 ? ', mínimo da regra' : ''}): ${br(naParede)} m na parede acima da porta, ${br(naLaje)} m na laje${sobe > 0.005 ? ` e ${br(sobe)} m para cima${desconto.length ? ` — paredes ${desconto.map(d => d.painel).join(', ')} do ${cima!.nome} apoiam em cima da viga e baixam de ${br(desconto[0].de)} para ${br(desconto[0].para)} m` : ''}` : ''}.`;
+      // até 10 cm não vale baixar a parede de cima: a viga fica mais baixa e reforça a ferragem
+      const pouco = sobe > 0.005 && sobe <= 0.10 + 1e-6;
+      const desconto = sobe > 0.005 && !pouco ? cimaPs.map(p => ({ painel: p.num, de: p.H, para: Math.max(0, p.H - sobe) })) : [];
+      const partes = pouco
+        ? `Viga de ${br(naParede + naLaje)} m (${br(naParede)} m na parede acima da porta + ${br(naLaje)} m na laje), em vez de ${br(hV)} m (10% do vão): faltam só ${br(sobe)} m, então as paredes de cima não baixam — reforçar a ferragem da viga.`
+        : `Viga de ${br(hV)} m de altura (10% do vão${hV > w * 0.1 + 0.05 ? ', mínimo da regra' : ''}): ${br(naParede)} m na parede acima da porta, ${br(naLaje)} m na laje${sobe > 0.005 ? ` e ${br(sobe)} m para cima${desconto.length ? ` — paredes ${desconto.map(d => d.painel).join(', ')} do ${cima!.nome} apoiam em cima da viga e baixam de ${br(desconto[0].de)} para ${br(desconto[0].para)} m` : ''}` : ''}.`;
       V.push({
         id: `${pav.id}-vao-${v.a.toFixed(2)}`, pav: pav.id, o: v.o, c: v.c, a, b, tipo: 'vao', obrigatoria: obrig, apoio: r.vigaApoio,
         motivo: `${v.tipo === 'vão livre' ? 'Vão livre' : v.tipo} de ${br(w)} m sem parede${sobre.length ? `, com parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima!.nome} em cima` : ''}${apoia ? ', e a laje apoia nesse alinhamento' : ''}${w > r.vaoViga ? ` (vão maior que ${br(r.vaoViga)} m)` : ''}.`,
         ideia: `Viga sobre o vão, de ${br(b - a)} m, entrando ${br(r.vigaApoio)} m em cima das paredes dos lados. ${partes}`,
-        altura: hV, desconto,
+        altura: pouco ? naParede + naLaje : hV, desconto,
         // nas paredes dos lados a viga ocupa a parte de cima (apoio)
         rebaixos: naParede > 0.005 ? painelEm(pav.id, v.o, v.c, a, b).filter(p => p.a < v.a || p.b > v.b).map(p => ({ painel: p.num, de: p.H, para: Math.max(0, p.H - naParede) })) : [],
       });
