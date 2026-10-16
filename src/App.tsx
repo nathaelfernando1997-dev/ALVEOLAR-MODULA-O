@@ -6,7 +6,7 @@ import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro,
 import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
-import { lerCortes, conferir } from './engine/cortes.ts';
+import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas } from './engine/vigas.ts';
 import type { Viga } from './engine/vigas.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
@@ -83,7 +83,16 @@ export default function App() {
     if (cfg) { setPavs(cfg.pavs); setQuadro(cfg.quadro); setRegras({ ...REGRAS_PADRAO, ...cfg.regras }); setAj({ ...AJUSTES_VAZIOS, ...cfg.ajustes }); }
     else {
       const L = ler(d, cam);
-      setPavs(L.regioes.map((b, i) => ({ id: `R${i + 1}`, nome: `Desenho ${i + 1}`, box: b, altura: 2.8, ativo: false, corte: false })));
+      // papéis e pés-direitos automáticos: plantas da esquerda para a direita / de cima para baixo recebem os pés-direitos dos cortes em ordem
+      const papeis = adivinharPapeis(d, L.regioes, L.tags);
+      const pes = detectarPes(d, L.regioes.filter((_, i) => papeis[i] !== 'planta'));
+      const nomes = ['Térreo', 'Pavimento superior', '2º pavimento', '3º pavimento'];
+      let k = 0;
+      setPavs(L.regioes.map((b, i) => {
+        const planta = papeis[i] === 'planta', corte = papeis[i] === 'corte';
+        const n = planta ? k++ : -1;
+        return { id: `R${i + 1}`, nome: planta ? (nomes[n] ?? `Pavimento ${n + 1}`) : corte ? `Corte ${i + 1}` : `Desenho ${i + 1}`, box: b, altura: planta ? (pes[n] ?? pes[pes.length - 1] ?? 2.8) : 2.8, ativo: planta, corte };
+      }));
       setQuadro(L.quadro); setRegras(REGRAS_PADRAO); setAj(AJUSTES_VAZIOS);
     }
     setTimeout(() => setPronto(true), 0);
@@ -118,6 +127,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [projId, pronto, camada, pavs, quadro, regras, aj]);
   const ativos = pavs.filter(p => p.ativo);
+  const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
     const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [] };
     if (!leitura) return vazio;
@@ -190,11 +200,18 @@ export default function App() {
           <section className="card">
             <h2>O que é cada desenho</h2>
             <p>Para cada desenho com paredes, diga se é uma <b>planta baixa</b> (vai ser modulada), um <b>corte</b> (usado para conferir alturas) ou se não deve ser usado. Nas plantas, informe o nome e o pé-direito. A ordem da lista é a ordem da numeração.</p>
+            {pesLidos.length > 0 ? <p className="ok-box">Pés-direitos lidos dos cortes, de baixo para cima: <b>{pesLidos.map(v => br(v)).join(' · ')}</b>.
+              {' '}<button onClick={() => { let k = 0; setPavs(pavs.map(q => q.ativo ? { ...q, altura: pesLidos[k++] ?? pesLidos[pesLidos.length - 1] } : q)); }}>Aplicar às plantas na ordem</button></p>
+              : <p className="dica">Não encontrei pés-direitos nas cotas dos cortes. Informe a altura de cada planta.</p>}
             <div className="regioes">
               {pavs.map((p, i) => (
                 <div key={p.id} className={'regiao' + (p.ativo ? ' on' : p.corte ? ' corte' : '')}>
                   <Miniatura prims={leitura.paredes} box={p.box} />
-                  <select value={p.ativo ? 'planta' : p.corte ? 'corte' : 'nao'} onChange={e => setPavs(pavs.map(q => q.id === p.id ? { ...q, ativo: e.target.value === 'planta', corte: e.target.value === 'corte' } : q))}>
+                  <select value={p.ativo ? 'planta' : p.corte ? 'corte' : 'nao'} onChange={e => {
+                    const novo = pavs.map(q => q.id === p.id ? { ...q, ativo: e.target.value === 'planta', corte: e.target.value === 'corte' } : q);
+                    const ordem = novo.filter(q => q.ativo).map(q => q.id);
+                    setPavs(novo.map(q => q.id === p.id && q.ativo && pesLidos.length ? { ...q, altura: pesLidos[ordem.indexOf(q.id)] ?? pesLidos[pesLidos.length - 1] } : q));
+                  }}>
                     <option value="nao">Não usar</option><option value="planta">Planta baixa (modular)</option><option value="corte">Corte (conferir alturas)</option>
                   </select>
                   <input value={p.nome} onChange={e => setPavs(pavs.map(q => q.id === p.id ? { ...q, nome: e.target.value } : q))} />

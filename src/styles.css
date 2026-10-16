@@ -101,3 +101,4 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .vigas .viga.on { background: #eef8ee; border-color: #0a0; }
 .tvigas { width: 95mm; font-size: 7pt; overflow: hidden; }
 .tvigas p { margin: 0 0 3px; }
+.ok-box { background: #eef8ee; border: 1px solid #b7dcb7; padding: 6px 10px; border-radius: 6px; }
