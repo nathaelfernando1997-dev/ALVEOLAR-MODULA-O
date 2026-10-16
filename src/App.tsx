@@ -277,7 +277,7 @@ export default function App() {
             </div>
             <h3>Lajes</h3>
             <div className="grade">
-              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima de cada parede (m)'], ['lajeFolga', 'Folga entre painéis de laje (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima da parede com laje dos dois lados (m)'], ['lajeApoioBorda', 'Apoio onde só uma laje apoia na parede (m)'], ['lajeFolga', 'Folga entre painéis de laje (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={regras[k] as number} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
@@ -560,7 +560,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome }: { ativos: Pavimento[]; c
             {P.map(p => <tr key={p.num}><td>L{p.num}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(p.comp * p.larg)}</td></tr>)}
             <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + p.comp * p.larg, 0))}</td></tr>
           </tbody></table></div>
-        {rod('Comprimento = vão + apoio em cima de cada parede · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
+        {rod('Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
       </div>);
       if (TPf.length) folhas.push(<div className="folha" key={pav.id + 't'}>
         <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()}</div>

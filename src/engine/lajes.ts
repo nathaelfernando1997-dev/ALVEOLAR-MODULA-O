@@ -139,6 +139,13 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       return c ? { c: c.c, d: Math.abs(c.c - ed) } : null;
     };
     const lados = (sn: 'H' | 'V') => sn === 'H' ? { pontas: ['o', 'l'] as const, laterais: ['s', 'n'] as const } : { pontas: ['s', 'n'] as const, laterais: ['o', 'l'] as const };
+    // apoio em cima da parede: 6 cm onde a parede recebe laje dos dois lados; 10 cm onde só esta laje apoia
+    const vizinho = (lado: 'o' | 'l' | 's' | 'n') => ambs.some(b => b !== a && b.pav === a.pav && !fora.includes(b.id) && (
+      lado === 'o' ? Math.abs(b.x1 - a.x0) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.3
+      : lado === 'l' ? Math.abs(b.x0 - a.x1) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.3
+      : lado === 's' ? Math.abs(b.y1 - a.y0) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.3
+      : Math.abs(b.y0 - a.y1) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.3));
+    const apo = (lado: 'o' | 'l' | 's' | 'n') => !a.apoio[lado] ? 0 : vizinho(lado) ? r.lajeApoio : (r.lajeApoioBorda ?? 0.10);
     // planeja os apoios num sentido: bordas + paredes internas (a laje apoia nelas) + vigas só onde faltar
     const plano = (sent: 'H' | 'V') => {
       const [ini, fim] = sent === 'H' ? [cx0, cx1] : [cy0, cy1];
@@ -160,7 +167,8 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       for (let k = 0; k < apoios.length - 1; k++) {
         const s0 = apoios[k].b, s1 = apoios[k + 1].a, vao = s1 - s0;
         if (vao <= 0.05) continue;
-        const A = k === 0 && bA ? bA.c : s0 - ap, B = k === apoios.length - 2 && bB ? bB.c : s1 + ap;
+        const [pA, pB] = lados(sent).pontas;
+        const A = k === 0 ? (bA ? bA.c : s0 - apo(pA)) : s0 - ap, B = k === apoios.length - 2 ? (bB ? bB.c : s1 + apo(pB)) : s1 + ap;
         const nV = Math.ceil((B - A) / r.lajeComp - 1e-9);
         if (nV <= 1) { vaos.push([s0, s1]); continue; }
         // uma viga só: tenta embaixo de uma parede de cima, se os dois painéis couberem
@@ -202,13 +210,17 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     res.push(L);
     if (!incluida || !esc) continue;
     // largura: divide o outro lado em partes iguais até a largura máxima
-    const { l0, l1 } = esc.p, ladoL = l1 - l0;
+    // nas laterais o painel também entra em cima da parede
+    const [la0, la1] = lados(esc.sn).laterais;
+    const l0 = esc.p.l0 - apo(la0), l1 = esc.p.l1 + apo(la1), ladoL = l1 - l0;
+    const [pa0, pa1] = lados(esc.sn).pontas;
     // folga entre painéis vizinhos para o encaixe
     const f = r.lajeFolga ?? 0.02;
     const n = Math.max(1, Math.ceil((ladoL + f) / (r.lajeLarg + f) - 1e-9)), w = (ladoL - (n - 1) * f) / n;
     esc.p.vaos.forEach(([s0, s1], iv) => { for (let k = 0; k < n; k++) {
       // nas pontas com beiral o painel vai até a linha da projeção
-      const a0 = iv === 0 && bP[0] ? bP[0].c : s0 - r.lajeApoio, a1 = iv === esc.p.vaos.length - 1 && bP[1] ? bP[1].c : s1 + r.lajeApoio, b0 = l0 + k * (w + f), b1 = b0 + w;
+      const ult = iv === esc.p.vaos.length - 1;
+      const a0 = iv === 0 ? (bP[0] ? bP[0].c : s0 - apo(pa0)) : s0 - r.lajeApoio, a1 = ult ? (bP[1] ? bP[1].c : s1 + apo(pa1)) : s1 + r.lajeApoio, b0 = l0 + k * (w + f), b1 = b0 + w;
       const [x0, x1, y0, y1] = sentido === 'H' ? [a0, a1, b0, b1] : [b0, b1, a0, a1];
       P.push({ num: 0, amb: a.id, pav: a.pav, x0, x1, y0, y1, comp: a1 - a0, larg: w, sentido: sentido! });
     } });

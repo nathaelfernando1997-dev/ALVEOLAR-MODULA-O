@@ -23,7 +23,7 @@ O arquivo é lido no próprio navegador (não vai para servidor). Os ajustes de 
 - Recortes: +10 cm na largura; porta = boneca 0,10 + altura do quadro; janela desce 5 cm abaixo do peitoril e sobe 5 cm acima.
 - Boneca de 10 cm nas laterais e embaixo dos recortes (retirada na obra).
 - T pinado (opcional, automático ou parede a parede): a parede contínua passa sem coluna e a outra é pinada nela.
-- Laje: vão máximo 5,00 m (pode ser menor), largura máxima 3,00 m, folga de 2 cm entre painéis vizinhos, apoio de 6 cm em cima de cada parede; a laje apoia nas paredes (inclusive internas) e o sentido é escolhido para usar menos vigas; beiral até 1,00 m sem viga.
+- Laje: vão máximo 5,00 m (pode ser menor), largura máxima 3,00 m, folga de 2 cm entre painéis vizinhos, apoio em cima das paredes em todos os lados: 6 cm onde a parede recebe laje dos dois lados e 10 cm onde só uma laje apoia; a laje apoia nas paredes (inclusive internas) e o sentido é escolhido para usar menos vigas; beiral até 1,00 m sem viga.
 - Projeto: "LINHA DE PISO" vira viga de apoio da laje; linhas de "PROJ. LAJE / COBERTURA / BEIRAL" marcam até onde a laje vai (beiral nas pontas dos painéis); áreas escritas "VAZIO" no pavimento de cima ficam sem laje.
 - Vigas sugeridas: vão sem parede onde a laje apoia ou com parede em cima (obrigatória acima de 5,00 m); laje com vão maior que o painel mesmo usando as paredes. Paredes de cima sobre a laje não levam viga: a laje é reforçada com treliças embaixo delas.
 
