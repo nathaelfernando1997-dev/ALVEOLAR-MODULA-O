@@ -8,6 +8,7 @@ import { ambientes, modularLajes, numerarLajes } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir } from './engine/cortes.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
+import { ZoomSvg } from './Zoom.tsx';
 
 type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'cortes' | 'impressao';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
@@ -260,7 +261,7 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
   const base = useMemo(() => plantaConteudo(L, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arq, q), [L, pav, calc, arq]);
   return (
     <div className="planta">
-      <svg viewBox={q.vb}>
+      <ZoomSvg vb={q.vb}>
         <g dangerouslySetInnerHTML={{ __html: base }} />
         {ps.map(p => {
           const on = sel?.trecho === p.trecho;
@@ -280,8 +281,8 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
           const on = vaoSel === key;
           return <rect key={key} className="hit" x={q.X(x)} y={q.Y(y + h)} width={w * q.k} height={h * q.k} fill={on ? 'rgba(204,0,204,.35)' : v.tag ? 'rgba(204,0,204,.08)' : 'rgba(255,170,0,.25)'} stroke={v.tag ? '#c0c' : '#e80'} strokeWidth={2} strokeDasharray={v.tag ? '' : '8 5'} onClick={() => onVao(key)}><title>{v.tag ? `${v.tag}` : 'vão sem etiqueta — clique para definir'}</title></rect>;
         }))}
-      </svg>
-      <p className="dica">{cortando ? 'Clique no ponto da parede selecionada onde ela deve ser dividida.' : 'Clique numa parede para ajustar. Os vãos em laranja não têm etiqueta no projeto: clique para dizer se é porta, janela ou vão livre.'}</p>
+      </ZoomSvg>
+      <p className="dica">{cortando ? 'Clique no ponto da parede selecionada onde ela deve ser dividida.' : 'Roda do mouse ou + / − para zoom, arraste para mover. Clique numa parede para ajustar. Os vãos em laranja não têm etiqueta no projeto: clique para dizer se é porta, janela ou vão livre.'}</p>
     </div>
   );
 }
@@ -291,10 +292,10 @@ function PlantaLajes({ pav, calc, arq, ambSel, onAmb }: { pav: Pavimento; calc: 
   const lj = calc.lajes.filter(a => a.pav === pav.id), P = calc.pl.filter(p => p.pav === pav.id);
   return (
     <div className="planta">
-      <svg viewBox={q.vb}>
+      <ZoomSvg vb={q.vb}>
         <g dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arq) + lajesConteudo(lj, P, q) }} />
         {lj.map(a => <rect key={a.id} className="hit" x={q.X(a.x0)} y={q.Y(a.y1)} width={(a.x1 - a.x0) * q.k} height={(a.y1 - a.y0) * q.k} fill={ambSel === a.id ? 'rgba(230,0,0,.12)' : 'transparent'} stroke={a.aviso ? '#e80' : 'transparent'} strokeWidth={a.aviso ? 4 : 0} onClick={() => onAmb(a.id)}><title>{a.aviso || 'clique para ajustar'}</title></rect>)}
-      </svg>
+      </ZoomSvg>
       <p className="dica">Laje sobre este pavimento. Clique num ambiente para tirar a laje (vazio, área externa) ou girar o sentido dos painéis. Contorno laranja = precisa de atenção.</p>
     </div>
   );

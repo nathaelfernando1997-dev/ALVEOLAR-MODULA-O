@@ -77,3 +77,8 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .acoes button.on { background: #d11; color: #fff; border-color: #d11; }
 .corte-item { display: flex; justify-content: space-between; align-items: center; font-size: 13px; background: #f4f6f9; padding: 2px 6px; border-radius: 4px; margin: 3px 0; }
 .corte-item button { width: auto; display: inline-block; padding: 2px 8px; }
+.zoom { position: relative; }
+.zoom svg { width: 100%; height: calc(100vh - 200px); min-height: 420px; cursor: grab; display: block; }
+.zoom svg:active { cursor: grabbing; }
+.zoom-bt { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+.zoom-bt button { width: 36px; height: 36px; margin: 0; padding: 0; font-size: 20px; line-height: 1; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
