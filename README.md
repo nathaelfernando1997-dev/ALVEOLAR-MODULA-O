@@ -23,7 +23,8 @@ O arquivo é lido no próprio navegador (não vai para servidor). Os ajustes de 
 - Recortes: +10 cm na largura; porta = boneca 0,10 + altura do quadro; janela desce 5 cm abaixo do peitoril e sobe 5 cm acima.
 - Boneca de 10 cm nas laterais e embaixo dos recortes (retirada na obra).
 - T pinado (opcional, automático ou parede a parede): a parede contínua passa sem coluna e a outra é pinada nela.
-- Laje: comprimento máximo 4,50 m, largura máxima 3,00 m, apoio de 6 cm em cima de cada parede; vãos maiores recebem viga sugerida (conferir com o engenheiro).
+- Laje: vão máximo 5,00 m (pode ser menor), largura máxima 3,00 m, apoio de 6 cm em cima de cada parede; a laje apoia nas paredes (inclusive internas) e o sentido é escolhido para usar menos vigas; beiral até 1,00 m sem viga.
+- Vigas sugeridas: vão sem parede onde a laje apoia ou com parede em cima (obrigatória acima de 5,00 m); laje com vão maior que o painel mesmo usando as paredes; parede de cima que corre ao longo dos painéis ou em balanço além do beiral. Paredes de cima que atravessam os painéis ficam apoiadas na laje (conferir carga).
 
 ## Desenvolvimento
 

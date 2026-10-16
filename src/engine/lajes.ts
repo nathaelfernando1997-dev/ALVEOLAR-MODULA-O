@@ -7,7 +7,7 @@ export interface Ambiente { id: string; pav: string; x0: number; x1: number; y0:
   apoio: { o: boolean; l: boolean; s: boolean; n: boolean };  // oeste, leste, sul, norte têm parede
   esp: { o: number; l: number; s: number; n: number } }
 export interface PainelLaje { num: number; amb: string; pav: string; x0: number; y0: number; x1: number; y1: number; comp: number; larg: number; sentido: 'H' | 'V' }
-export interface LajeAmb extends Ambiente { incluida: boolean; sentido: 'H' | 'V' | null; vao: number; aviso?: string; vigas: number[] }
+export interface LajeAmb extends Ambiente { incluida: boolean; sentido: 'H' | 'V' | null; vao: number; aviso?: string; vigas: number[]; apoiosParede: number[] }
 
 const agrupa = (vs: number[], tol = 0.06) => {
   const s = [...vs].sort((a, b) => a - b); const out: number[] = [];
@@ -75,40 +75,57 @@ export function ambientes(pav: Pavimento, ts: Trecho[]): Ambiente[] {
   return out;
 }
 
-export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes): { ambs: LajeAmb[]; paineis: PainelLaje[] } {
+export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trecho[] = []): { ambs: LajeAmb[]; paineis: PainelLaje[] } {
   const res: LajeAmb[] = []; const P: PainelLaje[] = [];
   const fora = aj.lajeFora || [], giro = aj.lajeGiro || [];
-  const vaoMax = r.lajeComp - 2 * r.lajeApoio;
+  const esV = r.vigaLargura || 0.15;
   for (const a of ambs) {
     // vão livre entre faces das paredes
     const cx0 = a.x0 + a.esp.o / 2, cx1 = a.x1 - a.esp.l / 2, cy0 = a.y0 + a.esp.s / 2, cy1 = a.y1 - a.esp.n / 2;
     const lx = cx1 - cx0, ly = cy1 - cy0;
     const incluida = !fora.includes(a.id);
-    // sentido do painel: vence o menor vão que tenha parede dos dois lados
     const podeH = a.apoio.o && a.apoio.l, podeV = a.apoio.s && a.apoio.n;
-    let sentido: 'H' | 'V' | null = podeH && podeV ? (lx <= ly ? 'H' : 'V') : podeH ? 'H' : podeV ? 'V' : null;
-    if (sentido && giro.includes(a.id)) sentido = sentido === 'H' ? (podeV ? 'V' : 'H') : (podeH ? 'H' : 'V');
-    const L: LajeAmb = { ...a, incluida, sentido, vao: sentido === 'H' ? lx : sentido === 'V' ? ly : 0, vigas: [] };
+    // planeja os apoios num sentido: bordas + paredes internas (a laje apoia nelas) + vigas só onde faltar
+    const plano = (sent: 'H' | 'V') => {
+      const [ini, fim] = sent === 'H' ? [cx0, cx1] : [cy0, cy1];
+      const [l0, l1] = sent === 'H' ? [cy0, cy1] : [cx0, cx1];
+      const oParede: 'H' | 'V' = sent === 'H' ? 'V' : 'H';
+      // parede interna paralela às bordas de apoio, cobrindo boa parte do outro lado
+      const internas = ts.filter(t => t.pav === a.pav && t.o === oParede && t.c > ini + 0.3 && t.c < fim - 0.3 &&
+        Math.min(t.e, l1) - Math.max(t.s, l0) > 0.6 * (l1 - l0)).map(t => ({ c: t.c, esp: t.esp })).sort((p, q) => p.c - q.c);
+      const apoios: { a: number; b: number }[] = [{ a: ini - 1, b: ini }];
+      for (const w of internas) apoios.push({ a: w.c - w.esp / 2, b: w.c + w.esp / 2 });
+      apoios.push({ a: fim, b: fim + 1 });
+      const vaos: [number, number][] = []; const vigas: number[] = [];
+      for (let k = 0; k < apoios.length - 1; k++) {
+        const s0 = apoios[k].b, s1 = apoios[k + 1].a, vao = s1 - s0;
+        if (vao <= 0.05) continue;
+        const nV = Math.ceil((vao + 2 * r.lajeApoio) / r.lajeComp - 1e-9);
+        if (nV > 1) {
+          const passo = (vao - (nV - 1) * esV) / nV;
+          for (let m = 0; m < nV; m++) { const q0 = s0 + m * (passo + esV); vaos.push([q0, q0 + passo]); if (m) vigas.push(q0 - esV / 2); }
+        } else vaos.push([s0, s1]);
+      }
+      return { vaos, vigas, internas: internas.map(w => w.c), maior: Math.max(...vaos.map(([p, q]) => q - p)), l0, l1 };
+    };
+    const opcoes = ([podeH ? 'H' : null, podeV ? 'V' : null].filter(Boolean) as ('H' | 'V')[]).map(sn => ({ sn, p: plano(sn) }));
+    // escolhe o sentido com menos vigas; empate: o menor vão
+    opcoes.sort((x, y) => x.p.vigas.length - y.p.vigas.length || x.p.maior - y.p.maior);
+    let esc = opcoes[0];
+    if (esc && giro.includes(a.id) && opcoes[1]) esc = opcoes[1];
+    const sentido = esc ? esc.sn : null;
+    const L: LajeAmb = { ...a, incluida, sentido, vao: esc ? esc.p.maior : 0, vigas: esc ? esc.p.vigas : [], apoiosParede: esc ? esc.p.internas : [] };
     if (!sentido) L.aviso = 'sem parede de apoio nos dois lados';
+    else if (L.vigas.length) L.aviso = `vão de ${(sentido === 'H' ? lx : ly).toFixed(2).replace('.', ',')} m: ${L.vigas.length} viga(s) sugerida(s) — conferir com o engenheiro`;
     res.push(L);
-    if (!incluida || !sentido) continue;
-    // vão maior que o painel: sugere vigas intermediárias
-    const vao = sentido === 'H' ? lx : ly;
-    const nV = Math.ceil((vao + 2 * r.lajeApoio) / r.lajeComp - 1e-9);
-    const trechosVao: [number, number][] = [];
-    const ini = sentido === 'H' ? cx0 : cy0, esV = 0.15;
-    if (nV > 1) {
-      const passo = (vao - (nV - 1) * esV) / nV;
-      L.aviso = `vão de ${vao.toFixed(2).replace('.', ',')} m maior que o painel: ${nV - 1} viga(s) sugerida(s) — conferir com o engenheiro`;
-      for (let k = 0; k < nV; k++) { const s0 = ini + k * (passo + esV); trechosVao.push([s0, s0 + passo]); if (k) L.vigas.push(s0 - esV / 2); }
-    } else trechosVao.push([ini, ini + vao]);
+    if (!incluida || !esc) continue;
     // largura: divide o outro lado em partes iguais até a largura máxima
-    const lado0 = sentido === 'H' ? cy0 : cx0, ladoL = sentido === 'H' ? ly : lx;
+    const { l0, l1 } = esc.p, ladoL = l1 - l0;
     const n = Math.max(1, Math.ceil(ladoL / r.lajeLarg - 1e-9)), w = ladoL / n;
-    for (const [s0, s1] of trechosVao) for (let k = 0; k < n; k++) {
-      const a0 = s0 - r.lajeApoio, a1 = s1 + r.lajeApoio, b0 = lado0 + k * w, b1 = b0 + w;
+    for (const [s0, s1] of esc.p.vaos) for (let k = 0; k < n; k++) {
+      const a0 = s0 - r.lajeApoio, a1 = s1 + r.lajeApoio, b0 = l0 + k * w, b1 = b0 + w;
       const [x0, x1, y0, y1] = sentido === 'H' ? [a0, a1, b0, b1] : [b0, b1, a0, a1];
-      P.push({ num: 0, amb: a.id, pav: a.pav, x0, x1, y0, y1, comp: a1 - a0, larg: w, sentido });
+      P.push({ num: 0, amb: a.id, pav: a.pav, x0, x1, y0, y1, comp: a1 - a0, larg: w, sentido: sentido! });
     }
   }
   return { ambs: res, paineis: P };

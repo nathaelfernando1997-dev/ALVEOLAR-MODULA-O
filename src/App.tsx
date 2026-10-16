@@ -125,7 +125,7 @@ export default function App() {
       const t = trechos(leitura, p, quadro, regras, aj);
       const r = paineis(t, regras, aj);
       vazio.ts.push(...t); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
-      const m = modularLajes(ambientes(p, t), regras, aj);
+      const m = modularLajes(ambientes(p, t), regras, aj, t);
       vazio.lajes.push(...m.ambs); vazio.pl.push(...m.paineis);
     }
     numerar(vazio.ps, ativos.map(p => p.id));
@@ -248,13 +248,13 @@ export default function App() {
             </div>
             <h3>Lajes</h3>
             <div className="grade">
-              {([['lajeComp', 'Comprimento máximo do painel (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima de cada parede (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima de cada parede (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={regras[k] as number} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
             <h3>Vigas</h3>
             <div className="grade">
-              {([['vigaAltura', 'Altura da viga (rebaixo nas paredes) (m)'], ['vigaLargura', 'Largura da viga (m)'], ['vigaApoio', 'Apoio da viga em cima da parede (m)'], ['vaoViga', 'Vão sem parede a partir do qual a viga é obrigatória (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['vigaAltura', 'Altura da viga (rebaixo nas paredes) (m)'], ['vigaLargura', 'Largura da viga (m)'], ['vigaApoio', 'Apoio da viga em cima da parede (m)'], ['vaoViga', 'Vão sem parede a partir do qual a viga é obrigatória (m)'], ['beiral', 'Beiral (balanço) de laje sem viga até (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={regras[k] as number} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
@@ -262,7 +262,7 @@ export default function App() {
               <li>Paredes acima da largura máxima são divididas em partes iguais, com coluna entre elas. No T, a coluna fica só na parede que segue alinhada (ou nenhuma, se a parede for pinada).</li>
               <li>Porta: boneca embaixo + altura do quadro (0,10 + 2,10 = 2,20). Janela: o peitoril baixa e o topo sobe pelo valor acima. Largura sempre maior pelo acréscimo.</li>
               <li>Boneca nas laterais de toda porta/janela que chega no fim da parede, e embaixo das portas.</li>
-              <li>Laje: o painel vence o menor vão entre paredes e entra o apoio em cima de cada uma. A largura é dividida em partes iguais até a largura máxima.</li>
+              <li>Laje: apoia sempre que possível nas paredes (inclusive internas); o painel pode ser menor que o máximo. O sentido é escolhido para precisar de menos vigas. Beiral até o limite acima sem viga.</li>
             </ul>
             <button onClick={() => setRegras(REGRAS_PADRAO)}>Voltar ao padrão</button>
           </section>
