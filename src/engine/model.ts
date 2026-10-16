@@ -195,6 +195,7 @@ export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: []
 const idTrecho = (pav: string, o: string, c: number, s: number) => `${pav}|${o}|${c.toFixed(2)}|${s.toFixed(2)}`;
 
 export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regras, aj: Ajustes): Trecho[] {
+  const L0 = L;
   const { H, V } = faces(L.paredes, pav.box);
   const ax = { H: eixos(H, r), V: eixos(V, r) };
   const Q = new Map(quadro.map(q => [q.tag, q]));
@@ -239,6 +240,52 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
       fecha(ps[ps.length - 1][1]);
     }
   }
+  // parede que é só a janela (sem linhas de parede, só o bloco): fica entre as pontas de duas paredes perpendiculares
+  // etiqueta já atendida = existe um vão com essa etiqueta perto dela
+  const soJanela = new Set<Trecho>();
+  const usadas = out.flatMap(t => t.vaos.filter(v => v.tag).map(v => { const m = (v.a + v.b) / 2; return { tag: v.tag, x: t.o === 'H' ? m : t.c, y: t.o === 'H' ? t.c : m }; }));
+  for (const t of tags) {
+    const q = Q.get(t.text);
+    if (!q || !q.tag.startsWith('J') || usadas.some(u => u.tag === q.tag && Math.hypot(u.x - t.x, u.y - t.y) < 0.8 + q.larg / 2)) continue;
+    let melhor: { o: 'H' | 'V'; c: number; s: number; e: number; esp: number; d: number } | null = null;
+    for (const o of ['H', 'V'] as const) {
+      // paredes perpendiculares (eixo constante no outro sentido) que terminam perto da etiqueta
+      const along = o === 'H' ? t.x : t.y, across = o === 'H' ? t.y : t.x;
+      const pontas: { c: number; fim: number; dir: number; esp: number }[] = [];
+      for (const ax2 of ax[o === 'H' ? 'V' : 'H']) for (const [p0, p1] of ax2.ps) {
+        if (p1 - p0 < 0.3) continue;
+        if (Math.abs(p0 - across) < 0.7) pontas.push({ c: ax2.c, fim: p0, dir: 1, esp: ax2.esp });
+        if (Math.abs(p1 - across) < 0.7) pontas.push({ c: ax2.c, fim: p1, dir: -1, esp: ax2.esp });
+      }
+      for (const a of pontas) for (const b of pontas) {
+        if (a.c >= b.c || a.c > along || b.c < along || Math.abs(a.fim - b.fim) > 0.2) continue;
+        const s = a.c + a.esp / 2, e = b.c - b.esp / 2, L = e - s;
+        if (L < q.larg - 0.1 || L > q.larg + 0.6 || L > r.larguraMax) continue;
+        let esp = (a.esp + b.esp) / 2, c = (a.fim + b.fim) / 2 + (a.dir === b.dir ? a.dir * esp / 2 : 0);
+        // posição exata pelas linhas do bloco da janela (paralelas à parede, no vão)
+        const ls: number[] = [];
+        for (const p of L0.prims) if (p.kind === 'line') for (let i = 0; i < p.pts.length - 1; i++) {
+          const [u, w] = [p.pts[i], p.pts[i + 1]];
+          const [ua, wa, uc, wc] = o === 'H' ? [u[0], w[0], u[1], w[1]] : [u[1], w[1], u[0], w[0]];
+          if (Math.abs(uc - wc) > 0.01 || Math.abs(uc - c) > 0.3) continue;
+          const lo = Math.min(ua, wa), hi = Math.max(ua, wa);
+          if (hi - lo >= 0.5 * L && lo >= s - 0.12 && hi <= e + 0.12) ls.push(uc);
+        }
+        if (ls.length >= 2 && Math.max(...ls) - Math.min(...ls) >= r.espMin - 0.03 && Math.max(...ls) - Math.min(...ls) <= r.espMax) {
+          c = (Math.max(...ls) + Math.min(...ls)) / 2; esp = Math.max(...ls) - Math.min(...ls);
+        }
+        if (out.some(x => x.pav === pav.id && x.o === o && Math.abs(x.c - c) < 0.1 && x.s < e - 0.05 && x.e > s + 0.05)) continue;
+        const d = Math.abs(across - c) + Math.abs(L - q.larg);
+        if (!melhor || d < melhor.d) melhor = { o, c, s, e, esp, d };
+      }
+    }
+    if (!melhor) continue;
+    const { o, c, s, e, esp } = melhor;
+    // a janela ocupa a parede toda: recorte = largura do painel − bonecas de cada lado
+    const tj = montar(pav, o, c, s, e, [{ a: s, b: e, tag: q.tag }], esp);
+    out.push(tj); soJanela.add(tj);
+    usadas.push({ tag: q.tag, x: o === 'H' ? (s + e) / 2 : c, y: o === 'H' ? c : (s + e) / 2 });
+  }
   function montar(pav: Pavimento, o: 'H' | 'V', c: number, s: number, e: number, vs: { a: number; b: number; tag: string | null }[], esp: number): Trecho {
     const id = idTrecho(pav.id, o, c, s);
     const Hh = aj.altura[id] ?? pav.altura;
@@ -270,10 +317,10 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     while (mudou) {
       mudou = false;
       for (const t of [...res]) {
-        if (!res.includes(t) || !t.vaos.length || t.vaos.some(v => v.inteiro)) continue;
+        if (!res.includes(t) || soJanela.has(t) || !t.vaos.length || t.vaos.some(v => v.inteiro)) continue;
         const solido = (t.e - t.s) - t.vaos.reduce((s, v) => s + (v.b - v.a), 0);
         if (solido > 0.25) continue;
-        const mesmos = res.filter(x => x !== t && x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05);
+        const mesmos = res.filter(x => x !== t && !soJanela.has(x) && x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05);
         const ant = mesmos.filter(x => x.e <= t.s + 0.01 && t.s - x.e < 0.35 && !x.vaos.some(v => v.inteiro)).sort((a, b) => b.e - a.e)[0];
         const prox = mesmos.filter(x => x.s >= t.e - 0.01 && x.s - t.e < 0.35 && !x.vaos.some(v => v.inteiro)).sort((a, b) => a.s - b.s)[0];
         const viz = ant ?? prox; if (!viz) continue;
@@ -349,7 +396,10 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           const mo = (o.x0 + o.x1) / 2;
           if (!(pa - 1e-6 <= mo && mo < pb + 1e-6)) continue;
           if (o.x0 < pa - 0.08 || o.x1 > pb + 0.08) aviso = `${o.tipo}: cortada pela divisão da parede — mova o corte`;
-          let w = Math.min(o.w, larg - 2 * r.boneca); if (w < o.w - 1e-6) aviso = `${o.tipo}: recorte reduzido para caber as bonecas`;
+          const toda = o.x0 <= t.s + 0.06 && o.x1 >= t.e - 0.06;   // janela ocupando a parede toda
+          let w = Math.min(o.w, larg - 2 * r.boneca);
+          if (toda) aviso = `${o.tipo} na parede toda: bonecas de ${r.boneca * 100} cm nas laterais (retirar após concretar)`;
+          else if (w < o.w - 1e-6) aviso = `${o.tipo}: recorte reduzido para caber as bonecas`;
           let dl = Math.min(Math.max(o.x0 - pa, r.boneca), larg - w - r.boneca);
           if (dl < r.boneca - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${r.boneca * 100} cm`; }
           let base = o.base, h = o.h;

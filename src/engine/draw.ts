@@ -7,7 +7,8 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const AZUL = '#1a3fd6', VERM = '#d11', ROSA = '#c0c', CINZA = '#6b6b6b';
 
 type Caixa = [number, number, number, number]; // x0,y0,x1,y1 (metros, planta)
-const livre = (occ: Caixa[], b: Caixa) => occ.every(o => b[2] <= o[0] || b[0] >= o[2] || b[3] <= o[1] || b[1] >= o[3]);
+// área sobreposta (para escolher a posição menos ruim quando nenhuma está livre)
+const sobra = (occ: Caixa[], bs: Caixa[]) => bs.reduce((s, b) => s + occ.reduce((t, o) => t + Math.max(0, Math.min(b[2], o[2]) - Math.max(b[0], o[0])) * Math.max(0, Math.min(b[3], o[3]) - Math.max(b[1], o[1])), 0), 0);
 
 function cotaSvg(X: (x: number) => number, Y: (y: number) => number, o: 'H' | 'V', a: number, b: number, c: number, off: number, txt: string, fs: number): string {
   // linha de cota paralela à parede, a "off" metros dela
@@ -55,32 +56,32 @@ export function plantaConteudo(L: Leitura, pav: Pavimento, ps: Painel[], vaos: V
     const p = gp[0], lab = gp.map(q => q.num).join('/'), m = (p.a + p.b) / 2;
     const s0 = p.o === 'H' ? (p.c > cy ? -1 : 1) : (p.c > cx ? -1 : 1);
     const w = NUMH * 0.72 * lab.length + 0.08, h = NUMH + 0.08;
-    let esc_: [number, number, number, Caixa] | null = null;
-    for (const s of [s0, -s0]) {
-      for (const al of [0, -0.25, 0.25, -0.5, 0.5]) {
-        const mm = m + al; if (al && !(p.a + 0.05 <= mm && mm <= p.b - 0.05)) continue;
+    let esc_: [number, number, number, Caixa] | null = null, pior = Infinity;
+    busca: for (const s of [s0, -s0]) {
+      for (const al of [0, -0.25, 0.25, -0.5, 0.5, -0.8, 0.8, -1.1, 1.1]) {
+        const mm = m + al; if (al && !(p.a + 0.1 <= mm && mm <= p.b - 0.1)) continue;
         const [bx, by] = p.o === 'H' ? [mm, p.c + s * (0.12 + h / 2)] : [p.c + s * (0.12 + w / 2), mm];
         const cb: Caixa = [bx - w / 2, by - h / 2, bx + w / 2, by + h / 2];
-        if (livre(occ, cb)) { esc_ = [bx, by, s, cb]; break; }
+        const sb = sobra(occ, [cb]);
+        if (sb < pior) { pior = sb; esc_ = [bx, by, s, cb]; }
+        if (sb === 0) break busca;
       }
-      if (esc_) break;
     }
-    if (!esc_) { const [bx, by] = p.o === 'H' ? [m, p.c + s0 * 0.24] : [p.c + s0 * (0.12 + w / 2), m]; esc_ = [bx, by, s0, [bx - w / 2, by - h / 2, bx + w / 2, by + h / 2]]; }
-    occ.push(esc_[3]); lado.set(kk, esc_[2]);
-    g.push(`<text x="${X(esc_[0]).toFixed(1)}" y="${(Y(esc_[1]) + 8).toFixed(1)}" font-size="${NUMH * k}" fill="${VERM}" text-anchor="middle" font-weight="bold">${lab}</text>`);
+    occ.push(esc_![3]); lado.set(kk, esc_![2]);
+    g.push(`<text x="${X(esc_![0]).toFixed(1)}" y="${(Y(esc_![1]) + 8).toFixed(1)}" font-size="${NUMH * k}" fill="${VERM}" text-anchor="middle" font-weight="bold">${lab}</text>`);
   }
   for (const [kk, gp] of grupos) {
-    const p = gp[0], s = lado.get(kk)!, t = br(p.comp), tw = 0.075 * t.length + 0.06;
+    const p = gp[0], s = lado.get(kk)!, t = br(p.comp), tw = 0.09 * t.length + 0.08;
+    // ocupação da cota: linha, texto (do lado de cima/esquerda da linha, como no desenho) e linhas de chamada
     const faixa = (off: number, sg: number): Caixa[] => {
-      const lo = Math.min(p.c + sg * 0.12, p.c + sg * (off + 0.09)), hi = Math.max(p.c + sg * 0.12, p.c + sg * (off + 0.09));
-      if (p.o === 'H') return [[p.a + 0.03, p.c + sg * off - 0.09, p.b - 0.03, p.c + sg * off + 0.09], [p.a - 0.03, lo, p.a + 0.03, hi], [p.b - 0.03, lo, p.b + 0.03, hi]];
-      return [[p.c + sg * off - 0.09, p.a + 0.03, p.c + sg * off + 0.09, p.b - 0.03], [lo, p.a - 0.03, hi, p.a + 0.03], [lo, p.b - 0.03, hi, p.b + 0.03]];
+      const lc = p.c + sg * off, lo = Math.min(p.c + sg * 0.1, lc), hi = Math.max(p.c + sg * 0.1, lc), m = (p.a + p.b) / 2;
+      if (p.o === 'H') return [[p.a + 0.03, lc - 0.05, p.b - 0.03, lc + 0.05], [m - tw / 2, lc, m + tw / 2, lc + 0.2], [p.a - 0.03, lo, p.a + 0.03, hi], [p.b - 0.03, lo, p.b + 0.03, hi]];
+      return [[lc - 0.05, p.a + 0.03, lc + 0.05, p.b - 0.03], [lc - 0.2, m - tw / 2, lc, m + tw / 2], [lo, p.a - 0.03, hi, p.a + 0.03], [lo, p.b - 0.03, hi, p.b + 0.03]];
     };
-    const cands: [number, number][] = [0.4, 0.55, 0.7, 0.85, 1.0, 1.2].map(o => [o, -s] as [number, number]).concat([0.8, 1.0, 1.2].map(o => [o, s] as [number, number]));
-    let ch = cands[0];
-    for (const c of cands) if (faixa(c[0], c[1]).every(bb => livre(occ, bb))) { ch = c; break; }
+    const cands: [number, number][] = [0.4, 0.55, 0.7, 0.85, 1.0, 1.2, 1.4].map(o => [o, -s] as [number, number]).concat([0.75, 0.9, 1.05, 1.2, 1.4].map(o => [o, s] as [number, number]));
+    let ch = cands[0], pior = Infinity;
+    for (const c of cands) { const sb = sobra(occ, faixa(c[0], c[1])); if (sb < pior - 1e-9) { pior = sb; ch = c; } if (sb === 0) break; }
     occ.push(...faixa(ch[0], ch[1]));
-    void tw;
     g.push(cotaSvg(X, Y, p.o, p.a, p.b, p.c, ch[0] * ch[1], t, 15));
   }
   void vaos;
