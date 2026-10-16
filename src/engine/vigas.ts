@@ -3,7 +3,7 @@
 // 2) laje com vão maior que o painel: viga intermediária no meio do ambiente;
 // 3) parede do pavimento de cima sem parede embaixo: sobre a laje, reforço com treliças (sem viga).
 import type { Painel, Pavimento, Regras, Trecho, VaoInteiro } from './model.ts';
-import type { LajeAmb } from './lajes.ts';
+import type { LajeAmb, PainelLaje } from './lajes.ts';
 
 export interface Viga {
   id: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number;
@@ -145,4 +145,26 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
     unicas.push(v);
   }
   return unicas;
+}
+
+// onde vai cada treliça em cada painel de laje: distância da borda do painel (como na planta) e comprimento
+export interface TrelicaPainel { t: number; painel: number; onde: string; comp: number; ao: 'ao longo' | 'atravessando' }
+export function trelicasNasLajes(T: (Viga & { n: number })[], P: PainelLaje[]): TrelicaPainel[] {
+  const out: TrelicaPainel[] = [];
+  for (const t of T.filter(v => v.tipo === 'trelica')) {
+    const n0 = out.length;
+    for (const p of P.filter(q => q.pav === t.pav)) {
+      const [c0, c1, l0, l1] = t.o === 'H' ? [p.y0, p.y1, p.x0, p.x1] : [p.x0, p.x1, p.y0, p.y1];
+      if (t.c <= c0 + 0.01 || t.c >= c1 - 0.01) continue;
+      const comp = Math.min(t.b, l1) - Math.max(t.a, l0);
+      if (comp < 0.1) continue;
+      const lado = t.o === 'H' ? ['de baixo', 'de cima'] : ['da esquerda', 'da direita'];
+      const d0 = t.c - c0, d1 = c1 - t.c;
+      const ini = Math.max(t.a, l0) - l0;   // onde começa, a partir da ponta esquerda/de baixo do painel
+      const onde = `a ${br(Math.min(d0, d1))} m da borda ${d0 <= d1 ? lado[0] : lado[1]}` + (ini > 0.1 ? `, começando a ${br(ini)} m da ponta ${t.o === 'H' ? 'esquerda' : 'de baixo'}` : '');
+      out.push({ t: t.n, painel: p.num, onde, comp, ao: t.o === p.sentido ? 'ao longo' : 'atravessando' });
+    }
+    if (out.length === n0) out.push({ t: t.n, painel: 0, onde: 'sem painel de laje modulado embaixo (área sem ambiente fechado no pavimento de baixo) — conferir o apoio da laje', comp: t.b - t.a, ao: 'ao longo' });
+  }
+  return out.sort((a, b) => (a.painel || 1e9) - (b.painel || 1e9) || a.t - b.t);
 }

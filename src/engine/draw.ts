@@ -120,7 +120,7 @@ export function vistaSvg(p: Painel): string {
 
 // planta das lajes: planta baixa + painéis de laje
 import type { LajeAmb, PainelLaje } from './lajes.ts';
-export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro): string {
+export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro, tr: (Viga & { n: number })[] = []): string {
   const { X, Y } = q; const g: string[] = [];
   for (const a of lj) {
     if (!a.incluida) g.push(`<rect x="${X(a.x0)}" y="${Y(a.y1)}" width="${X(a.x1) - X(a.x0)}" height="${Y(a.y0) - Y(a.y1)}" fill="url(#hach)" stroke="none"/>`);
@@ -135,6 +135,18 @@ export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro): string
     else g.push(`<line x1="${cx + 26}" y1="${cy - h * 0.3}" x2="${cx + 26}" y2="${cy + h * 0.3}" stroke="${AZUL}" stroke-width="1" marker-end="url(#seta)" marker-start="url(#seta)"/>`);
     g.push(`<text x="${cx.toFixed(1)}" y="${(cy - 4).toFixed(1)}" font-size="20" font-weight="bold" fill="${VERM}" text-anchor="middle">L${p.num}</text>`);
     g.push(`<text x="${cx.toFixed(1)}" y="${(cy + 14).toFixed(1)}" font-size="13" fill="#222" text-anchor="middle">${br(p.comp)} × ${br(p.larg)}</text>`);
+  }
+  // treliças de reforço (paredes de cima sobre a laje): linha roxa em zigue-zague com o número
+  for (const t of tr.filter(v => v.tipo === 'trelica')) {
+    const L = (t.b - t.a) * q.k, n = Math.max(2, Math.round(L / 14)), pts: string[] = [];
+    for (let i = 0; i <= n; i++) {
+      const al = t.a + (t.b - t.a) * i / n, off = (i % 2 ? 1 : -1) * 0.05;
+      const [x, y] = t.o === 'H' ? [al, t.c + off] : [t.c + off, al];
+      pts.push(`${X(x).toFixed(1)},${Y(y).toFixed(1)}`);
+    }
+    g.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="#7a3fb0" stroke-width="2.5"/>`);
+    const [tx, ty] = t.o === 'H' ? [X(t.a) + 18, Y(t.c) - 10] : [X(t.c) + 16, Y(t.a) - 8];
+    g.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="17" font-weight="bold" fill="#7a3fb0" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="4">T${t.n}</text>`);
   }
   return g.join('');
 }

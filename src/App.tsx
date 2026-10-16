@@ -7,8 +7,8 @@ import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesC
 import { ambientes, modularLajes, numerarLajes } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
-import { sugerirVigas, cargasDeCima } from './engine/vigas.ts';
-import type { Viga } from './engine/vigas.ts';
+import { sugerirVigas, cargasDeCima, trelicasNasLajes } from './engine/vigas.ts';
+import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
@@ -405,16 +405,28 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
   );
 }
 
+function TabelaTrelicas({ TP, TR, curta }: { TP: TrelicaPainel[]; TR: VigaN[]; curta?: boolean }) {
+  return <div className="card trelicas">
+    <h3>Treliças na laje ({TR.length})</h3>
+    {!curta && TR.map(t => <p key={t.id} className="dica"><b>T{t.n}</b> · {br(t.b - t.a)} m · {t.motivo}</p>)}
+    <table className="tlaje"><thead><tr><th>Treliça</th><th>Painel</th><th>Onde</th><th>Comp.</th></tr></thead><tbody>
+      {TP.map((x, i) => <tr key={i}><td>T{x.t}</td><td>{x.painel ? `L${x.painel}` : '—'}</td><td>{x.painel ? `${x.ao} do painel, ${x.onde}` : curta ? 'sem laje modulada embaixo — conferir apoio' : x.onde}</td><td>{br(x.comp)}</td></tr>)}
+    </tbody></table>
+  </div>;
+}
+
 function PlantaLajes({ pav, calc, arq, ambSel, onAmb }: { pav: Pavimento; calc: Calc; arq: Prim[]; ambSel: string | null; onAmb: (id: string) => void }) {
   const q = quadroDe(pav);
   const lj = calc.lajes.filter(a => a.pav === pav.id), P = calc.pl.filter(p => p.pav === pav.id);
+  const TR = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica'), TP = trelicasNasLajes(TR, P);
   return (
     <div className="planta">
       <ZoomSvg vb={q.vb}>
-        <g dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arq) + lajesConteudo(lj, P, q) }} />
+        <g dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arq) + lajesConteudo(lj, P, q, TR) }} />
         {lj.map(a => <rect key={a.id} className="hit" x={q.X(a.x0)} y={q.Y(a.y1)} width={(a.x1 - a.x0) * q.k} height={(a.y1 - a.y0) * q.k} fill={ambSel === a.id ? 'rgba(230,0,0,.12)' : 'transparent'} stroke={a.aviso ? '#e80' : 'transparent'} strokeWidth={a.aviso ? 4 : 0} onClick={() => onAmb(a.id)}><title>{a.aviso || 'clique para ajustar'}</title></rect>)}
       </ZoomSvg>
-      <p className="dica">Laje sobre este pavimento. Clique num ambiente para tirar a laje (vazio, área externa) ou girar o sentido dos painéis. Contorno laranja = precisa de atenção.</p>
+      <p className="dica">Laje sobre este pavimento. Clique num ambiente para tirar a laje (vazio, área externa) ou girar o sentido dos painéis. Contorno laranja = precisa de atenção. Linha roxa = treliça de reforço embaixo de parede de cima.</p>
+      {TP.length > 0 && <TabelaTrelicas TP={TP} TR={TR} />}
     </div>
   );
 }
@@ -528,16 +540,23 @@ function Folhas({ ativos, calc, leitura, arqDe, nome }: { ativos: Pavimento[]; c
       </div>);
     }
     const P = calc.pl.filter(p => p.pav === pav.id);
+    const TRf = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica'), TPf = trelicasNasLajes(TRf, P);
     if (P.length) {
       const q = quadroDe(pav);
       folhas.push(<div className="folha" key={pav.id + 'l'}>
         <div className="cab">MODULAÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()}</div>
-        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q) }} />
+        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf) }} />
           <table className="tlaje"><thead><tr><th>Painel</th><th>Comp.</th><th>Larg.</th><th>m²</th></tr></thead><tbody>
             {P.map(p => <tr key={p.num}><td>L{p.num}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(p.comp * p.larg)}</td></tr>)}
             <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + p.comp * p.larg, 0))}</td></tr>
           </tbody></table></div>
-        {rod('Comprimento = vão + apoio em cima de cada parede · seta = sentido do vão · tracejado laranja = viga sugerida (conferir)')}
+        {rod('Comprimento = vão + apoio em cima de cada parede · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
+      </div>);
+      if (TPf.length) folhas.push(<div className="folha" key={pav.id + 't'}>
+        <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()}</div>
+        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf) }} />
+          <TabelaTrelicas TP={TPf} TR={TRf} curta /></div>
+        {rod('Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel')}
       </div>);
     }
   }

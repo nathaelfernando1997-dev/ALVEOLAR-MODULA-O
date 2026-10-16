@@ -102,3 +102,8 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .tvigas { width: 95mm; font-size: 7pt; overflow: hidden; }
 .tvigas p { margin: 0 0 3px; }
 .ok-box { background: #eef8ee; border: 1px solid #b7dcb7; padding: 6px 10px; border-radius: 6px; }
+.trelicas { margin-top: 8px; }
+.trelicas .tlaje td { text-align: left; }
+.folha .trelicas { width: 95mm; font-size: 7pt; margin: 0; padding: 4px; overflow: hidden; box-shadow: none; }
+.folha .trelicas h3 { font-size: 9pt; margin: 0 0 3px; }
+.folha .trelicas p { margin: 0 0 2px; font-size: 6.5pt; }
