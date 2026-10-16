@@ -10,6 +10,7 @@ export interface Viga {
   tipo: 'vao' | 'laje' | 'parede-cima' | 'trelica' | 'piso';   // trelica = reforço da laje sob parede de cima (sem viga)
   obrigatoria: boolean; motivo: string; ideia: string;
   rebaixos: { painel: number; de: number; para: number }[];
+  apoio?: number;   // quanto de cada ponta fica em cima da parede (o desenho mostra só o vão livre)
 }
 
 const br = (v: number) => v.toFixed(2).replace('.', ',');
@@ -79,7 +80,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       const sobre = cima ? cargasDeCima(tb, tc).filter(k => k.o === t.o && Math.abs(k.c - t.c) < 0.2 && k.a < t.e && k.b > t.s) : [];
       const nums = [...new Set(ps.filter(p => sobre.some(k => k.t.id === p.trecho)).map(p => p.num))];
       V.push({
-        id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a: t.s - r.vigaApoio, b: t.e + r.vigaApoio, tipo: 'piso', obrigatoria: true,
+        id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a: t.s - r.vigaApoio, b: t.e + r.vigaApoio, tipo: 'piso', obrigatoria: true, apoio: r.vigaApoio,
         motivo: `Linha de piso do projeto (${br(t.e - t.s)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
         ideia: `Viga na linha de piso, de ${br(t.e - t.s + 2 * r.vigaApoio)} m, apoiada nas paredes das pontas (ou pilares). Conferir com o engenheiro.`,
         rebaixos: [],
@@ -98,7 +99,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       const nums = ps.filter(p => sobre.some(t => t.id === p.trecho)).map(p => p.num);
       const obrig = w > r.vaoViga || sobre.length > 0;
       V.push({
-        id: `${pav.id}-vao-${v.a.toFixed(2)}`, pav: pav.id, o: v.o, c: v.c, a, b, tipo: 'vao', obrigatoria: obrig,
+        id: `${pav.id}-vao-${v.a.toFixed(2)}`, pav: pav.id, o: v.o, c: v.c, a, b, tipo: 'vao', obrigatoria: obrig, apoio: r.vigaApoio,
         motivo: `${v.tipo === 'vão livre' ? 'Vão livre' : v.tipo} de ${br(w)} m sem parede${sobre.length ? `, com parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima!.nome} em cima` : ''}${apoia ? ', e a laje apoia nesse alinhamento' : ''}${w > r.vaoViga ? ` (vão maior que ${br(r.vaoViga)} m)` : ''}.`,
         ideia: `Viga sobre o vão, de ${br(b - a)} m, entrando ${br(r.vigaApoio)} m em cima das paredes dos lados.`,
         rebaixos: reb(painelEm(pav.id, v.o, v.c, a, b).filter(p => p.a < v.a || p.b > v.b)),
@@ -112,7 +113,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
         const sobre = cima ? cargasDeCima([...tb, ...pp], tc).filter(k => k.o === o && Math.abs(k.c - pos) < 0.15 && k.a < b && k.b > a) : [];
         const perto = ts.filter(t => t.pav === pav.id && t.o === o && Math.abs(t.c - pos) < 1.0 && t.s < b && t.e > a).sort((x, y) => Math.abs(x.c - pos) - Math.abs(y.c - pos))[0];
         V.push({
-          id: `${pav.id}-laje-${pos.toFixed(2)}`, pav: pav.id, o, c: pos, a, b, tipo: 'laje', obrigatoria: true,
+          id: `${pav.id}-laje-${pos.toFixed(2)}`, pav: pav.id, o, c: pos, a, b, tipo: 'laje', obrigatoria: true, apoio: o === 'V' ? (L.esp.s + L.esp.n) / 4 : (L.esp.o + L.esp.l) / 4,
           motivo: `Ambiente ${br(L.x1 - L.x0)} × ${br(L.y1 - L.y0)} m: mesmo apoiando a laje nas paredes, o painel passaria de ${br(r.lajeComp)} m (contando o beiral, se tiver).`,
           ideia: sobre.length ? `Viga embaixo da parede ${[...new Set(ps.filter(p => sobre.some(k => k.t.id === p.trecho)).map(p => p.num))].join(', ')} do ${cima!.nome} (a viga já carrega a parede), apoiada nas paredes das pontas (${br(b - a)} m).`
             : perto ? `Viga no meio do vão, ou estender a parede que está a ${br(Math.abs(perto.c - pos))} m para servir de apoio (sem viga).` : `Viga no meio do vão, apoiada nas paredes das pontas (${br(b - a)} m).`,

@@ -240,6 +240,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   const Q = new Map(quadro.map(q => [q.tag, q]));
   const tags = L.tags.filter(t => t.x > pav.box.x0 - 0.5 && t.x < pav.box.x1 + 0.5 && t.y > pav.box.y0 - 0.5 && t.y < pav.box.y1 + 0.5);
   const out: Trecho[] = [];
+  const arcos = L.prims.filter((p): p is Extract<Prim, { kind: 'arc' }> => p.kind === 'arc' && p.c[0] > pav.box.x0 - 0.5 && p.c[0] < pav.box.x1 + 0.5 && p.c[1] > pav.box.y0 - 0.5 && p.c[1] < pav.box.y1 + 0.5);
   for (const o of ['H', 'V'] as const) {
     const perp = ax[o === 'H' ? 'V' : 'H'];
     for (const { c, ps, esp } of ax[o]) {
@@ -253,8 +254,22 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
           const along = o === 'H' ? t.x : t.y, pd = o === 'H' ? t.y - c : t.x - c;
           if (Math.abs(pd) < 0.6 && along >= l - 0.1 && along <= h + 0.1) { const d = Math.abs(along - (l + h) / 2); if (d < bd) { bd = d; best = t.text; } }
         }
-        return best;
+        return best ?? portaPorArco(l, h);
       };
+      // sem etiqueta: se tem a folha da porta desenhada no vão (arco com centro numa ponta), é porta
+      // do tamanho mais próximo do quadro
+      function portaPorArco(l: number, h: number): string | null {
+        const portas = quadro.filter(q => q.tag.startsWith('P'));
+        if (!portas.length) return null;
+        for (const p of arcos) {
+          const [ax, ay] = p.c, al = o === 'H' ? ax : ay, pd = o === 'H' ? ay - c : ax - c;
+          if (Math.abs(pd) > esp / 2 + 0.12) continue;
+          if (Math.abs(al - l) > 0.15 && Math.abs(al - h) > 0.15) continue;
+          if (p.r < 0.5 || p.r > h - l + 0.1) continue;
+          return portas.reduce((m, q) => Math.abs(q.larg - p.r) < Math.abs(m.larg - p.r) ? q : m).tag;
+        }
+        return null;
+      }
       for (let i = 0; i < ps.length - 1; i++) {
         const a1 = ps[i][1], b0 = ps[i + 1][0], gp = b0 - a1;
         const inn = nos.filter(n => a1 - 0.03 <= n && n <= b0 + 0.03).sort((x, y) => x - y);

@@ -124,7 +124,9 @@ export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro, tr: (Vi
   const { X, Y } = q; const g: string[] = [];
   for (const a of lj) {
     if (!a.incluida) g.push(`<rect x="${X(a.x0)}" y="${Y(a.y1)}" width="${X(a.x1) - X(a.x0)}" height="${Y(a.y0) - Y(a.y1)}" fill="url(#hach)" stroke="none"/>`);
-    for (const v of a.vigas) g.push(a.sentido === 'H' ? `<line x1="${X(v)}" y1="${Y(a.y0)}" x2="${X(v)}" y2="${Y(a.y1)}" stroke="#e67700" stroke-width="6" stroke-dasharray="16 8"/>` : `<line x1="${X(a.x0)}" y1="${Y(v)}" x2="${X(a.x1)}" y2="${Y(v)}" stroke="#e67700" stroke-width="6" stroke-dasharray="16 8"/>`);
+    // viga no meio da laje: de face a face das paredes (não passa por cima delas)
+    const fx0 = a.x0 + a.esp.o / 2, fx1 = a.x1 - a.esp.l / 2, fy0 = a.y0 + a.esp.s / 2, fy1 = a.y1 - a.esp.n / 2;
+    for (const v of a.vigas) g.push(a.sentido === 'H' ? `<line x1="${X(v)}" y1="${Y(fy0)}" x2="${X(v)}" y2="${Y(fy1)}" stroke="#e67700" stroke-width="6" stroke-dasharray="16 8"/>` : `<line x1="${X(fx0)}" y1="${Y(v)}" x2="${X(fx1)}" y2="${Y(v)}" stroke="#e67700" stroke-width="6" stroke-dasharray="16 8"/>`);
   }
   for (const p of P) {
     const x = X(p.x0), y = Y(p.y1), w = X(p.x1) - X(p.x0), h = Y(p.y0) - Y(p.y1);
@@ -159,7 +161,9 @@ export function vigasConteudo(V: (Viga & { n: number })[], q: Quadro, sel: strin
   for (const v of V) {
     const tr = v.tipo === 'trelica';
     const cor = sel === v.id ? '#0a0' : tr ? '#7a3fb0' : v.obrigatoria ? '#d11' : '#e67700';
-    const [x1, y1, x2, y2] = v.o === 'H' ? [v.a, v.c, v.b, v.c] : [v.c, v.a, v.c, v.b];
+    // desenha só o vão livre (a parte em cima das paredes fica no texto)
+    const ap = v.apoio ?? 0, va = v.a + ap, vb = v.b - ap;
+    const [x1, y1, x2, y2] = v.o === 'H' ? [va, v.c, vb, v.c] : [v.c, va, v.c, vb];
     // treliça: linha fina em zigue-zague (reforço da laje); viga: faixa tracejada
     g.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${cor}" stroke-width="${tr ? 6 : 14}" stroke-opacity=".55" stroke-dasharray="${tr ? '4 6' : '22 8'}"/>`);
     const [tx, ty] = v.o === 'H' ? [(X(x1) + X(x2)) / 2, Y(y1) - 14] : [X(x1) + 16, (Y(y1) + Y(y2)) / 2];
