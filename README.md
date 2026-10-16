@@ -35,3 +35,15 @@ npm run test:ricardo -- caminho/do/projeto.dxf   # roda o motor no terminal
 ```
 
 Publicação: qualquer hospedagem de site estático (ex.: Vercel, framework "Vite", pasta `dist`).
+
+## Nuvem e login (Supabase)
+
+Sem configuração, os projetos ficam salvos só no navegador. Para salvar na nuvem com login:
+
+1. Crie um projeto no [Supabase](https://supabase.com) (separado do ESTRUTTURA).
+2. No **SQL Editor**, rode o arquivo [`supabase/schema.sql`](supabase/schema.sql) (cria a tabela `projetos` e o armazenamento dos DXF, cada usuário só vê os seus).
+3. Em **Authentication → URL Configuration**, coloque o endereço do site em *Site URL* (ex.: `https://alveolar-modula-o.vercel.app`).
+4. Na Vercel, em **Settings → Environment Variables**, crie:
+   - `VITE_SUPABASE_URL` = *Project URL* (Supabase → Project Settings → API)
+   - `VITE_SUPABASE_ANON_KEY` = chave *anon public*
+5. Faça um novo deploy. O site passa a pedir login; os projetos que estavam só no navegador podem ser enviados para a nuvem pelo botão na aba Arquivo.

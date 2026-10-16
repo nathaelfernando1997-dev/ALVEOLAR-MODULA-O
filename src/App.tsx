@@ -10,6 +10,9 @@ import { lerCortes, conferir } from './engine/cortes.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
+import * as cloud from './cloud.ts';
+import type { Session } from '@supabase/supabase-js';
+import { Login } from './Login.tsx';
 import type { Projeto, Config } from './db.ts';
 
 type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'cortes' | 'impressao';
@@ -41,8 +44,27 @@ export default function App() {
   const [projNome, setProjNome] = useState('');
   const [projetos, setProjetos] = useState<Projeto[]>([]);
   const [pronto, setPronto] = useState(false);
-  const atualizarLista = () => db.listar().then(setProjetos).catch(() => setProjetos([]));
-  useEffect(() => { atualizarLista(); db.pedirPersistencia(); }, []);
+  const [sess, setSess] = useState<Session | null>(null);
+  const [checou, setChecou] = useState(!cloud.nuvemConfigurada);
+  const [recuperando, setRecuperando] = useState(false);
+  const [locais, setLocais] = useState<Projeto[]>([]);
+  useEffect(() => {
+    if (!cloud.nuvemConfigurada) return;
+    cloud.sessao().then(s => { setSess(s); setChecou(true); });
+    return cloud.aoMudarSessao((s, ev) => { setSess(s); if (ev === 'PASSWORD_RECOVERY') setRecuperando(true); });
+  }, []);
+  // na nuvem quando houver login; senão, no navegador
+  const repo = cloud.nuvemConfigurada && sess ? cloud : db;
+  const atualizarLista = () => repo.listar().then(setProjetos).catch(e => { setProjetos([]); setErro('Não foi possível listar os projetos: ' + (e as Error).message); });
+  useEffect(() => { atualizarLista(); db.pedirPersistencia(); if (sess) db.listar().then(setLocais).catch(() => setLocais([])); }, [sess?.user.id]);
+  const enviarLocais = async () => {
+    setLendo(true);
+    try {
+      for (const l of locais) { const c = await db.carregar(l.id); if (c) { await cloud.criar(c.nome, c.arquivo, c.dxf, c.config); await db.apagar(l.id); } }
+      setLocais([]); atualizarLista();
+    } catch (e) { setErro('Erro ao enviar: ' + (e as Error).message); }
+    setLendo(false);
+  };
 
   const leitura = useMemo(() => (dxf ? ler(dxf, camada) : null), [dxf, camada]);
 
@@ -69,7 +91,7 @@ export default function App() {
       // aproveita ajustes da versão antiga (salvos pelo nome do arquivo)
       const antigo = (() => { try { return JSON.parse(localStorage.getItem(chave(f.name)) || 'null') as Salvo | null; } catch { return null; } })();
       carregarTexto(txt, f.name, antigo);
-      const p = await db.criar(f.name.replace(/\.dxf$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
+      const p = await repo.criar(f.name.replace(/\.dxf$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
       setProjId(p.id); setProjNome(p.nome); atualizarLista();
       setAba(antigo ? 'modulacao' : 'pavimentos');
     } catch (e) { setErro((e as Error).message); }
@@ -78,7 +100,7 @@ export default function App() {
   const abrirProjeto = async (id: string) => {
     setLendo(true); setErro('');
     try {
-      const p = await db.carregar(id); if (!p) throw new Error('Projeto não encontrado.');
+      const p = await repo.carregar(id); if (!p) throw new Error('Projeto não encontrado.');
       carregarTexto(await p.dxf.text(), p.arquivo, p.config);
       setProjId(p.id); setProjNome(p.nome);
       setAba(p.config && p.config.pavs.some(x => x.ativo) ? 'modulacao' : 'pavimentos');
@@ -88,7 +110,7 @@ export default function App() {
   // salva sozinho a cada alteração
   useEffect(() => {
     if (!projId || !pronto) return;
-    const t = setTimeout(() => { db.salvarConfig(projId, { camada, pavs, quadro, regras, ajustes: aj }).then(atualizarLista).catch(() => setErro('Não foi possível salvar no navegador.')); }, 500);
+    const t = setTimeout(() => { repo.salvarConfig(projId, { camada, pavs, quadro, regras, ajustes: aj }).then(atualizarLista).catch(() => setErro('Não foi possível salvar o projeto. Verifique a internet.')); }, 500);
     return () => clearTimeout(t);
   }, [projId, pronto, camada, pavs, quadro, regras, aj]);
   const ativos = pavs.filter(p => p.ativo);
@@ -113,6 +135,7 @@ export default function App() {
   const arqDe = (box: Box): Prim[] => leitura ? leitura.prims.filter(p => p.pts.every(q => q[0] > box.x0 - 0.6 && q[0] < box.x1 + 0.6 && q[1] > box.y0 - 0.6 && q[1] < box.y1 + 0.6)) : [];
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
+  if (cloud.nuvemConfigurada && (!checou || !sess || recuperando)) return <Login carregando={!checou} recuperando={recuperando} fimRecuperacao={() => setRecuperando(false)} />;
   const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['cortes', '7. Cortes'], ['impressao', '8. Impressão e arquivos']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
@@ -121,6 +144,7 @@ export default function App() {
         <h1>Alveolar Modulação</h1>
         <span className="arq">{projNome ? `${projNome} · salvo automaticamente` : 'nenhum projeto aberto'}</span>
         {calc.ps.length > 0 && <Resumo ps={calc.ps} pl={calc.pl} />}
+        {sess && <span className="usuario">{sess.user.email} <button onClick={() => { cloud.sair(); setProjId(null); setDxf(null); setNome(''); setProjNome(''); setAba('arquivo'); }}>Sair</button></span>}
       </header>
       <nav className="abas noprint">{tabs.map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} disabled={k !== 'arquivo' && !dxf} onClick={() => setAba(k)}>{t}{k === 'cortes' && erros > 0 ? ` (${erros})` : ''}</button>)}</nav>
       <main>
@@ -128,7 +152,7 @@ export default function App() {
           <>
           <section className="card">
             <h2>Novo projeto</h2>
-            <p>Envie o projeto em <b>DXF</b> (no AutoCAD: <i>Salvar como → DXF</i>). O arquivo e todos os ajustes ficam salvos neste navegador e não são enviados para nenhum servidor.</p>
+            <p>Envie o projeto em <b>DXF</b> (no AutoCAD: <i>Salvar como → DXF</i>). {sess ? 'O arquivo e todos os ajustes ficam salvos na sua conta, na nuvem.' : 'O arquivo e todos os ajustes ficam salvos neste navegador.'}</p>
             <input type="file" accept=".dxf" onChange={e => { const f = e.target.files?.[0]; if (f) novo(f); e.target.value = ''; }} />
             {lendo && <p>Lendo o arquivo…</p>}
             {erro && <p className="erro">{erro}</p>}
@@ -141,17 +165,18 @@ export default function App() {
             {projetos.length === 0 ? <p className="dica">Nenhum projeto salvo ainda.</p> :
             <table className="tab projetos"><thead><tr><th>Projeto</th><th>Arquivo</th><th>Atualizado</th><th></th></tr></thead><tbody>
               {projetos.map(p => <tr key={p.id} className={p.id === projId ? 'atual' : ''}>
-                <td><input defaultValue={p.nome} onBlur={e => { const v = e.target.value.trim(); if (v && v !== p.nome) { db.renomear(p.id, v).then(atualizarLista); if (p.id === projId) setProjNome(v); } }} /></td>
+                <td><input defaultValue={p.nome} onBlur={e => { const v = e.target.value.trim(); if (v && v !== p.nome) { repo.renomear(p.id, v).then(atualizarLista); if (p.id === projId) setProjNome(v); } }} /></td>
                 <td className="dica">{p.arquivo}</td>
                 <td className="dica">{new Date(p.atualizado).toLocaleString('pt-BR')}</td>
                 <td className="botoes">
                   <button onClick={() => abrirProjeto(p.id)}>{p.id === projId ? 'Aberto' : 'Abrir'}</button>
-                  <button onClick={async () => { const bl = await db.exportarBackup(p.id); if (bl) { const a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = p.nome + '.modulacao.json'; a.click(); } }}>Baixar cópia</button>
-                  <button onClick={async () => { if (confirm(`Apagar o projeto "${p.nome}"? Isso não pode ser desfeito.`)) { await db.apagar(p.id); if (p.id === projId) { setProjId(null); setDxf(null); setNome(''); } atualizarLista(); } }}>Apagar</button>
+                  <button onClick={async () => { const c = await repo.carregar(p.id); const bl = c ? new Blob([JSON.stringify({ formato: 'alveolar-modulacao', versao: 1, nome: c.nome, arquivo: c.arquivo, config: c.config, dxf: await c.dxf.text() })], { type: 'application/json' }) : null; if (bl) { const a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = p.nome + '.modulacao.json'; a.click(); } }}>Baixar cópia</button>
+                  <button onClick={async () => { if (confirm(`Apagar o projeto "${p.nome}"? Isso não pode ser desfeito.`)) { await repo.apagar(p.id); if (p.id === projId) { setProjId(null); setDxf(null); setNome(''); } atualizarLista(); } }}>Apagar</button>
                 </td></tr>)}
             </tbody></table>}
-            <label className="botao">Abrir cópia de projeto (.json)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { const p = await db.importarBackup(f); await atualizarLista(); abrirProjeto(p.id); } catch (er) { setErro((er as Error).message); } e.target.value = ''; }} /></label>
-            <p className="dica">Os projetos ficam guardados neste navegador e neste computador. Para usar em outro computador ou guardar uma cópia, use "Baixar cópia" e depois "Abrir cópia de projeto".</p>
+            <label className="botao">Abrir cópia de projeto (.json)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { const j = JSON.parse(await f.text()); if (j.formato !== 'alveolar-modulacao' || !j.dxf) throw new Error('Arquivo de projeto inválido.'); const p = await repo.criar(j.nome, j.arquivo, new Blob([j.dxf], { type: 'application/dxf' }), j.config ?? null); await atualizarLista(); abrirProjeto(p.id); } catch (er) { setErro((er as Error).message); } e.target.value = ''; }} /></label>
+            <p className="dica">{sess ? 'Os projetos ficam salvos na nuvem: entre com o mesmo e-mail em qualquer computador ou celular.' : 'Os projetos ficam guardados neste navegador e neste computador. Para usar em outro computador, use "Baixar cópia" e depois "Abrir cópia de projeto".'}</p>
+            {sess && locais.length > 0 && <div className="aviso-local">Há {locais.length} projeto(s) salvo(s) só neste computador ({locais.map(l => l.nome).join(', ')}). <button onClick={enviarLocais} disabled={lendo}>Enviar para a nuvem</button></div>}
           </section>
           </>
         )}
