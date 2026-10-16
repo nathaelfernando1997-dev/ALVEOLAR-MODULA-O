@@ -3,10 +3,12 @@ import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, trechos, paineis, numerar, resumo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
-import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE } from './engine/draw.ts';
+import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir } from './engine/cortes.ts';
+import { sugerirVigas } from './engine/vigas.ts';
+import type { Viga } from './engine/vigas.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
@@ -15,14 +17,15 @@ import type { Session } from '@supabase/supabase-js';
 import { Login } from './Login.tsx';
 import type { Projeto, Config } from './db.ts';
 
-type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'cortes' | 'impressao';
+type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
 const baixar = (nome: string, conteudo: string, tipo: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
 };
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
-interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[] }
+type VigaN = Viga & { n: number };
+interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[] }
 
 export default function App() {
   const [aba, setAba] = useState<Aba>('arquivo');
@@ -40,6 +43,7 @@ export default function App() {
   const [vaoSel, setVaoSel] = useState<string | null>(null);
   const [ambSel, setAmbSel] = useState<string | null>(null);
   const [cortando, setCortando] = useState<{ trecho: string; coluna: boolean } | null>(null);
+  const [vigaSel, setVigaSel] = useState<string | null>(null);
   const [projId, setProjId] = useState<string | null>(null);
   const [projNome, setProjNome] = useState('');
   const [projetos, setProjetos] = useState<Projeto[]>([]);
@@ -115,7 +119,7 @@ export default function App() {
   }, [projId, pronto, camada, pavs, quadro, regras, aj]);
   const ativos = pavs.filter(p => p.ativo);
   const calc: Calc = useMemo(() => {
-    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [] };
+    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [] };
     if (!leitura) return vazio;
     for (const p of ativos) {
       const t = trechos(leitura, p, quadro, regras, aj);
@@ -126,6 +130,7 @@ export default function App() {
     }
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
+    vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras).map((v, i) => ({ ...v, n: i + 1 }));
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
 
@@ -136,7 +141,7 @@ export default function App() {
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
   if (cloud.nuvemConfigurada && (!checou || !sess || recuperando)) return <Login carregando={!checou} recuperando={recuperando} fimRecuperacao={() => setRecuperando(false)} />;
-  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['cortes', '7. Cortes'], ['impressao', '8. Impressão e arquivos']];
+  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
     <div className="app">
@@ -247,6 +252,12 @@ export default function App() {
                 <label key={k}>{t}<input type="number" step="0.01" value={regras[k] as number} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
+            <h3>Vigas</h3>
+            <div className="grade">
+              {([['vigaAltura', 'Altura da viga (rebaixo nas paredes) (m)'], ['vigaLargura', 'Largura da viga (m)'], ['vigaApoio', 'Apoio da viga em cima da parede (m)'], ['vaoViga', 'Vão sem parede a partir do qual a viga é obrigatória (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+                <label key={k}>{t}<input type="number" step="0.01" value={regras[k] as number} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
+              ))}
+            </div>
             <ul className="dica">
               <li>Paredes acima da largura máxima são divididas em partes iguais, com coluna entre elas. No T, a coluna fica só na parede que segue alinhada (ou nenhuma, se a parede for pinada).</li>
               <li>Porta: boneca embaixo + altura do quadro (0,10 + 2,10 = 2,20). Janela: o peitoril baixa e o topo sobe pelo valor acima. Largura sempre maior pelo acréscimo.</li>
@@ -274,6 +285,22 @@ export default function App() {
                   onCorte={(t, along) => { const tr = calc.ts.find(x => x.id === t); if (!tr || !cortando) return; const d = Math.round((along - tr.s) * 100) / 100; const k = cortando.coluna ? 'colunas' : 'cortes'; const m = { ...(aj[k] || {}) }; m[t] = [...(m[t] || []), d].sort((a, b) => a - b); setAj({ ...aj, [k]: m }); setCortando(null); }}
                   onPainel={t => { setSel({ trecho: t }); setVaoSel(null); }} onVao={k => { setVaoSel(k); setSel(null); setCortando(null); }} />
               : <PlantaLajes pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} ambSel={ambSel} onAmb={setAmbSel} />}
+          </section>
+        )}
+
+        {aba === 'vigas' && leitura && (
+          ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos.</p></section> :
+          <section className="mod">
+            <div className="lado">
+              <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setVigaSel(null); }}>{p.nome}</button>)}</div>
+              <ListaVigas V={calc.vigas.filter(v => v.pav === pavAtual.id)} sel={vigaSel} onSel={setVigaSel} />
+            </div>
+            <div className="planta">
+              <ZoomSvg vb={quadroDe(pavAtual).vb}>
+                <g dangerouslySetInnerHTML={{ __html: plantaConteudo(leitura, pavAtual, calc.ps.filter(p => p.pav === pavAtual.id), [], arqDe(pavAtual.box), quadroDe(pavAtual)) + vigasConteudo(calc.vigas.filter(v => v.pav === pavAtual.id), quadroDe(pavAtual), vigaSel) }} />
+              </ZoomSvg>
+              <p className="dica">Vigas sugeridas na estrutura sobre este pavimento (abaixo da laje). Vermelho = obrigatória · laranja = recomendada · verde = selecionada. Sugestões para o engenheiro conferir e dimensionar.</p>
+            </div>
           </section>
         )}
 
@@ -373,6 +400,21 @@ function PlantaLajes({ pav, calc, arq, ambSel, onAmb }: { pav: Pavimento; calc: 
   );
 }
 
+function ListaVigas({ V, sel, onSel }: { V: VigaN[]; sel: string | null; onSel: (id: string) => void }) {
+  if (!V.length) return <div className="card acoes"><p>Nenhuma viga necessária neste pavimento pelas regras atuais.</p></div>;
+  const reb = V.flatMap(v => v.rebaixos);
+  return <div className="card acoes vigas">
+    <h3>{V.length} viga(s) sugerida(s) · {V.filter(v => v.obrigatoria).length} obrigatória(s)</h3>
+    {reb.length > 0 && <p className="erro">Paredes que diminuem de altura: {[...new Map(reb.map(r => [r.painel, r])).values()].sort((a, b) => a.painel - b.painel).map(r => `${r.painel} (${br(r.de)} → ${br(r.para)})`).join(', ')}</p>}
+    {V.map(v => <div key={v.id} className={'viga' + (sel === v.id ? ' on' : '') + (v.obrigatoria ? ' obrig' : '')} onClick={() => onSel(v.id)}>
+      <b>V{v.n}</b> {v.obrigatoria ? '· obrigatória' : '· recomendada'} · {br(v.b - v.a)} m
+      <div>{v.motivo}</div>
+      <div className="dica">Ideia: {v.ideia}</div>
+      {v.rebaixos.length > 0 && <div className="dica">Paredes rebaixadas: {v.rebaixos.map(r => `${r.painel} (${br(r.de)} → ${br(r.para)})`).join(', ')}</div>}
+    </div>)}
+  </div>;
+}
+
 function Acoes({ sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, setCortando, limpar }: {
   sel: { trecho: string } | null; vaoSel: string | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; quadro: Esquadria[]; regras: Regras;
   cortando: { trecho: string; coluna: boolean } | null; setCortando: (c: { trecho: string; coluna: boolean } | null) => void; limpar: () => void;
@@ -456,6 +498,16 @@ function Folhas({ ativos, calc, leitura, arqDe, nome }: { ativos: Pavimento[]; c
       <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaSvg(p) }} />)}</div>)}</div>
       {rod('Vãos de portas e janelas maiores pelo acréscimo · boneca nas laterais e embaixo (retirar na obra) · medidas em metros')}
     </div>));
+    const VG = calc.vigas.filter(v => v.pav === pav.id);
+    if (VG.length) {
+      const q = quadroDe(pav);
+      folhas.push(<div className="folha" key={pav.id + 'g'}>
+        <div className="cab">VIGAS SUGERIDAS — {pav.nome.toUpperCase()}</div>
+        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + vigasConteudo(VG, q) }} />
+          <div className="tvigas">{VG.map(v => <p key={v.id}><b>V{v.n}</b> ({v.obrigatoria ? 'obrigatória' : 'recomendada'}, {br(v.b - v.a)} m): {v.motivo} <i>{v.ideia}</i>{v.rebaixos.length ? ` Rebaixo: ${v.rebaixos.map(r => `${r.painel} (${br(r.de)}→${br(r.para)})`).join(', ')}.` : ''}</p>)}</div></div>
+        {rod('Sugestões para o engenheiro conferir e dimensionar · vermelho = obrigatória · laranja = recomendada')}
+      </div>);
+    }
     const P = calc.pl.filter(p => p.pav === pav.id);
     if (P.length) {
       const q = quadroDe(pav);

@@ -18,11 +18,16 @@ export interface Regras {
   lajeLarg: number;        // largura máxima do painel de laje
   lajeApoio: number;       // quanto a laje entra em cima de cada parede de apoio
   lajeEsp: number;         // espessura da laje (para conferir com os cortes)
+  vigaAltura: number;      // altura da viga (rebaixo nas paredes embaixo dela)
+  vigaLargura: number;     // largura da viga
+  vigaApoio: number;       // quanto a viga entra em cima da parede de apoio
+  vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
 }
 export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 4.5, lajeLarg: 3.0, lajeApoio: 0.06, lajeEsp: 0.15,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vaoViga: 5.0,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros

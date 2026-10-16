@@ -138,3 +138,17 @@ export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro): string
   return g.join('');
 }
 export const DEFS_LAJE = `<defs><pattern id="hach" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="12" stroke="#ccc" stroke-width="2"/></pattern><marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${AZUL}"/></marker></defs>`;
+
+// vigas sugeridas: faixa laranja (vermelha se obrigatória), com o número
+import type { Viga } from './vigas.ts';
+export function vigasConteudo(V: (Viga & { n: number })[], q: Quadro, sel: string | null = null): string {
+  const { X, Y } = q; const g: string[] = [];
+  for (const v of V) {
+    const cor = sel === v.id ? '#0a0' : v.obrigatoria ? '#d11' : '#e67700';
+    const [x1, y1, x2, y2] = v.o === 'H' ? [v.a, v.c, v.b, v.c] : [v.c, v.a, v.c, v.b];
+    g.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${cor}" stroke-width="14" stroke-opacity=".55" stroke-dasharray="22 8"/>`);
+    const [tx, ty] = v.o === 'H' ? [(X(x1) + X(x2)) / 2, Y(y1) - 14] : [X(x1) + 16, (Y(y1) + Y(y2)) / 2];
+    g.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="20" font-weight="bold" fill="${cor}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="4">V${v.n}</text>`);
+  }
+  return g.join('');
+}

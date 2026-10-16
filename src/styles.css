@@ -96,3 +96,8 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .topo .usuario { font-size: 12px; opacity: .9; }
 .topo .usuario button { padding: 2px 8px; margin-left: 6px; font-size: 12px; }
 .aviso-local { background: #fff6e0; border: 1px solid #e8c56a; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 14px; }
+.vigas .viga { border: 1px solid #ddd; border-left: 5px solid #e67700; border-radius: 5px; padding: 6px 8px; margin: 6px 0; font-size: 13px; cursor: pointer; }
+.vigas .viga.obrig { border-left-color: #d11; }
+.vigas .viga.on { background: #eef8ee; border-color: #0a0; }
+.tvigas { width: 95mm; font-size: 7pt; overflow: hidden; }
+.tvigas p { margin: 0 0 3px; }
