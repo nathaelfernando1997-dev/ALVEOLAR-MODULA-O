@@ -377,7 +377,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     else { base = r.boneca; h = q.alt; }   // porta: boneca embaixo + altura do quadro
     const inteiro = (!janela && base + h >= Hh - 1e-6) || w > r.larguraMax - 2 * r.boneca;
     if (inteiro) { w = Math.max(w, v.b - v.a); }
-    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt : q.alt };
+    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt };   // mesmo topo do recorte (porta = boneca + altura)
   }
   // ajustes: excluir e juntar
   let res = out.filter(t => t.e - t.s >= r.minParede && !aj.excluir.includes(t.id));
