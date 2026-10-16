@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { ler, trechos, paineis, numerar, resumo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { ler, trechos, paineis, numerar, resumo, continuarVaos, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje } from './engine/lajes.ts';
@@ -134,6 +134,11 @@ export default function App() {
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
     // linhas do desenho desta planta (a projeção do beiral pode ficar até 2,5 m para fora das paredes)
     const naCaixa = (b: Box, l: { a: number; b: number; c: number; o: 'H' | 'V' }) => { const [x, y] = l.o === 'H' ? [(l.a + l.b) / 2, l.c] : [l.c, (l.a + l.b) / 2]; return x > b.x0 - 2.5 && x < b.x1 + 2.5 && y > b.y0 - 2.5 && y < b.y1 + 2.5; };
+    // porta mais alta que o pavimento: o vão continua no pé da parede de cima
+    for (let i = 0; i < ativos.length - 1; i++) if (porPav[i].length && porPav[i + 1].length) {
+      const al = alinhar(porPav[i], porPav[i + 1]);
+      continuarVaos(porPav[i], porPav[i + 1], quadro, regras, al.dx, al.dy);
+    }
     const pisos: Trecho[] = [];
     ativos.forEach((p, i) => {
       const t = porPav[i], cima = ativos[i + 1], tc = porPav[i + 1] || [];
@@ -154,6 +159,11 @@ export default function App() {
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
     { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv })); }
+    // parede de cima que apoia em cima da viga fica mais baixa
+    for (const v of vazio.vigas) for (const d of v.desconto || []) {
+      const p = vazio.ps.find(x => x.num === d.painel); if (!p || p.H <= d.para) continue;
+      p.H = d.para; p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(d.para)} m: apoia em cima da viga V${v.n}`;
+    }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
 

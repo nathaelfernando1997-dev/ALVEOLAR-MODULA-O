@@ -230,7 +230,9 @@ function eixos(F: Face[], r: Regras): Eixo[] {
   });
 }
 
-export interface Vao { a: number; b: number; tag: string | null; tipo: string; w: number; x0: number; x1: number; base: number; h: number; inteiro: boolean }
+export interface Vao { a: number; b: number; tag: string | null; tipo: string; w: number; x0: number; x1: number; base: number; h: number; inteiro: boolean;
+  continua?: boolean; sobe?: boolean;
+  topo?: number }   // altura do topo da abertura a partir do piso (porta = altura do quadro)   // sobe = porta que continua na parede de cima   // continuação de porta mais alta que o pavimento de baixo (começa no pé da parede, sem boneca embaixo)
 export interface Trecho { id: string; pav: string; o: 'H' | 'V'; c: number; s: number; e: number; vaos: Vao[]; H: number; esp: number; pinado?: boolean }
 
 export interface Ajustes {
@@ -367,7 +369,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     const tag = aj.vaoTipo[key] ?? v.tag ?? 'livre';
     const q = tag !== 'livre' ? Q.get(tag) : undefined;
     const m = (v.a + v.b) / 2;
-    if (!q) return { a: v.a, b: v.b, tag: tag === 'livre' ? null : tag, tipo: tag === 'livre' ? 'vão livre' : tag, w: v.b - v.a, x0: v.a, x1: v.b, base: 0, h: Hh, inteiro: true };
+    if (!q) return { a: v.a, b: v.b, tag: tag === 'livre' ? null : tag, tipo: tag === 'livre' ? 'vão livre' : tag, w: v.b - v.a, x0: v.a, x1: v.b, base: 0, h: Hh, inteiro: true, topo: Hh };
     const janela = q.tag.startsWith('J');
     let w = q.larg + r.acrescimoLargura;
     let base: number, h: number;
@@ -375,7 +377,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     else { base = r.boneca; h = q.alt; }   // porta: boneca embaixo + altura do quadro
     const inteiro = (!janela && base + h >= Hh - 1e-6) || w > r.larguraMax - 2 * r.boneca;
     if (inteiro) { w = Math.max(w, v.b - v.a); }
-    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro };
+    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt : q.alt };
   }
   // ajustes: excluir e juntar
   let res = out.filter(t => t.e - t.s >= r.minParede && !aj.excluir.includes(t.id));
@@ -397,6 +399,41 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
         if (viz === ant) { ant.e = t.e; ant.vaos.push(...t.vaos); ant.pinado = true; }
         else { prox.s = t.s; prox.vaos.unshift(...t.vaos); prox.pinado = true; prox.id = t.id; }
         res = res.filter(x => x !== t); mudou = true;
+      }
+    }
+  }
+  // no T, a parede que chega para na face da parede que passa (não entra no espaço da coluna)
+  for (const t of res) {
+    const perp = res.filter(x => x.pav === t.pav && x.o !== t.o);
+    const passa = (c: number) => perp.filter(x => Math.abs(x.c - c) < 0.2);
+    for (const ponta of ['s', 'e'] as const) {
+      const v = t[ponta];
+      for (const c of [...new Set(passa(v).map(x => x.c))]) {
+        const ps2 = perp.filter(x => Math.abs(x.c - c) < 0.02);
+        const esq = ps2.some(x => x.s <= t.c - 0.05 && x.e >= t.c - 0.35), dir = ps2.some(x => x.e >= t.c + 0.05 && x.s <= t.c + 0.35);
+        if (!esq || !dir) continue;
+        const face = (ps2[0].esp || r.espMin) / 2;
+        if (ponta === 's' && v < c + face && t.e > c + face + 0.3) t.s = c + face;
+        if (ponta === 'e' && v > c - face && t.s < c - face - 0.3) t.e = c - face;
+      }
+    }
+  }
+  // pedaço curto (sem porta/janela) colado em outro trecho do mesmo alinhamento: pina nele (sem coluna)
+  {
+    let mudou = true;
+    while (mudou) {
+      mudou = false;
+      for (const t of [...res]) {
+        if (!res.includes(t) || t.e - t.s >= 0.5 || t.vaos.length || aj.naoPinar?.includes(t.id)) continue;
+        const cs = res.filter(x => x !== t && x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05 && !x.vaos.some(v => v.inteiro) &&
+          (Math.abs(x.s - t.e) <= r.coluna + 0.1 || Math.abs(t.s - x.e) <= r.coluna + 0.1) && Math.max(x.e, t.e) - Math.min(x.s, t.s) - r.folga <= r.larguraMax);
+        // prefere o lado em que a parede juntada fica do tamanho das paralelas vizinhas (mesmo início e fim)
+        const nota = (x: Trecho) => { const a = Math.min(x.s, t.s), b = Math.max(x.e, t.e);
+          return res.filter(y => y.pav === t.pav && y.o === t.o && Math.abs(y.c - t.c) > 0.3 && Math.abs(y.s - a) < 0.1 && Math.abs(y.e - b) < 0.1).length; };
+        const viz = cs.sort((p, q) => nota(q) - nota(p) || (p.e - p.s) - (q.e - q.s))[0];
+        if (!viz) continue;
+        if (viz.s > t.s) { viz.s = t.s; viz.id = t.id; } else viz.e = t.e;
+        viz.pinado = true; res = res.filter(x => x !== t); mudou = true;
       }
     }
   }
@@ -423,10 +460,33 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   return res;
 }
 
+// porta mais alta que o pavimento de baixo: o vão continua no pé da parede de cima, no mesmo lugar
+// (dx, dy levam a planta de cima para a de baixo)
+export function continuarVaos(baixo: Trecho[], cima: Trecho[], quadro: Esquadria[], r: Regras, dx: number, dy: number): void {
+  const Q = new Map(quadro.map(q => [q.tag, q]));
+  for (const t of baixo) for (const v of t.vaos) {
+    const q = v.tag ? Q.get(v.tag) : undefined;
+    if (!q || q.tag.startsWith('J')) continue;
+    const topo = r.boneca + q.alt;
+    const resto = topo - (t.H + r.lajeEsp);
+    if (resto <= 0.02) continue;
+    const off = t.o === 'H' ? dx : dy, offC = t.o === 'H' ? dy : dx;
+    const x0 = v.x0 - off, x1 = v.x1 - off;
+    const us = cima.filter(u => u.o === t.o && Math.abs(u.c + offC - t.c) < 0.15 && u.s < x1 && u.e > x0);
+    if (us.length) v.sobe = true;
+    for (const u of us) {
+      // a planta de cima costuma repetir o desenho da porta: esse vão é a própria continuação
+      u.vaos = u.vaos.filter(w => w.continua || !(w.x0 < x1 - 0.05 && w.x1 > x0 + 0.05) || (w.tag ?? '').startsWith('J'));
+      if (u.vaos.some(w => w.continua && Math.abs(w.x0 - x0) < 0.05)) continue;
+      u.vaos.push({ a: x0, b: x1, tag: q.tag, tipo: `${q.tag} (continuação)`, w: x1 - x0, x0, x1, base: 0, h: Math.min(resto, u.H), inteiro: false, continua: true });
+    }
+  }
+}
+
 // ---------------- painéis ----------------
 export interface Recorte { tipo: string; dl: number; w: number; base: number; h: number }
 export interface Painel { num: number; trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; H: number; comp: number; recortes: Recorte[]; aviso?: string }
-export interface VaoInteiro { trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; tipo: string }
+export interface VaoInteiro { trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; tipo: string; sobe?: boolean; topo?: number; H?: number }
 
 export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel[]; vaos: VaoInteiro[] } {
   const P: Painel[] = []; const VI: VaoInteiro[] = [];
@@ -436,7 +496,7 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
     for (const v of [...t.vaos].sort((p, q) => p.x0 - q.x0)) {
       if (!v.inteiro) continue;
       subs.push([a, v.a, t.vaos.filter(o => !o.inteiro && a - 0.08 <= o.x0 && o.x0 < v.a)]);
-      VI.push({ trecho: t.id, pav: t.pav, o: t.o, c: t.c, a: v.a, b: v.b, tipo: v.tipo });
+      VI.push({ trecho: t.id, pav: t.pav, o: t.o, c: t.c, a: v.a, b: v.b, tipo: v.tipo, sobe: v.sobe, topo: v.topo, H: t.H });
       a = v.b;
     }
     subs.push([a, t.e, t.vaos.filter(o => !o.inteiro && a - 0.08 <= o.x0 && o.x0 < t.e)]);
@@ -473,7 +533,7 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           let dl = Math.min(Math.max(o.x0 - pa, r.boneca), larg - w - r.boneca);
           if (dl < r.boneca - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${r.boneca * 100} cm`; }
           let base = o.base, h = o.h;
-          if (base < r.boneca) { h -= r.boneca - base; base = r.boneca; }
+          if (base < r.boneca && !o.continua) { h -= r.boneca - base; base = r.boneca; }
           rec.push({ tipo: o.tipo, dl, w, base, h });
         }
         if (larg < r.naoFabricar) aviso = 'n fabricar';
