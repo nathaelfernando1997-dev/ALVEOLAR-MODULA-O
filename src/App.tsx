@@ -433,9 +433,16 @@ function PlantaLajes({ pav, calc, arq, ambSel, onAmb }: { pav: Pavimento; calc: 
     <div className="planta">
       <ZoomSvg vb={q.vb}>
         <g dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arq) + lajesConteudo(lj, P, q, TR) }} />
-        {lj.map(a => <rect key={a.id} className="hit" x={q.X(a.x0)} y={q.Y(a.y1)} width={(a.x1 - a.x0) * q.k} height={(a.y1 - a.y0) * q.k} fill={ambSel === a.id ? 'rgba(230,0,0,.12)' : 'transparent'} stroke={a.aviso ? '#e80' : 'transparent'} strokeWidth={a.aviso ? 4 : 0} onClick={() => onAmb(a.id)}><title>{a.aviso || 'clique para ajustar'}</title></rect>)}
+        {lj.map(a => {
+          // área clicável de face a face das paredes; aviso = marcador "!" dentro do ambiente (sem contorno em cima das paredes)
+          const fx0 = a.x0 + a.esp.o / 2, fx1 = a.x1 - a.esp.l / 2, fy0 = a.y0 + a.esp.s / 2, fy1 = a.y1 - a.esp.n / 2;
+          return <g key={a.id} onClick={() => onAmb(a.id)} className="hit">
+            <rect x={q.X(fx0)} y={q.Y(fy1)} width={(fx1 - fx0) * q.k} height={(fy1 - fy0) * q.k} fill={ambSel === a.id ? 'rgba(230,0,0,.12)' : 'transparent'}><title>{a.aviso || 'clique para ajustar'}</title></rect>
+            {a.aviso && <g><circle cx={q.X(fx0) + 16} cy={q.Y(fy1) + 16} r={11} fill="#e80" /><text x={q.X(fx0) + 16} y={q.Y(fy1) + 22} fontSize={16} fontWeight="bold" fill="#fff" textAnchor="middle">!</text><title>{a.aviso}</title></g>}
+          </g>;
+        })}
       </ZoomSvg>
-      <p className="dica">Laje sobre este pavimento. Clique num ambiente para tirar a laje (vazio, área externa) ou girar o sentido dos painéis. Contorno laranja = precisa de atenção. Linha roxa = treliça de reforço embaixo de parede de cima.</p>
+      <p className="dica">Laje sobre este pavimento. Clique num ambiente para tirar a laje (vazio, área externa) ou girar o sentido dos painéis. Marcador laranja "!" = precisa de atenção (passe o mouse ou clique para ver). Linha roxa = treliça de reforço embaixo de parede de cima.</p>
       {TP.length > 0 && <TabelaTrelicas TP={TP} TR={TR} />}
     </div>
   );
