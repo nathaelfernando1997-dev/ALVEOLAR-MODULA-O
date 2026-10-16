@@ -7,7 +7,7 @@ import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesC
 import { ambientes, modularLajes, numerarLajes } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
-import { sugerirVigas } from './engine/vigas.ts';
+import { sugerirVigas, cargasDeCima } from './engine/vigas.ts';
 import type { Viga } from './engine/vigas.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
@@ -131,13 +131,15 @@ export default function App() {
   const calc: Calc = useMemo(() => {
     const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [] };
     if (!leitura) return vazio;
-    for (const p of ativos) {
-      const t = trechos(leitura, p, quadro, regras, aj);
+    const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
+    ativos.forEach((p, i) => {
+      const t = porPav[i];
       const r = paineis(t, regras, aj);
       vazio.ts.push(...t); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
-      const m = modularLajes(ambientes(p, t), regras, aj, t);
+      // o sentido da laje leva em conta as paredes do pavimento de cima
+      const m = modularLajes(ambientes(p, t), regras, aj, t, cargasDeCima(t, porPav[i + 1] || []));
       vazio.lajes.push(...m.ambs); vazio.pl.push(...m.paineis);
-    }
+    });
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
     vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras).map((v, i) => ({ ...v, n: i + 1 }));

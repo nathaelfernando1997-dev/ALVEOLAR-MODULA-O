@@ -28,6 +28,29 @@ export function alinhar(baixo: Trecho[], cima: Trecho[]): { dx: number; dy: numb
   return { dx: melhor('V'), dy: melhor('H') };
 }
 
+// trechos das paredes do pavimento de cima (já nas coordenadas da planta de baixo) que não têm parede embaixo,
+// cortados em cada parede de baixo que atravessa a linha: cada pedaço fica dentro de um só ambiente
+export interface Carga { t: Trecho; o: 'H' | 'V'; c: number; a: number; b: number }
+export function cargasDeCima(tb: Trecho[], tc: Trecho[]): Carga[] {
+  if (!tb.length || !tc.length) return [];
+  const { dx, dy } = alinhar(tb, tc);
+  const out: Carga[] = [];
+  for (const t of tc) {
+    const c = t.c + (t.o === 'V' ? dx : dy), s = t.s + (t.o === 'H' ? dx : dy), e = t.e + (t.o === 'H' ? dx : dy);
+    const apoios = tb.filter(x => x.o === t.o && Math.abs(x.c - c) < 0.15 && x.s < e && x.e > s).map(x => [Math.max(s, x.s), Math.min(e, x.e)] as [number, number]).sort((p, q) => p[0] - q[0]);
+    let pos = s; const livres: [number, number][] = [];
+    for (const [a, b] of apoios) { if (a - pos > 0.3) livres.push([pos, a]); pos = Math.max(pos, b); }
+    if (e - pos > 0.3) livres.push([pos, e]);
+    for (const [a, b] of livres) {
+      // paredes de baixo que cruzam a linha dividem o pedaço (a viga não passa de um ambiente para o outro)
+      const cortes = tb.filter(x => x.o !== t.o && x.c > a + 0.1 && x.c < b - 0.1 && x.s <= c + 0.1 && x.e >= c - 0.1).map(x => x.c).sort((p, q) => p - q);
+      const pts = [a, ...cortes, b];
+      for (let i = 0; i < pts.length - 1; i++) if (pts[i + 1] - pts[i] > 0.3) out.push({ t, o: t.o, c, a: pts[i], b: pts[i + 1] });
+    }
+  }
+  return out;
+}
+
 export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos: VaoInteiro[], lajes: LajeAmb[], r: Regras): Viga[] {
   const V: Viga[] = [];
   const painelEm = (pav: string, o: 'H' | 'V', c: number, a: number, b: number, tol = 0.12) =>
@@ -82,17 +105,11 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
         });
       }
     }
-    // 3) paredes do pavimento de cima sem parede embaixo
+    // 3) paredes do pavimento de cima sem parede embaixo (um pedaço por ambiente de baixo)
     if (!cima || !tb.length || !tc.length) return;
-    const { dx, dy } = al;
-    for (const t of tc) {
-      const c = t.c + (t.o === 'V' ? dx : dy), s = t.s + (t.o === 'H' ? dx : dy), e = t.e + (t.o === 'H' ? dx : dy);
-      const apoios = tb.filter(x => x.o === t.o && Math.abs(x.c - c) < 0.15 && x.s < e && x.e > s).map(x => [Math.max(s, x.s), Math.min(e, x.e)] as [number, number]).sort((p, q) => p[0] - q[0]);
-      let pos = s; const livres: [number, number][] = [];
-      for (const [a, b] of apoios) { if (a - pos > 0.3) livres.push([pos, a]); pos = Math.max(pos, b); }
-      if (e - pos > 0.3) livres.push([pos, e]);
+    for (const { t, c, a, b } of cargasDeCima(tb, tc)) {
       const nums = ps.filter(p => p.trecho === t.id).map(p => p.num);
-      for (const [a, b] of livres) {
+      {
         if (vaos.some(v => v.pav === pav.id && v.o === t.o && Math.abs(v.c - c) < 0.15 && v.a <= a + 0.3 && v.b >= b - 0.3)) continue; // já tem viga do vão
         const m = (a + b) / 2, [mx, my] = t.o === 'H' ? [m, c] : [c, m];
         const L = lajeEm(pav.id, mx, my);
@@ -118,15 +135,24 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
             rebaixos: [],
           });
         } else {
+          // a viga vai de uma parede do ambiente até a outra (não passa para o ambiente vizinho)
+          const [va, vb] = t.o === 'H' ? [L.x0, L.x1] : [L.y0, L.y1];
           V.push({
-            id: `${pav.id}-cima-${t.id}-${a.toFixed(2)}`, pav: pav.id, o: t.o, c, a: a - r.vigaApoio, b: b + r.vigaApoio, tipo: 'parede-cima', obrigatoria: true,
+            id: `${pav.id}-cima-${t.id}-${a.toFixed(2)}`, pav: pav.id, o: t.o, c, a: va, b: vb, tipo: 'parede-cima', obrigatoria: true,
             motivo: `Parede${nums.length ? ` ${nums.join(', ')}` : ''} do ${cima.nome} corre ao longo dos painéis da laje, ${br(b - a)} m sem parede embaixo.`,
-            ideia: `Girar o sentido da laje deste ambiente (aba Lajes) para a parede atravessar os painéis, ou viga sob ela de ${br(b - a + 2 * r.vigaApoio)} m.`,
-            rebaixos: reb(cruzando(pav.id, t.o, c, a, b)),
+            ideia: `Viga sob ela de ${br(vb - va)} m, de uma parede do ambiente até a outra; ou girar o sentido da laje deste ambiente (aba Lajes) para a parede atravessar os painéis.`,
+            rebaixos: reb(cruzando(pav.id, t.o, c, va, vb)),
           });
         }
       }
     }
   });
-  return V;
+  // mesma viga sugerida duas vezes (dois pedaços de parede no mesmo ambiente): fica uma só
+  const unicas: Viga[] = [];
+  for (const v of V) {
+    const ig = unicas.find(u => u.pav === v.pav && u.o === v.o && Math.abs(u.c - v.c) < 0.05 && Math.abs(u.a - v.a) < 0.05 && Math.abs(u.b - v.b) < 0.05);
+    if (ig) { ig.obrigatoria ||= v.obrigatoria; continue; }
+    unicas.push(v);
+  }
+  return unicas;
 }

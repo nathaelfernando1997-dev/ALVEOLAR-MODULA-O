@@ -21,8 +21,14 @@ export function ambientes(pav: Pavimento, ts: Trecho[]): Ambiente[] {
   const ys = agrupa(T.filter(t => t.o === 'H').map(t => t.c));
   if (xs.length < 2 || ys.length < 2) return [];
   // parede cobrindo uma aresta da malha (folga para colunas nos encontros)
-  const parede = (o: 'H' | 'V', c: number, a: number, b: number) =>
-    T.find(t => t.o === o && Math.abs(t.c - c) < 0.08 && t.s <= a + 0.25 && t.e >= b - 0.25);
+  // a aresta pode estar coberta por mais de um trecho (parede dividida nos encontros em T)
+  const parede = (o: 'H' | 'V', c: number, a: number, b: number) => {
+    const ps = T.filter(t => t.o === o && Math.abs(t.c - c) < 0.08 && t.s < b && t.e > a).sort((p, q) => p.s - q.s);
+    if (!ps.length) return undefined;
+    let pos = a;
+    for (const t of ps) { if (t.s - pos > 0.25) return undefined; pos = Math.max(pos, t.e); }
+    return b - pos > 0.25 ? undefined : ps[0];
+  };
   const nx = xs.length - 1, ny = ys.length - 1;
   const id = (i: number, j: number) => j * nx + i;
   const fora = new Array(nx * ny).fill(false);
@@ -75,7 +81,8 @@ export function ambientes(pav: Pavimento, ts: Trecho[]): Ambiente[] {
   return out;
 }
 
-export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trecho[] = []): { ambs: LajeAmb[]; paineis: PainelLaje[] } {
+// cargas = paredes do pavimento de cima sem parede embaixo (coordenadas desta planta)
+export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trecho[] = [], cargas: { o: 'H' | 'V'; c: number; a: number; b: number }[] = []): { ambs: LajeAmb[]; paineis: PainelLaje[] } {
   const res: LajeAmb[] = []; const P: PainelLaje[] = [];
   const fora = aj.lajeFora || [], giro = aj.lajeGiro || [];
   const esV = r.vigaLargura || 0.15;
@@ -108,9 +115,12 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       }
       return { vaos, vigas, internas: internas.map(w => w.c), maior: Math.max(...vaos.map(([p, q]) => q - p)), l0, l1 };
     };
-    const opcoes = ([podeH ? 'H' : null, podeV ? 'V' : null].filter(Boolean) as ('H' | 'V')[]).map(sn => ({ sn, p: plano(sn) }));
-    // escolhe o sentido com menos vigas; empate: o menor vão
-    opcoes.sort((x, y) => x.p.vigas.length - y.p.vigas.length || x.p.maior - y.p.maior);
+    // parede de cima dentro do ambiente correndo no mesmo sentido dos painéis pede viga; atravessando, a laje carrega
+    const aoLongo = (sn: 'H' | 'V') => cargas.filter(w => w.o === sn && (sn === 'H' ? w.c > a.y0 + 0.1 && w.c < a.y1 - 0.1 && Math.min(w.b, a.x1) - Math.max(w.a, a.x0) > 0.3
+      : w.c > a.x0 + 0.1 && w.c < a.x1 - 0.1 && Math.min(w.b, a.y1) - Math.max(w.a, a.y0) > 0.3)).length;
+    const opcoes = ([podeH ? 'H' : null, podeV ? 'V' : null].filter(Boolean) as ('H' | 'V')[]).map(sn => ({ sn, p: plano(sn), n: plano(sn).vigas.length + aoLongo(sn) }));
+    // escolhe o sentido com menos vigas (contando as das paredes de cima); empate: o menor vão
+    opcoes.sort((x, y) => x.n - y.n || x.p.maior - y.p.maior);
     let esc = opcoes[0];
     if (esc && giro.includes(a.id) && opcoes[1]) esc = opcoes[1];
     const sentido = esc ? esc.sn : null;
