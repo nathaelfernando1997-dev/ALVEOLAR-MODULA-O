@@ -155,6 +155,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       const [bA, bB] = lados(sent).pontas.map(l => beiral(l));
       const ap = r.lajeApoio, g = esV - 2 * ap;   // g = folga entre as pontas dos painéis em cima da viga
       // paredes de cima que cruzam o vão: melhor lugar para a viga (já carrega a parede)
+      const noL = ts.filter(t => t.pav === a.pav && t.o === oParede && (Math.abs(t.e - l0) < 0.25 || Math.abs(t.s - l1) < 0.25)).map(t => t.c);
       const sobCarga = cargas.filter(w => w.o === oParede && Math.min(w.b, l1) - Math.max(w.a, l0) > 0.6 * (l1 - l0)).map(w => w.c);
       for (let k = 0; k < apoios.length - 1; k++) {
         const s0 = apoios[k].b, s1 = apoios[k + 1].a, vao = s1 - s0;
@@ -164,7 +165,10 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
         if (nV <= 1) { vaos.push([s0, s1]); continue; }
         // uma viga só: tenta embaixo de uma parede de cima, se os dois painéis couberem
         const cabe = (c: number) => (c - esV / 2 + ap) - A <= r.lajeComp + 1e-6 && B - (c + esV / 2 - ap) <= r.lajeComp + 1e-6;
-        const sc = nV === 2 ? sobCarga.filter(c => c > s0 + 0.5 && c < s1 - 0.5 && cabe(c)).sort((p, q) => Math.abs(p - (A + B) / 2) - Math.abs(q - (A + B) / 2))[0] : undefined;
+        const meio = (p: number, q: number) => Math.abs(p - (A + B) / 2) - Math.abs(q - (A + B) / 2);
+        const ok = (c: number) => c > s0 + 0.5 && c < s1 - 0.5 && cabe(c);
+        // 1º no alinhamento de uma parede que chega na lateral do ambiente (no L/T das paredes); 2º embaixo de parede de cima
+        const sc = nV === 2 ? (noL.filter(ok).sort(meio)[0] ?? sobCarga.filter(ok).sort(meio)[0]) : undefined;
         const cs: number[] = [];
         if (sc !== undefined) cs.push(sc);
         else { const Pm = (B - A - (nV - 1) * g) / nV; for (let m = 1; m < nV; m++) cs.push(A + m * Pm + (m - 1) * g + esV / 2 - ap); }
