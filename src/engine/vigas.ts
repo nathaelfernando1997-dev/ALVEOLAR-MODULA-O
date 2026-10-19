@@ -13,7 +13,6 @@ export interface Viga {
   altura?: number;  // altura da viga (10% do vão, no mínimo a da regra)
   desconto?: { painel: number; de: number; para: number }[];   // paredes de cima que ficam mais baixas (apoiam em cima da viga)
   apoio?: number;   // quanto de cada ponta fica em cima da parede (o desenho mostra só o vão livre)
-  encaixes?: { painel: number; dl: number; w: number; h: number }[];   // recorte no topo das paredes de apoio (a viga desce abaixo da laje)
 }
 
 const br = (v: number) => v.toFixed(2).replace('.', ',');
@@ -72,26 +71,6 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
     const [r0, r1] = L.sentido === 'H' ? [L.y0, L.y1] : [L.x0, L.x1];
     return linhas.some(x => Math.abs(x - c) < 0.15) && Math.min(b, r1) - Math.max(a, r0) > 0.1;
   });
-  // paredes onde a viga apoia nas pontas: recebem no topo o encaixe da parte da viga que fica abaixo da laje
-  // (parede atravessada: largura da viga; parede alinhada: o trecho de apoio)
-  const encaixesDaViga = (pav: string, t: Trecho, a: number, b: number, h: number) => {
-    if (h < 0.005) return [];
-    const out: { painel: number; dl: number; w: number; h: number }[] = [];
-    for (const p of ps.filter(q => q.pav === pav)) {
-      if (p.o !== t.o) {
-        const ponta = (p.c >= a - 0.1 && p.c <= t.s + 0.1) || (p.c >= t.e - 0.1 && p.c <= b + 0.1);
-        if (!ponta || t.c < p.a - 0.02 || t.c > p.b + 0.02) continue;
-        const i0 = Math.max(t.c - r.vigaLargura / 2, p.a), i1 = Math.min(t.c + r.vigaLargura / 2, p.a + p.larg);
-        if (i1 - i0 > 0.02) out.push({ painel: p.num, dl: Math.round((i0 - p.a) * 100) / 100, w: Math.round((i1 - i0) * 100) / 100, h });
-      } else if (Math.abs(p.c - t.c) < 0.15) {
-        for (const [x0, x1] of [[a, t.s], [t.e, b]]) {
-          const i0 = Math.max(x0, p.a), i1 = Math.min(x1, p.a + p.larg);
-          if (i1 - i0 > 0.02) out.push({ painel: p.num, dl: Math.round((i0 - p.a) * 100) / 100, w: Math.round((i1 - i0) * 100) / 100, h });
-        }
-      }
-    }
-    return out;
-  };
   const lajeEm = (pav: string, x: number, y: number) => lajes.find(L => L.pav === pav && L.incluida && x > L.x0 && x < L.x1 && y > L.y0 && y < L.y1);
 
   pavs.forEach((pav, ip) => {
@@ -120,7 +99,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
         id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a, b, tipo: 'piso', obrigatoria: true, apoio: r.vigaApoio,
         motivo: `Linha de piso do projeto (${br(w)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
         ideia: `Viga na linha de piso, de ${br(b - a)} m, apoiada nas paredes das pontas (ou pilares). ${partes} Conferir com o engenheiro.`,
-        altura: pouco ? abaixo + naLaje : hV, desconto, encaixes: encaixesDaViga(pav.id, t, a, b, abaixo),
+        altura: pouco ? abaixo + naLaje : hV, desconto,
         rebaixos: [],
       });
     }
