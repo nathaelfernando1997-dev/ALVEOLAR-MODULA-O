@@ -73,14 +73,36 @@ export default function App() {
   const leitura = useMemo(() => (dxf ? ler(dxf, camada) : null), [dxf, camada]);
 
   // carrega um DXF (texto) com a configuração salva, ou monta a configuração inicial
-  const carregarTexto = (txt: string, arquivo: string, cfg: Config | null) => {
+  // mescla ajustes salvos de outra versão do mesmo arquivo: cada desenho é reconhecido pela posição (não pelo número),
+  // os pés-direitos e papéis automáticos valem onde o salvo ainda estava no padrão
+  const mesclar = (auto: Pavimento[], salvo: Config): { pavs: Pavimento[]; aj: Ajustes } => {
+    const igual = (a: Box, b: Box) => Math.abs(a.x0 - b.x0) < 0.5 && Math.abs(a.x1 - b.x1) < 0.5 && Math.abs(a.y0 - b.y0) < 0.5 && Math.abs(a.y1 - b.y1) < 0.5;
+    const mapa = new Map<string, string>();
+    const pavs = auto.map(p => {
+      const s = salvo.pavs.find(q => igual(q.box, p.box));
+      if (!s) return p;
+      mapa.set(s.id, p.id);
+      const padrao = !s.ativo && !s.corte && Math.abs(s.altura - 2.8) < 1e-6;   // o salvo nem tinha mexido neste desenho
+      if (padrao) return p;
+      return { ...p, ativo: s.ativo, corte: s.corte, nome: /^Desenho \d+$/.test(s.nome) && p.ativo ? p.nome : s.nome,
+        altura: Math.abs(s.altura - 2.8) < 1e-6 && p.ativo ? p.altura : s.altura };
+    });
+    // ids dos ajustes começam pelo id do desenho
+    const troca = (id: string) => { const i = id.indexOf('|'); const n = mapa.get(i > 0 ? id.slice(0, i) : id); return n ? n + (i > 0 ? id.slice(i) : '') : null; };
+    const lista = (v?: string[]) => (v || []).map(troca).filter((x): x is string => !!x);
+    const reg = <T,>(v?: Record<string, T>) => Object.fromEntries(Object.entries(v || {}).map(([k, x]) => [troca(k), x] as const).filter(([k]) => !!k)) as Record<string, T>;
+    const a = { ...AJUSTES_VAZIOS, ...salvo.ajustes };
+    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro),
+      cortes: reg(a.cortes), colunas: reg(a.colunas), altura: reg(a.altura), vaoTipo: reg(a.vaoTipo) } };
+  };
+  const carregarTexto = (txt: string, arquivo: string, cfg: Config | null, deOutraVersao = false) => {
     if (!/SECTION/.test(txt.slice(0, 5000))) throw new Error('O arquivo não parece um DXF. No AutoCAD use "Salvar como" > DXF.');
     const d = parseDxf(txt);
     setPronto(false);
     setDxf(d); setNome(arquivo); setSel(null); setVaoSel(null); setAmbSel(null); setCortando(null); setPavSel('');
     const cam = cfg?.camada ?? (d.layers.find(l => /parede|wall|alven/i.test(l)) || 'PAREDE');
     setCamada(cam);
-    if (cfg) { setPavs(cfg.pavs); setQuadro(cfg.quadro); setRegras({ ...REGRAS_PADRAO, ...cfg.regras }); setAj({ ...AJUSTES_VAZIOS, ...cfg.ajustes }); }
+    if (cfg && !deOutraVersao) { setPavs(cfg.pavs); setQuadro(cfg.quadro); setRegras({ ...REGRAS_PADRAO, ...cfg.regras }); setAj({ ...AJUSTES_VAZIOS, ...cfg.ajustes }); }
     else {
       const L = ler(d, cam);
       // papéis e pés-direitos automáticos: plantas da esquerda para a direita / de cima para baixo recebem os pés-direitos dos cortes em ordem
@@ -103,12 +125,15 @@ export default function App() {
       const pes = detectarPes(d, L.regioes.filter((_, i) => papeis[i] !== 'planta'));
       const nomes = ['Térreo', 'Pavimento superior', '2º pavimento', '3º pavimento'];
       let k = 0;
-      setPavs(L.regioes.map((b, i) => {
+      const auto: Pavimento[] = L.regioes.map((b, i) => {
         const planta = papeis[i] === 'planta', corte = papeis[i] === 'corte';
         const n = planta ? k++ : -1;
         return { id: `R${i + 1}`, nome: planta ? (nomes[n] ?? `Pavimento ${n + 1}`) : corte ? `Corte ${i + 1}` : `Desenho ${i + 1}`, box: b, altura: planta ? (pes[n] ?? pes[pes.length - 1] ?? 2.8) : 2.8, ativo: planta, corte };
-      }));
-      setQuadro(L.quadro); setRegras(REGRAS_PADRAO); setAj(AJUSTES_VAZIOS);
+      });
+      if (cfg) {
+        const m = mesclar(auto, cfg);
+        setPavs(m.pavs); setQuadro(cfg.quadro?.length ? cfg.quadro : L.quadro); setRegras({ ...REGRAS_PADRAO, ...cfg.regras }); setAj(m.aj);
+      } else { setPavs(auto); setQuadro(L.quadro); setRegras(REGRAS_PADRAO); setAj(AJUSTES_VAZIOS); }
     }
     setTimeout(() => setPronto(true), 0);
   };
@@ -118,7 +143,7 @@ export default function App() {
       const txt = await f.text();
       // aproveita ajustes da versão antiga (salvos pelo nome do arquivo)
       const antigo = (() => { try { return JSON.parse(localStorage.getItem(chave(f.name)) || 'null') as Salvo | null; } catch { return null; } })();
-      carregarTexto(txt, f.name, antigo);
+      carregarTexto(txt, f.name, antigo, true);
       const p = await repo.criar(f.name.replace(/\.dxf$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
       setProjId(p.id); setProjNome(p.nome); atualizarLista();
       setAba(antigo ? 'modulacao' : 'pavimentos');
@@ -138,9 +163,14 @@ export default function App() {
   // salva sozinho a cada alteração
   useEffect(() => {
     if (!projId || !pronto) return;
-    const t = setTimeout(() => { repo.salvarConfig(projId, { camada, pavs, quadro, regras, ajustes: aj }).then(atualizarLista).catch(() => setErro('Não foi possível salvar o projeto. Verifique a internet.')); }, 500);
+    const t = setTimeout(() => {
+      const cfg = { camada, pavs, quadro, regras, ajustes: aj };
+      // cópia de segurança pelo nome do arquivo: se o projeto sumir, ao mandar o mesmo DXF os ajustes voltam
+      try { localStorage.setItem(chave(nome), JSON.stringify(cfg)); } catch { /* sem espaço */ }
+      repo.salvarConfig(projId, cfg).then(atualizarLista).catch(() => setErro('Não foi possível salvar o projeto. Verifique a internet.'));
+    }, 500);
     return () => clearTimeout(t);
-  }, [projId, pronto, camada, pavs, quadro, regras, aj]);
+  }, [projId, pronto, camada, pavs, quadro, regras, aj, nome]);
   const ativos = pavs.filter(p => p.ativo);
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
