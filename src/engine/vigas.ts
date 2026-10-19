@@ -77,18 +77,32 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
     const cima = pavs[ip + 1];
     const tb = ts.filter(t => t.pav === pav.id), tc = cima ? ts.filter(t => t.pav === cima.id) : [];
     const pp = pisos.filter(t => t.pav === pav.id);
-    // 0) linha de piso do projeto: viga que apoia a laje (e as paredes de cima que estiverem nela)
+    const al = tc.length && tb.length ? alinhar(tb, tc) : { dx: 0, dy: 0 };
+    // 0) linha de piso do projeto: viga que apoia a laje (e as paredes de cima que estiverem nela).
+    // Altura de 10% do vão: uma parte fica abaixo da laje, passa pela laje e o resto sobe; a parede de cima
+    // apoia em cima da viga e fica mais baixa
     for (const t of pp) {
       const sobre = cima ? cargasDeCima(tb, tc).filter(k => k.o === t.o && Math.abs(k.c - t.c) < 0.2 && k.a < t.e && k.b > t.s) : [];
       const nums = [...new Set(ps.filter(p => sobre.some(k => k.t.id === p.trecho)).map(p => p.num))];
+      const w = t.e - t.s, a = t.s - r.vigaApoio, b = t.e + r.vigaApoio;
+      const hV = Math.max(r.vigaAltura, Math.ceil(w * 0.10 / 0.05 - 1e-9) * 0.05);
+      const abaixo = Math.max(0, Math.min(hV - r.lajeEsp, r.vigaPisoAbaixo ?? 0.45));
+      const naLaje = Math.min(r.lajeEsp, hV - abaixo), sobe = Math.max(0, hV - abaixo - naLaje);
+      const off = t.o === 'H' ? al.dx : al.dy;
+      const cimaPs = cima ? ps.filter(p => p.pav === cima.id && sobre.some(k => k.t.id === p.trecho) && p.a + off < b && p.b + off > a) : [];
+      const pouco = sobe > 0.005 && sobe <= 0.10 + 1e-6;
+      const desconto = sobe > 0.005 && !pouco ? cimaPs.map(p => ({ painel: p.num, de: p.H, para: Math.max(0, p.H - sobe) })) : [];
+      const partes = pouco
+        ? `Viga de ${br(abaixo + naLaje)} m (${br(abaixo)} m abaixo da laje + ${br(naLaje)} m na laje), em vez de ${br(hV)} m (10% do vão): faltam só ${br(sobe)} m, então as paredes de cima não baixam — reforçar a ferragem da viga.`
+        : `Viga de ${br(hV)} m de altura (10% do vão${hV > w * 0.1 + 0.05 ? ', mínimo da regra' : ''}): ${br(abaixo)} m abaixo da laje, ${br(naLaje)} m na laje${sobe > 0.005 ? ` e ${br(sobe)} m para cima${desconto.length ? ` — paredes ${desconto.map(d => d.painel).join(', ')} do ${cima!.nome} apoiam em cima da viga e baixam de ${br(desconto[0].de)} para ${br(desconto[0].para)} m` : ''}` : ''}.`;
       V.push({
-        id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a: t.s - r.vigaApoio, b: t.e + r.vigaApoio, tipo: 'piso', obrigatoria: true, apoio: r.vigaApoio,
-        motivo: `Linha de piso do projeto (${br(t.e - t.s)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
-        ideia: `Viga na linha de piso, de ${br(t.e - t.s + 2 * r.vigaApoio)} m, apoiada nas paredes das pontas (ou pilares). Conferir com o engenheiro.`,
+        id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a, b, tipo: 'piso', obrigatoria: true, apoio: r.vigaApoio,
+        motivo: `Linha de piso do projeto (${br(w)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
+        ideia: `Viga na linha de piso, de ${br(b - a)} m, apoiada nas paredes das pontas (ou pilares). ${partes} Conferir com o engenheiro.`,
+        altura: pouco ? abaixo + naLaje : hV, desconto,
         rebaixos: [],
       });
     }
-    const al = tc.length && tb.length ? alinhar(tb, tc) : { dx: 0, dy: 0 };
     const cimaNaLinha = (o: 'H' | 'V', c: number, a: number, b: number) => tc.filter(t => t.o === o && Math.abs(t.c + (o === 'V' ? al.dx : al.dy) - c) < 0.15 &&
       t.s + (o === 'H' ? al.dx : al.dy) < b && t.e + (o === 'H' ? al.dx : al.dy) > a);
 

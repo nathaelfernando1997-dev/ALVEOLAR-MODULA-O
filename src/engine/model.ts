@@ -23,6 +23,7 @@ export interface Regras {
   vigaAltura: number;      // altura da viga (rebaixo nas paredes embaixo dela)
   vigaLargura: number;     // largura da viga
   vigaApoio: number;       // quanto a viga entra em cima da parede de apoio
+  vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
   vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
   beiral: number;          // balanço de laje permitido sem viga
 }
@@ -30,7 +31,7 @@ export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15,
-  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vaoViga: 5.0, beiral: 1.0,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, vaoViga: 5.0, beiral: 1.0,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros

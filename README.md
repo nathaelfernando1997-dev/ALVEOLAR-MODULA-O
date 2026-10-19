@@ -26,6 +26,7 @@ O arquivo é lido no próprio navegador (não vai para servidor). Os ajustes de 
 - No T a parede que chega para na face da que passa; pedaço menor que 0,50 m é pinado no vizinho.
 - Porta mais alta que o pavimento: o vão continua no pé da parede de cima.
 - Viga sobre vão: altura de 10% do vão (mínimo da regra); usa o espaço acima da porta e a laje, e o restante sobe — as paredes de cima apoiam na viga e ficam mais baixas (até 10 cm não baixa: reforça a ferragem).
+- Viga da linha de piso: também 10% do vão; 0,45 m fica abaixo da laje (regra ajustável), 0,15 m na laje e o restante sobe — as paredes de cima baixam o mesmo tanto.
 - Laje: vão máximo 5,00 m (pode ser menor), largura máxima 3,00 m, folga de 2 cm entre painéis vizinhos, apoio em cima das paredes em todos os lados: 6 cm onde a parede recebe laje dos dois lados e 10 cm onde só uma laje apoia; a laje apoia nas paredes (inclusive internas) e o sentido é escolhido para usar menos vigas; beiral até 1,00 m sem viga.
 - Projeto: "LINHA DE PISO" vira viga de apoio da laje; linhas de "PROJ. LAJE / COBERTURA / BEIRAL" marcam até onde a laje vai (beiral nas pontas dos painéis); áreas escritas "VAZIO" no pavimento de cima ficam sem laje.
 - Vigas sugeridas: vão sem parede onde a laje apoia ou com parede em cima (obrigatória acima de 5,00 m); laje com vão maior que o painel mesmo usando as paredes. Paredes de cima sobre a laje não levam viga: a laje é reforçada com treliças embaixo delas.
