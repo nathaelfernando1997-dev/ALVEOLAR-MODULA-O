@@ -214,6 +214,12 @@ export default function App() {
       const p = vazio.ps.find(x => x.num === d.painel); if (!p || p.H <= d.para) continue;
       p.H = d.para; p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(d.para)} m: apoia em cima da viga V${v.n}`;
     }
+    // parede de apoio da viga que desce abaixo da laje: encaixe no topo do painel
+    for (const v of vazio.vigas) for (const e of v.encaixes || []) {
+      const p = vazio.ps.find(x => x.num === e.painel); if (!p) continue;
+      p.recortes.push({ tipo: `V${v.n}`, dl: e.dl, w: e.w, base: p.H - e.h, h: e.h });
+      p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `encaixe da viga V${v.n} no topo: ${br(e.w)} × ${br(e.h)} m`;
+    }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
 
