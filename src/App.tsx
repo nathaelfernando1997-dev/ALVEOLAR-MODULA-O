@@ -197,6 +197,11 @@ export default function App() {
       const bordas = leitura.linhas.filter(l => l.tipo === 'proj' && naCaixa(p.box, l));
       const al = cima && tc.length && t.length ? alinhar(t, tc) : null;
       const vz = cima && al ? vaziosDeCima(cima, tc, leitura.textos, al.dx, al.dy) : [];
+      // área escrita "LAJE IMPERMEÁVEL" na própria planta é laje descoberta deste nível (é a laje do pavimento de baixo):
+      // não leva laje em cima
+      const txP = leitura.textos.filter(x => /LAJE\s+IMPERME/i.test(x.text) && x.x > p.box.x0 && x.x < p.box.x1 && x.y > p.box.y0 && x.y < p.box.y1);
+      const descobertas = txP.length ? ambientes(p, t, pp, vz).filter(a => txP.some(x => x.x > a.x0 && x.x < a.x1 && x.y > a.y0 && x.y < a.y1)).map(a => ({ x0: a.x0, x1: a.x1, y0: a.y0, y1: a.y1 })) : [];
+      vz.push(...descobertas);
       // o sentido da laje leva em conta as paredes do pavimento de cima
       const m = modularLajes(ambientes(p, t, pp, vz), regras, aj, [...t, ...pp], cargasDeCima([...t, ...pp], tc), bordas);
       vazio.lajes.push(...m.ambs); vazio.pl.push(...m.paineis);
