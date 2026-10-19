@@ -85,6 +85,21 @@ export default function App() {
       const L = ler(d, cam);
       // papéis e pés-direitos automáticos: plantas da esquerda para a direita / de cima para baixo recebem os pés-direitos dos cortes em ordem
       const papeis = adivinharPapeis(d, L.regioes, L.tags);
+      // planta repetida no arquivo (cópia do mesmo desenho em outro lugar): fica só a primeira
+      const assinatura = (b: Box) => {
+        const tg = L.tags.filter(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3)
+          .map(t => `${t.text}@${(t.x - b.x0).toFixed(1)},${(t.y - b.y0).toFixed(1)}`).sort().join(';');
+        return `${(b.x1 - b.x0).toFixed(1)}x${(b.y1 - b.y0).toFixed(1)}|${tg}`;
+      };
+      // entre as cópias fica a que está junto dos cortes (o jogo original de desenhos)
+      const cortesC = L.regioes.filter((_, i) => papeis[i] === 'corte').map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]);
+      const distC = (b: Box) => cortesC.length ? Math.min(...cortesC.map(([x, y]) => Math.hypot((b.x0 + b.x1) / 2 - x, (b.y0 + b.y1) / 2 - y))) : 0;
+      const grupos = new Map<string, number[]>();
+      L.regioes.forEach((b, i) => { if (papeis[i] === 'planta') { const a = assinatura(b); grupos.set(a, [...(grupos.get(a) || []), i]); } });
+      for (const ids of grupos.values()) if (ids.length > 1) {
+        const fica = ids.reduce((m, i) => distC(L.regioes[i]) < distC(L.regioes[m]) ? i : m, ids[0]);
+        for (const i of ids) if (i !== fica) papeis[i] = 'nao';
+      }
       const pes = detectarPes(d, L.regioes.filter((_, i) => papeis[i] !== 'planta'));
       const nomes = ['Térreo', 'Pavimento superior', '2º pavimento', '3º pavimento'];
       let k = 0;
