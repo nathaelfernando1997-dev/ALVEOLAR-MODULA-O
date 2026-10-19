@@ -98,7 +98,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       V.push({
         id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a, b, tipo: 'piso', obrigatoria: true, apoio: r.vigaApoio,
         motivo: `Linha de piso do projeto (${br(w)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
-        ideia: `Viga na linha de piso, de ${br(b - a)} m, apoiada nas paredes das pontas (ou pilares). ${partes} Conferir com o engenheiro.`,
+        ideia: `Viga na linha de piso, de ${br(b - a)} m, apoiada em pilares nas pontas (sem parede embaixo da viga). ${partes} Conferir com o engenheiro.`,
         altura: pouco ? abaixo + naLaje : hV, desconto,
         rebaixos: [],
       });
