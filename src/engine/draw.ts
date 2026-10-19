@@ -91,7 +91,9 @@ export function plantaConteudo(L: Leitura, pav: Pavimento, ps: Painel[], vaos: V
 // vista de um painel (unidades: 1 m = 100)
 export function vistaSvg(p: Painel): string {
   const k = 100, w = p.larg, h = p.H, mx = 0.55, my = 0.45;
-  const W = (w + 2 * mx) * k, Hh = (h + my + 0.35) * k;
+  const max = Math.max(16, Math.round((w + 0.6) * 18)), linhas: string[] = [];
+  for (const pal of (p.aviso || '').split(' ').filter(Boolean)) { const u = linhas.length - 1; if (u >= 0 && (linhas[u] + ' ' + pal).length <= max) linhas[u] += ' ' + pal; else linhas.push(pal); }
+  const W = (w + 2 * mx) * k, Hh = (h + my + 0.35 + Math.max(0, linhas.length - 1) * 0.13) * k;
   const X = (x: number) => (x + mx) * k, Y = (y: number) => (h + my - y) * k;
   const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(W / 100 * 18).toFixed(1)}mm">`];
   const L = (x1: number, y1: number, x2: number, y2: number, c = '#000', sw = 1.2) => s.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${c}" stroke-width="${sw}"/>`);
@@ -113,7 +115,10 @@ export function vistaSvg(p: Painel): string {
     if (ob > 0.005) dimV(ox + ow * 0.5, 0, ob, br(ob));
     const top = h - ob - oh; if (top > 0.005) dimV(ox + ow * 0.5, ob + oh, h, br(top));
   }
-  if (p.aviso) T(w / 2, -0.22, esc(p.aviso), 10, '#b00');
+  // aviso quebrado em linhas da largura do painel (não invade o painel do lado)
+  if (p.aviso) {
+    linhas.forEach((l, i) => T(w / 2, -0.22 - i * 0.13, esc(l), 10, '#b00'));
+  }
   s.push('</svg>');
   return s.join('');
 }
