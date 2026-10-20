@@ -591,6 +591,14 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           if (dl < r.boneca - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${r.boneca * 100} cm`; }
           let base = o.base, h = o.h;
           if (base < r.boneca && !o.continua) { h -= r.boneca - base; base = r.boneca; }
+          // cálculo novo: recorte que vai até o topo ou sai do pé do painel (continua no pavimento de cima)
+          // fica com boneca de transporte, cortada depois de montar
+          if ((r.motor ?? 1) >= 2) {
+            const bt: string[] = [];
+            if (o.continua && base < r.boneca) { h -= r.boneca - base; base = r.boneca; bt.push('embaixo'); }
+            if (base + h > t.H - r.boneca + 1e-6) { h = t.H - r.boneca - base; bt.push('no topo'); }
+            if (bt.length) aviso = (aviso ? aviso + ' · ' : '') + `${o.tipo}: boneca de transporte de ${Math.round(r.boneca * 100)} cm ${bt.join(' e ')} (cortar depois de montar)`;
+          }
           rec.push({ tipo: o.tipo, dl, w, base, h });
         }
         if (larg < r.naoFabricar) aviso = 'n fabricar';
