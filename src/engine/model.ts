@@ -26,7 +26,7 @@ export interface Regras {
   // alvéolos de isopor (paredes e lajes), para o quantitativo de concreto
   isoporLarg?: number;     // 0,12
   isoporAlt?: number;      // 0,09
-  isoporComp?: number;     // comprimento da barra de isopor: 3,00
+  isoporComp?: number;     // comprimento da barra de isopor: 4,00
   isoporEspaco?: number;   // concreto entre um isopor e o outro: 0,03
   capeamento?: number;     // concreto em cima e embaixo do isopor: 0,025
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
@@ -40,6 +40,7 @@ export interface Regras {
 // a não ser que o usuário tenha desligado o cálculo novo nele
 export function regrasDoSalvo(s?: Partial<Regras>): Regras {
   const r = { ...REGRAS_PADRAO, ...s };
+  if (s?.isoporComp === 3) r.isoporComp = REGRAS_PADRAO.isoporComp;   // 3 m era o padrão antigo (antes da medida informada)
   return { ...r, motor: s?.motorFixo ? (s.motor ?? 1) : REGRAS_PADRAO.motor };
 }
 
@@ -47,7 +48,7 @@ export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15,
-  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 3.0, isoporEspaco: 0.03, capeamento: 0.025, vaoViga: 5.0, beiral: 1.0,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, vaoViga: 5.0, beiral: 1.0,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
@@ -662,20 +663,36 @@ export function numerar(P: Painel[], ordemPav: string[]) {
 // quadro de quantitativos: área e volume de concreto por pavimento (paredes e lajes)
 // painel com alvéolos de isopor: espessura = isopor + capeamento em cima e embaixo; na largura cabem
 // floor(largura / (isopor + espaço)) isopores, cada um correndo o comprimento do painel (paredes: a altura)
-export interface LinhaQuant { pav: string; item: 'Paredes' | 'Lajes'; qtd: number; area: number; esp: number; bruto: number; isoporM: number; isoporPecas: number; isoporM3: number; concreto: number }
-export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; comp: number; larg: number; dente?: Box }[], r: Regras): LinhaQuant[] {
-  const out: LinhaQuant[] = [];
+export interface LinhaQuant { pav: string; item: 'Paredes' | 'Lajes'; qtd: number; area: number; esp: number; bruto: number; isoporM: number; isoporPecas: number; isoporM3: number; concreto: number; sobra: number }
+export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; comp: number; larg: number; dente?: Box }[], r: Regras): LinhaQuant[] & { barras: number; sobra: number } {
+  const out: LinhaQuant[] = []; const todos: { comp: number; n: number }[] = [];
   const il = r.isoporLarg ?? 0.12, ia = r.isoporAlt ?? 0.09, ic = r.isoporComp ?? 3, ie = r.isoporEspaco ?? 0.03, cap = r.capeamento ?? 0.025;
   const esp = ia + 2 * cap, passo = il + ie;
   // um painel: largura, comprimento dos alvéolos
   const conta = (larg: number, comp: number, area: number) => {
     const n = Math.max(0, Math.floor(larg / passo + 1e-6));
-    return { bruto: area * esp, isoporM: n * comp, pecas: 0, isoporM3: n * comp * il * ia };
+    return { n, bruto: area * esp, isoporM: n * comp, isoporM3: n * comp * il * ia };
+  };
+  // barras de isopor: cada alvéolo leva barras inteiras e um pedaço; os pedaços são tirados das sobras
+  // de outras barras (o maior primeiro, na barra onde couber) — sem emendar dois pedaços no mesmo alvéolo além do necessário
+  const barras = (pedidos: { comp: number; n: number }[]) => {
+    let inteiras = 0; const pedacos: number[] = [];
+    for (const { comp, n } of pedidos) {
+      const k = Math.floor(comp / ic + 1e-6), resto = comp - k * ic;
+      inteiras += k * n;
+      if (resto > 0.005) for (let i = 0; i < n; i++) pedacos.push(resto);
+    }
+    pedacos.sort((a, b) => b - a);
+    const livres: number[] = [];
+    for (const pc of pedacos) { const i = livres.findIndex(l => l >= pc - 1e-6); if (i >= 0) livres[i] -= pc; else livres.push(ic - pc); }
+    return { qtd: inteiras + livres.length, sobra: livres.reduce((s, l) => s + l, 0) };
   };
   const linha = (pav: string, item: LinhaQuant['item'], xs: { larg: number; comp: number; area: number }[]) => {
-    const t = xs.reduce((s, x) => { const c = conta(x.larg, x.comp, x.area); return { area: s.area + x.area, bruto: s.bruto + c.bruto, isoporM: s.isoporM + c.isoporM, pecas: s.pecas + c.pecas, isoporM3: s.isoporM3 + c.isoporM3 }; }, { area: 0, bruto: 0, isoporM: 0, pecas: 0, isoporM3: 0 });
-    // barras pelo total de metros (as sobras de uma barra completam o painel seguinte)
-    out.push({ pav, item, qtd: xs.length, area: t.area, esp, bruto: t.bruto, isoporM: t.isoporM, isoporPecas: Math.ceil(t.isoporM / ic - 1e-6), isoporM3: t.isoporM3, concreto: t.bruto - t.isoporM3 });
+    const cs = xs.map(x => ({ x, c: conta(x.larg, x.comp, x.area) }));
+    const t = cs.reduce((s, { x, c }) => ({ area: s.area + x.area, bruto: s.bruto + c.bruto, isoporM: s.isoporM + c.isoporM, isoporM3: s.isoporM3 + c.isoporM3 }), { area: 0, bruto: 0, isoporM: 0, isoporM3: 0 });
+    const ped = cs.map(({ x, c }) => ({ comp: x.comp, n: c.n })); todos.push(...ped);
+    const b = barras(ped);
+    out.push({ pav, item, qtd: xs.length, area: t.area, esp, bruto: t.bruto, isoporM: t.isoporM, isoporPecas: b.qtd, isoporM3: t.isoporM3, concreto: t.bruto - t.isoporM3, sobra: b.sobra });
   };
   for (const pav of pavs) {
     const ps = P.filter(p => p.pav === pav.id);
@@ -683,7 +700,9 @@ export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string;
     const ls = PL.filter(p => p.pav === pav.id);
     if (ls.length) linha(pav.nome, 'Lajes', ls.map(p => ({ larg: p.larg, comp: p.comp, area: p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0) })));
   }
-  return out;
+  // no total, as sobras das paredes também servem nas lajes (e vice-versa)
+  const g = barras(todos);
+  return Object.assign(out, { barras: g.qtd, sobra: g.sobra });
 }
 
 export function resumo(P: Painel[]) {

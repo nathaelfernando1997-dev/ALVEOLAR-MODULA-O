@@ -128,7 +128,7 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
   return w.str();
 }
 
-export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = [], quant: LinhaQuant[] = []): string {
+export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = [], quant: LinhaQuant[] & { barras?: number; sobra?: number } = []): string {
   const nome = new Map(pavs.map(p => [p.id, p.nome]));
   const linhas = ['Painel;Pavimento;Largura (m);Altura (m);Área (m²);Recortes;Observação'];
   for (const p of ps) linhas.push([p.num, nome.get(p.pav), br(p.larg), br(p.H), br(p.larg * p.H), p.recortes.map(r => `${r.tipo} ${br(r.w)}x${br(r.h)} (base ${br(r.base)}, lateral ${br(r.dl)})`).join(' | '), p.aviso || ''].join(';'));
@@ -136,10 +136,10 @@ export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = 
   for (const p of pl) linhas.push([`L${p.num}`, nome.get(p.pav), br(p.comp), br(p.larg), br(areaLaje(p)), p.dente ? `dente ${br(p.dente.x1 - p.dente.x0)} x ${br(p.dente.y1 - p.dente.y0)}` : ''].join(';'));
   if (quant.length) {
     const m3 = (v: number) => v.toFixed(3).replace('.', ',');
-    linhas.push('', 'Quantitativos;Item;Espessura (m);Painéis;Área (m²);Volume do painel (m³);Isopor (m);Volume de isopor (m³);Concreto (m³)');
-    for (const l of quant) linhas.push([l.pav, l.item, br(l.esp), l.qtd, br(l.area), m3(l.bruto), br(l.isoporM), m3(l.isoporM3), m3(l.concreto)].join(';'));
-    const s = (k: 'qtd' | 'area' | 'bruto' | 'isoporM' | 'isoporPecas' | 'isoporM3' | 'concreto') => quant.reduce((t, l) => t + l[k], 0);
-    linhas.push(['Total geral', '', '', s('qtd'), br(s('area')), m3(s('bruto')), br(s('isoporM')), m3(s('isoporM3')), m3(s('concreto'))].join(';'));
+    linhas.push('', 'Quantitativos;Item;Espessura (m);Painéis;Área (m²);Volume do painel (m³);Isopor (m);Isopores (barras);Sobra de isopor (m);Volume de isopor (m³);Concreto (m³)');
+    for (const l of quant) linhas.push([l.pav, l.item, br(l.esp), l.qtd, br(l.area), m3(l.bruto), br(l.isoporM), l.isoporPecas, br(l.sobra), m3(l.isoporM3), m3(l.concreto)].join(';'));
+    const s = (k: 'qtd' | 'area' | 'bruto' | 'isoporM' | 'isoporPecas' | 'sobra' | 'isoporM3' | 'concreto') => quant.reduce((t, l) => t + l[k], 0);
+    linhas.push(['Total geral', '', '', s('qtd'), br(s('area')), m3(s('bruto')), br(s('isoporM')), quant.barras ?? s('isoporPecas'), br(quant.sobra ?? s('sobra')), m3(s('isoporM3')), m3(s('concreto'))].join(';'));
   }
   return '﻿' + linhas.join('\r\n');
 }

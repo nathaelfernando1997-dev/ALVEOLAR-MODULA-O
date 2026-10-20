@@ -396,7 +396,7 @@ export default function App() {
             <h3>Paredes</h3>
             <div className="grade">
               {([
-                ['larguraMax', 'Largura máxima do painel (m)'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['isoporLarg', 'Isopor: largura (m)'], ['isoporAlt', 'Isopor: altura (m)'], ['isoporEspaco', 'Concreto entre um isopor e outro (m)'], ['capeamento', 'Capeamento em cima e embaixo do isopor (m)'], ['folga', 'Diminuir de cada painel (m)'],
+                ['larguraMax', 'Largura máxima do painel (m)'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['isoporLarg', 'Isopor: largura (m)'], ['isoporAlt', 'Isopor: altura (m)'], ['isoporComp', 'Isopor: comprimento da barra (m)'], ['isoporEspaco', 'Concreto entre um isopor e outro (m)'], ['capeamento', 'Capeamento em cima e embaixo do isopor (m)'], ['folga', 'Diminuir de cada painel (m)'],
                 ['boneca', 'Boneca de transporte nas laterais e embaixo (m)'], ['acrescimoLargura', 'Vão de porta/janela maior em (m)'],
                 ['janelaDesce', 'Janela: recorte desce e sobe (m)'], ['espMin', 'Espessura mínima de parede (m)'], ['espMax', 'Espessura máxima de parede (m)'],
                 ['minParede', 'Trecho mínimo de parede (m)'], ['naoFabricar', 'Marcar "n fabricar" abaixo de (m)'],
@@ -501,16 +501,16 @@ export default function App() {
 
 // quadro de m² e m³ por pavimento
 function Quantitativos({ linhas }: { linhas: ReturnType<typeof quantitativos> }) {
-  type K = 'qtd' | 'area' | 'bruto' | 'isoporM' | 'isoporPecas' | 'isoporM3' | 'concreto';
+  type K = 'qtd' | 'area' | 'bruto' | 'isoporM' | 'isoporPecas' | 'sobra' | 'isoporM3' | 'concreto';
   const tot = (k: K, it?: string) => linhas.filter(l => !it || l.item === it).reduce((s, l) => s + l[k], 0);
   const m3 = (v: number) => v.toFixed(3).replace('.', ',');
-  const cel = (g: (k: K) => number) => <><td>{g('qtd')}</td><td>{br(g('area'))}</td><td>{m3(g('bruto'))}</td><td>{br(g('isoporM'))}</td><td>{m3(g('isoporM3'))}</td><td><b>{m3(g('concreto'))}</b></td></>;
+  const cel = (g: (k: K) => number) => <><td>{g('qtd')}</td><td>{br(g('area'))}</td><td>{m3(g('bruto'))}</td><td>{br(g('isoporM'))}</td><td><b>{g('isoporPecas')}</b></td><td>{br(g('sobra'))}</td><td>{m3(g('isoporM3'))}</td><td><b>{m3(g('concreto'))}</b></td></>;
   return <table className="tquant"><thead>
-    <tr><th colSpan={9}>QUANTITATIVOS — ÁREA, CONCRETO E ISOPOR</th></tr>
-    <tr><th>Pavimento</th><th>Item</th><th>Espessura (m)</th><th>Painéis</th><th>Área (m²)</th><th>Volume do painel (m³)</th><th>Isopor (m)</th><th>Volume de isopor (m³)</th><th>Concreto (m³)</th></tr></thead>
+    <tr><th colSpan={11}>QUANTITATIVOS — ÁREA, CONCRETO E ISOPOR</th></tr>
+    <tr><th>Pavimento</th><th>Item</th><th>Espessura (m)</th><th>Painéis</th><th>Área (m²)</th><th>Volume do painel (m³)</th><th>Isopor (m)</th><th>Isopores (barras)</th><th>Sobra de isopor (m)</th><th>Volume de isopor (m³)</th><th>Concreto (m³)</th></tr></thead>
     <tbody>{linhas.map((l, i) => <tr key={i}><td>{l.pav}</td><td>{l.item}</td><td>{br(l.esp)}</td>{cel(k => l[k])}</tr>)}
       {(['Paredes', 'Lajes'] as const).map(it => <tr key={it} className="tot"><td>Total</td><td>{it}</td><td></td>{cel(k => tot(k, it))}</tr>)}
-      <tr className="tot"><td>Total geral</td><td></td><td></td>{cel(k => tot(k))}</tr>
+      <tr className="tot"><td>Total geral</td><td></td><td></td>{cel(k => k === 'isoporPecas' ? linhas.barras : k === 'sobra' ? linhas.sobra : tot(k))}</tr>
     </tbody></table>;
 }
 
@@ -760,7 +760,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras }: { ativos: 
   if (novo) folhas.push(<div className="folha" key="quant">
     <div className="cab">QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)</div>
     <Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} />
-    {rod(`Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · painel inteiro, antes de recortar portas e janelas`)}
+    {rod(`Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, em barras de ${br(regras.isoporComp ?? 4)} m (sobras reaproveitadas nos pedaços), ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · painel inteiro, antes de recortar portas e janelas`)}
   </div>);
   return <div className="folhas">{folhas}</div>;
 }
