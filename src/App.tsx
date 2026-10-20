@@ -98,7 +98,7 @@ export default function App() {
     const lista = (v?: string[]) => (v || []).map(troca).filter((x): x is string => !!x);
     const reg = <T,>(v?: Record<string, T>) => Object.fromEntries(Object.entries(v || {}).map(([k, x]) => [troca(k), x] as const).filter(([k]) => !!k)) as Record<string, T>;
     const a = { ...AJUSTES_VAZIOS, ...salvo.ajustes };
-    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro),
+    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro), laje16: lista(a.laje16),
       cortes: reg(a.cortes), colunas: reg(a.colunas), altura: reg(a.altura), vaoTipo: reg(a.vaoTipo) } };
   };
   const carregarTexto = (txt: string, arquivo: string, cfg: Config | null, deOutraVersao = false) => {
@@ -486,18 +486,53 @@ export default function App() {
               <div className="botoes">
                 <button onClick={() => window.print()}>Imprimir / salvar PDF</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
-                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras) : []), 'text/csv')}>Baixar lista de painéis (CSV)</button>
+                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras) : []) + ((regras.motor ?? 1) >= 2 ? csvTrelicas(ativos, calc, aj, regras.perda ?? 10) : ''), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
-            {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} perda={regras.perda ?? 10} /></div>}
-            <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} />
+            {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
+            <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} />
           </section>
         )}
       </main>
     </div>
   );
+}
+
+// treliças de reforço: TG8 (ferro 6,3 mm); TG12 (ferro 8,0 mm) onde a laje é de 16 cm
+const TRELICA = { TG8: 'ferro 6,3 mm', TG12: 'ferro 8,0 mm' } as const;
+function quantTrelicas(pavs: Pavimento[], calc: Calc, aj: Ajustes) {
+  const out: { pav: string; tipo: keyof typeof TRELICA; pecas: number; metros: number; cortes: Map<string, number> }[] = [];
+  for (const pav of pavs) {
+    const P = calc.pl.filter(p => p.pav === pav.id), TR = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica');
+    for (const tp of trelicasNasLajes(TR, P)) {
+      const pn = P.find(p => p.num === tp.painel), tipo = pn && (aj.laje16 || []).includes(pn.amb) ? 'TG12' : 'TG8';
+      let l = out.find(x => x.pav === pav.nome && x.tipo === tipo);
+      if (!l) out.push(l = { pav: pav.nome, tipo, pecas: 0, metros: 0, cortes: new Map() });
+      l.pecas++; l.metros += tp.comp; const k = br(tp.comp); l.cortes.set(k, (l.cortes.get(k) || 0) + 1);
+    }
+  }
+  return out;
+}
+function csvTrelicas(pavs: Pavimento[], calc: Calc, aj: Ajustes, perda: number) {
+  const L = quantTrelicas(pavs, calc, aj); if (!L.length) return '';
+  const k = 1 + perda / 100;
+  return '\r\n\r\nTreliças;Tipo;Ferro;Peças;Comprimento (m);Com perda (m);Peças cortadas\r\n' +
+    L.map(l => [l.pav, l.tipo, TRELICA[l.tipo], l.pecas, br(l.metros), br(l.metros * k), [...l.cortes].map(([c, n]) => `${n} x ${c} m`).join(' | ')].join(';')).join('\r\n');
+}
+function TabelaQuantTrelicas({ pavs, calc, aj, perda }: { pavs: Pavimento[]; calc: Calc; aj: Ajustes; perda: number }) {
+  const L = quantTrelicas(pavs, calc, aj);
+  if (!L.length) return null;
+  const k = 1 + perda / 100;
+  const tot = (t: keyof typeof TRELICA) => L.filter(l => l.tipo === t).reduce((s, l) => s + l.metros, 0);
+  return <table className="tquant"><thead>
+    <tr><th colSpan={7}>TRELIÇAS DE REFORÇO DAS LAJES</th></tr>
+    <tr><th>Pavimento</th><th>Treliça</th><th>Ferro</th><th>Peças</th><th>Comprimento (m)</th><th>Com {perda}% de perda (m)</th><th>Peças cortadas</th></tr></thead>
+    <tbody>{L.map((l, i) => <tr key={i}><td>{l.pav}</td><td>{l.tipo}</td><td>{TRELICA[l.tipo]}</td><td>{l.pecas}</td><td>{br(l.metros)}</td><td><b>{br(l.metros * k)}</b></td>
+      <td style={{ textAlign: 'left' }}>{[...l.cortes].sort((a, b) => parseFloat(b[0].replace(',', '.')) - parseFloat(a[0].replace(',', '.'))).map(([c, n]) => `${n} × ${c} m`).join(' · ')}</td></tr>)}
+      {(['TG8', 'TG12'] as const).filter(t => tot(t) > 0).map(t => <tr key={t} className="tot"><td>Total</td><td>{t}</td><td>{TRELICA[t]}</td><td>{L.filter(l => l.tipo === t).reduce((s, l) => s + l.pecas, 0)}</td><td>{br(tot(t))}</td><td>{br(tot(t) * k)}</td><td></td></tr>)}
+    </tbody></table>;
 }
 
 // quadro de m² e m³ por pavimento
@@ -673,7 +708,7 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
 function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento }) {
   const lj = calc.lajes.filter(a => a.pav === pav.id && a.incluida), P = calc.pl.filter(p => p.pav === pav.id);
   const area = P.reduce((s, p) => s + areaLaje(p), 0);
-  const tog = (k: 'lajeFora' | 'lajeGiro', id: string) => setAj({ ...aj, [k]: (aj[k] || []).includes(id) ? (aj[k] || []).filter(x => x !== id) : [...(aj[k] || []), id] });
+  const tog = (k: 'lajeFora' | 'lajeGiro' | 'laje16', id: string) => setAj({ ...aj, [k]: (aj[k] || []).includes(id) ? (aj[k] || []).filter(x => x !== id) : [...(aj[k] || []), id] });
   return <div className="card acoes">
     <h3>Laje sobre {pav.nome}</h3>
     <p>{P.length} painéis · {br(area)} m² · {lj.length} ambientes</p>
@@ -686,11 +721,12 @@ function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: C
       {P.filter(p => p.amb === amb.id).map(p => <div key={p.num} className="dica">L{p.num}: {br(p.comp)} × {br(p.larg)}{p.dente ? ` · dente ${br(p.dente.x1 - p.dente.x0)} × ${br(p.dente.y1 - p.dente.y0)}` : ''}</div>)}
       <button onClick={() => tog('lajeFora', amb.id)}>{(aj.lajeFora || []).includes(amb.id) ? 'Colocar laje neste ambiente' : 'Sem laje aqui (vazio, área externa)'}</button>
       <button onClick={() => tog('lajeGiro', amb.id)}>Girar o sentido dos painéis</button>
+      <button onClick={() => tog('laje16', amb.id)}>{(aj.laje16 || []).includes(amb.id) ? 'Voltar para treliça TG8' : 'Laje de 16 cm aqui (treliça TG12)'}</button>
     </> : <p className="dica">Clique num ambiente na planta.</p>}
   </div>;
 }
 
-function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras }) {
+function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes }) {
   const folhas: JSX.Element[] = [];
   const rod = (t: string) => <div className="rod"><span>{t}</span><span>{nome}</span></div>;
   for (const pav of ativos) {
@@ -746,7 +782,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras }: { ativos: 
         pgs.push(pg);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf) }} />)}</div>)}</div>
+          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: (aj.laje16 || []).includes(p.amb) ? 'TG12' : 'TG8' }))) }} />)}</div>)}</div>
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
@@ -761,6 +797,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras }: { ativos: 
   if (novo) folhas.push(<div className="folha" key="quant">
     <div className="cab">QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)</div>
     <Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} perda={regras.perda ?? 10} />
+    <TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} />
     {rod(`Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, em barras de ${br(regras.isoporComp ?? 4)} m, sobras aproveitadas (em cima das janelas e nas lajes), ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · portas e janelas sem concreto e sem isopor`)}
   </div>);
   return <div className="folhas">{folhas}</div>;
