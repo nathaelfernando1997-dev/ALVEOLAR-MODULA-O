@@ -717,14 +717,14 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo }: { ativos: Paviment
       if (novo) {
         const pgs: PainelLaje[][][] = []; let pg: PainelLaje[][] = [[]], w = 0, nl = 1;
         for (const p of P) {
-          if (w + p.comp + 1.1 > 13.8) { if (nl === 3) { pgs.push(pg); pg = [[]]; nl = 1; } else { pg.push([]); nl++; } w = 0; }
-          pg[pg.length - 1].push(p); w += p.comp + 1.1;
+          if (w + p.larg + 1.1 > 13.8) { if (nl === 2) { pgs.push(pg); pg = [[]]; nl = 1; } else { pg.push([]); nl++; } w = 0; }
+          pg[pg.length - 1].push(p); w += p.larg + 1.1;
         }
         pgs.push(pg);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [`${br(areaLaje(p))} m²`, ...TPf.filter(t => t.painel === p.num).map(t => `T${t.t} ${t.ao}: ${t.onde} (${br(t.comp)} m)`)]) }} />)}</div>)}</div>
-          {rod('Comprimento no sentido do vão (seta = alvéolos) · largura · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
+          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [`${br(areaLaje(p))} m²`], TRf) }} />)}</div>)}</div>
+          {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
       if (TPf.length) folhas.push(<div className="folha" key={pav.id + 't'}>

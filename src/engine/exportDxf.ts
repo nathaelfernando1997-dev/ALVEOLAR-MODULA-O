@@ -3,7 +3,7 @@ import type { Painel, Pavimento } from './model.ts';
 import type { Prim } from './dxf.ts';
 import type { PainelLaje } from './lajes.ts';
 import { areaLaje } from './lajes.ts';
-import { lajeLocal } from './draw.ts';
+import { lajeLocal, trelicasNoPainel } from './draw.ts';
 
 class W {
   out: string[] = [];
@@ -101,7 +101,8 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
       let ux = lx, uy = Math.min(-4, vy - 5.5), alt = 0;   // abaixo das vistas das paredes
       w.text('TEXTO', lx, uy + .6, .3, `PRODUÇÃO DA LAJE SOBRE ${pav.nome.toUpperCase()}`);
       for (const p of L) {
-        const { L: cl, W: wl, d } = lajeLocal(p);
+        // em pé: comprimento (alvéolos) na vertical
+        const loc = lajeLocal(p), cl = loc.W, wl = loc.L, d = loc.d && { u0: loc.d.v0, u1: loc.d.v1, v0: loc.d.u0, v1: loc.d.u1 };
         if (ux + cl > lx + 24) { ux = lx; uy -= alt + 1.2; alt = 0; }
         const y = uy - wl;
         if (d) {
@@ -110,7 +111,11 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
           for (let i = 0; i < pts.length - 1; i++) w.line('LAJE-PROD', ux + pts[i][0], y + pts[i][1], ux + pts[i + 1][0], y + pts[i + 1][1], 7);
           w.dimH(ux + d.u0, ux + d.u1, y + (cv === 0 ? d.v1 + .12 : d.v0 - .18), br(d.u1 - d.u0)); w.dimV(ux + (cu === 0 ? d.u1 + .18 : d.u0 - .18), y + d.v0, y + d.v1, br(d.v1 - d.v0));
         } else w.rect('LAJE-PROD', ux, y, cl, wl);
-        w.line('LAJE-PROD', ux + .15, y + wl / 2, ux + cl - .15, y + wl / 2, 8); w.line('LAJE-PROD', ux + cl - .3, y + wl / 2 + .08, ux + cl - .15, y + wl / 2, 8); w.line('LAJE-PROD', ux + cl - .3, y + wl / 2 - .08, ux + cl - .15, y + wl / 2, 8);
+        w.line('LAJE-PROD', ux + cl / 2, y + .15, ux + cl / 2, y + wl - .15, 8); w.line('LAJE-PROD', ux + cl / 2 - .08, y + wl - .3, ux + cl / 2, y + wl - .15, 8); w.line('LAJE-PROD', ux + cl / 2 + .08, y + wl - .3, ux + cl / 2, y + wl - .15, 8);
+        for (const t of trelicasNoPainel(p, vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica'))) {
+          if (t.vert) { w.line('TRELICA', ux + t.pos, y + t.i0, ux + t.pos, y + t.i1, 6); w.dimH(ux, ux + t.pos, y + t.i0 + .25, br(t.pos)); w.text('TRELICA', ux + t.pos + .12, y + (t.i0 + t.i1) / 2, .1, `T${t.n}`, 6); }
+          else { w.line('TRELICA', ux + t.i0, y + t.pos, ux + t.i1, y + t.pos, 6); w.dimV(ux + t.i0 + .25, y, y + t.pos, br(t.pos)); w.text('TRELICA', ux + (t.i0 + t.i1) / 2, y + t.pos + .06, .1, `T${t.n}`, 6); }
+        }
         w.text('NUMERO', ux + .06, y + wl - .22, .14, `L${p.num}`);
         w.dimH(ux, ux + cl, y + wl + .2, br(cl)); w.dimV(ux - .22, y, y + wl, br(wl));
         w.text('TEXTO', ux + cl / 2, y - .22, .09, `${br(areaLaje(p))} m²`, 1, 0, true);

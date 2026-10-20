@@ -134,9 +134,30 @@ export function lajeLocal(p: PainelLaje) {
   return { L: p.comp, W: p.larg, d };
 }
 
-// vista de produção de um painel de laje (unidades: 1 m = 100), como a vista das paredes
-export function vistaLajeSvg(p: PainelLaje, notas: string[] = []): string {
-  const k = 100, { L: w, W: h, d } = lajeLocal(p), mx = 0.5, my = 0.45;
+// treliças de reforço dentro do painel, já na vista em pé: x = largura, y = comprimento
+export type TrelicaLinha = { n: number; o: 'H' | 'V'; c: number; a: number; b: number };
+export function trelicasNoPainel(p: PainelLaje, T: TrelicaLinha[]) {
+  const out: { n: number; vert: boolean; pos: number; i0: number; i1: number }[] = [];
+  for (const t of T) {
+    // na planta: H = y constante (x de a a b); V = x constante
+    const [cMin, cMax, lMin, lMax] = t.o === 'H' ? [p.y0, p.y1, p.x0, p.x1] : [p.x0, p.x1, p.y0, p.y1];
+    if (t.c <= cMin + 0.01 || t.c >= cMax - 0.01) continue;
+    const i0 = Math.max(t.a, lMin) - lMin, i1 = Math.min(t.b, lMax) - lMin;
+    if (i1 - i0 < 0.1) continue;
+    const pos = t.c - cMin;
+    // eixo do comprimento do painel = x se sentido H; a treliça corre ao longo dele se t.o === sentido
+    const aoLongo = t.o === p.sentido;
+    // em pé: comprimento na vertical → treliça ao longo fica vertical (x = pos), atravessando fica horizontal (y = pos)
+    out.push({ n: t.n, vert: aoLongo, pos, i0, i1 });
+  }
+  return out;
+}
+
+// vista de produção de um painel de laje (unidades: 1 m = 100), como a vista das paredes:
+// em pé — comprimento (alvéolos) na vertical, largura na horizontal
+export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLinha[] = []): string {
+  const k = 100, loc = lajeLocal(p), w = loc.W, h = loc.L, mx = 0.5, my = 0.45;
+  const d = loc.d && { u0: loc.d.v0, u1: loc.d.v1, v0: loc.d.u0, v1: loc.d.u1 };
   const Hh = (h + my + 0.35 + notas.length * 0.13 + 0.15) * k, Wd = (w + 2 * mx) * k;
   const X = (x: number) => (x + mx) * k, Y = (y: number) => (h + my - y) * k;
   const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(Wd / 100 * 18).toFixed(1)}mm">`];
@@ -153,8 +174,13 @@ export function vistaLajeSvg(p: PainelLaje, notas: string[] = []): string {
     T((d.u0 + d.u1) / 2, (d.v0 + d.v1) / 2 - 0.04, 'dente', 10, '#900');
     dimH(d.u0, d.u1, cv === 0 ? d.v1 + 0.12 : d.v0 - 0.18, br(d.u1 - d.u0)); dimV(cu === 0 ? d.u1 + 0.18 : d.u0 - 0.18, d.v0, d.v1, br(d.v1 - d.v0));
   } else { Ln(0, 0, w, 0); Ln(w, 0, w, h); Ln(w, h, 0, h); Ln(0, h, 0, 0); }
-  // sentido do vão (alvéolos ao longo do comprimento)
-  Ln(0.15, h / 2, w - 0.15, h / 2, '#888', 0.8, '6 4'); Ln(w - 0.3, h / 2 + 0.08, w - 0.15, h / 2, '#888', 0.8); Ln(w - 0.3, h / 2 - 0.08, w - 0.15, h / 2, '#888', 0.8);
+  // sentido do vão (alvéolos ao longo do comprimento, em pé)
+  Ln(w / 2, 0.15, w / 2, h - 0.15, '#888', 0.8, '6 4'); Ln(w / 2 - 0.08, h - 0.3, w / 2, h - 0.15, '#888', 0.8); Ln(w / 2 + 0.08, h - 0.3, w / 2, h - 0.15, '#888', 0.8);
+  for (const t of trelicasNoPainel(p, TR)) {
+    const RX = '#7a2bbf';
+    if (t.vert) { Ln(t.pos, t.i0, t.pos, t.i1, RX, 1.6, '8 4'); dimH(0, t.pos, t.i0 + 0.25, br(t.pos)); T(t.pos + 0.12, (t.i0 + t.i1) / 2, `T${t.n}`, 10, RX); }
+    else { Ln(t.i0, t.pos, t.i1, t.pos, RX, 1.6, '8 4'); dimV(t.i0 + 0.25, 0, t.pos, br(t.pos)); T((t.i0 + t.i1) / 2, t.pos + 0.06, `T${t.n}`, 10, RX); }
+  }
   s.push(`<text x="${X(0.06)}" y="${Y(h - 0.2)}" font-size="16" fill="${VERM}" font-weight="bold">L${p.num}</text>`);
   dimH(0, w, h + 0.2, br(w)); dimV(-0.22, 0, h, br(h));
   notas.forEach((n, i) => T(w / 2, -0.22 - i * 0.13, esc(n), 10, '#b00'));
