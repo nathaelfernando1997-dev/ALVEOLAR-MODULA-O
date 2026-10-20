@@ -136,10 +136,10 @@ export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = 
   for (const p of pl) linhas.push([`L${p.num}`, nome.get(p.pav), br(p.comp), br(p.larg), br(areaLaje(p)), p.dente ? `dente ${br(p.dente.x1 - p.dente.x0)} x ${br(p.dente.y1 - p.dente.y0)}` : ''].join(';'));
   if (quant.length) {
     const m3 = (v: number) => v.toFixed(3).replace('.', ',');
-    linhas.push('', 'Quantitativos;Item;Painéis;Área (m²);Aberturas (m²);Espessura (m);Volume painel inteiro (m³);Volume sem aberturas (m³)');
-    for (const l of quant) linhas.push([l.pav, l.item, l.qtd, br(l.area), br(l.recortes), br(l.esp), m3(l.m3), m3(l.m3liq)].join(';'));
-    const s = (k: 'area' | 'recortes' | 'm3' | 'm3liq') => quant.reduce((t, l) => t + l[k], 0);
-    linhas.push(['Total geral', '', quant.reduce((t, l) => t + l.qtd, 0), br(s('area')), br(s('recortes')), '', m3(s('m3')), m3(s('m3liq'))].join(';'));
+    linhas.push('', 'Quantitativos;Item;Espessura (m);Painéis;Área (m²);Volume do painel (m³);Isopor (m);Volume de isopor (m³);Concreto (m³)');
+    for (const l of quant) linhas.push([l.pav, l.item, br(l.esp), l.qtd, br(l.area), m3(l.bruto), br(l.isoporM), m3(l.isoporM3), m3(l.concreto)].join(';'));
+    const s = (k: 'qtd' | 'area' | 'bruto' | 'isoporM' | 'isoporPecas' | 'isoporM3' | 'concreto') => quant.reduce((t, l) => t + l[k], 0);
+    linhas.push(['Total geral', '', '', s('qtd'), br(s('area')), m3(s('bruto')), br(s('isoporM')), m3(s('isoporM3')), m3(s('concreto'))].join(';'));
   }
   return '﻿' + linhas.join('\r\n');
 }

@@ -23,9 +23,12 @@ export interface Regras {
   vigaAltura: number;      // altura da viga (rebaixo nas paredes embaixo dela)
   vigaLargura: number;     // largura da viga
   vigaApoio: number;       // quanto a viga entra em cima da parede de apoio
-  paredeEsp?: number;      // espessura do painel de parede, para o volume (m³)
-  vazioParede?: number;    // % de vazios (alvéolos) do painel de parede, descontado do volume
-  vazioLaje?: number;      // % de vazios (alvéolos) da laje
+  // alvéolos de isopor (paredes e lajes), para o quantitativo de concreto
+  isoporLarg?: number;     // 0,12
+  isoporAlt?: number;      // 0,09
+  isoporComp?: number;     // comprimento da barra de isopor: 3,00
+  isoporEspaco?: number;   // concreto entre um isopor e o outro: 0,03
+  capeamento?: number;     // concreto em cima e embaixo do isopor: 0,025
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
   motor?: number;          // versão do cálculo: projetos salvos antes (sem o campo) continuam com o cálculo antigo (1)
   vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
@@ -36,7 +39,7 @@ export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15,
-  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, paredeEsp: 0.15, vazioParede: 0, vazioLaje: 0, vaoViga: 5.0, beiral: 1.0,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 3.0, isoporEspaco: 0.03, capeamento: 0.025, vaoViga: 5.0, beiral: 1.0,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
@@ -649,16 +652,28 @@ export function numerar(P: Painel[], ordemPav: string[]) {
 }
 
 // quadro de quantitativos: área e volume de concreto por pavimento (paredes e lajes)
-export interface LinhaQuant { pav: string; item: 'Paredes' | 'Lajes'; qtd: number; area: number; recortes: number; esp: number; m3: number; m3liq: number }
+// painel com alvéolos de isopor: espessura = isopor + capeamento em cima e embaixo; na largura cabem
+// floor(largura / (isopor + espaço)) isopores, cada um correndo o comprimento do painel (paredes: a altura)
+export interface LinhaQuant { pav: string; item: 'Paredes' | 'Lajes'; qtd: number; area: number; esp: number; bruto: number; isoporM: number; isoporPecas: number; isoporM3: number; concreto: number }
 export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; comp: number; larg: number; dente?: Box }[], r: Regras): LinhaQuant[] {
   const out: LinhaQuant[] = [];
-  const ep = r.paredeEsp ?? 0.15, el = r.lajeEsp, vp = 1 - (r.vazioParede ?? 0) / 100, vl = 1 - (r.vazioLaje ?? 0) / 100;
+  const il = r.isoporLarg ?? 0.12, ia = r.isoporAlt ?? 0.09, ic = r.isoporComp ?? 3, ie = r.isoporEspaco ?? 0.03, cap = r.capeamento ?? 0.025;
+  const esp = ia + 2 * cap, passo = il + ie;
+  // um painel: largura, comprimento dos alvéolos
+  const conta = (larg: number, comp: number, area: number) => {
+    const n = Math.max(0, Math.floor(larg / passo + 1e-6));
+    return { bruto: area * esp, isoporM: n * comp, pecas: 0, isoporM3: n * comp * il * ia };
+  };
+  const linha = (pav: string, item: LinhaQuant['item'], xs: { larg: number; comp: number; area: number }[]) => {
+    const t = xs.reduce((s, x) => { const c = conta(x.larg, x.comp, x.area); return { area: s.area + x.area, bruto: s.bruto + c.bruto, isoporM: s.isoporM + c.isoporM, pecas: s.pecas + c.pecas, isoporM3: s.isoporM3 + c.isoporM3 }; }, { area: 0, bruto: 0, isoporM: 0, pecas: 0, isoporM3: 0 });
+    // barras pelo total de metros (as sobras de uma barra completam o painel seguinte)
+    out.push({ pav, item, qtd: xs.length, area: t.area, esp, bruto: t.bruto, isoporM: t.isoporM, isoporPecas: Math.ceil(t.isoporM / ic - 1e-6), isoporM3: t.isoporM3, concreto: t.bruto - t.isoporM3 });
+  };
   for (const pav of pavs) {
-    const ps = P.filter(p => p.pav === pav.id), q = resumo(ps);
-    if (ps.length) out.push({ pav: pav.nome, item: 'Paredes', qtd: q.qtd, area: q.bruta, recortes: q.recortes, esp: ep, m3: q.bruta * ep * vp, m3liq: q.liquida * ep * vp });
+    const ps = P.filter(p => p.pav === pav.id);
+    if (ps.length) linha(pav.nome, 'Paredes', ps.map(p => ({ larg: p.larg, comp: p.H, area: p.larg * p.H })));
     const ls = PL.filter(p => p.pav === pav.id);
-    const a = ls.reduce((s, p) => s + p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), 0);
-    if (ls.length) out.push({ pav: pav.nome, item: 'Lajes', qtd: ls.length, area: a, recortes: 0, esp: el, m3: a * el * vl, m3liq: a * el * vl });
+    if (ls.length) linha(pav.nome, 'Lajes', ls.map(p => ({ larg: p.larg, comp: p.comp, area: p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0) })));
   }
   return out;
 }

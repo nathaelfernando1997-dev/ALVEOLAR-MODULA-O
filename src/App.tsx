@@ -390,7 +390,7 @@ export default function App() {
             <h3>Paredes</h3>
             <div className="grade">
               {([
-                ['larguraMax', 'Largura máxima do painel (m)'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['paredeEsp', 'Espessura do painel de parede, para o volume (m)'], ['vazioParede', 'Vazios (alvéolos) do painel de parede (%)'], ['folga', 'Diminuir de cada painel (m)'],
+                ['larguraMax', 'Largura máxima do painel (m)'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['isoporLarg', 'Isopor: largura (m)'], ['isoporAlt', 'Isopor: altura (m)'], ['isoporEspaco', 'Concreto entre um isopor e outro (m)'], ['capeamento', 'Capeamento em cima e embaixo do isopor (m)'], ['folga', 'Diminuir de cada painel (m)'],
                 ['boneca', 'Boneca de transporte nas laterais e embaixo (m)'], ['acrescimoLargura', 'Vão de porta/janela maior em (m)'],
                 ['janelaDesce', 'Janela: recorte desce e sobe (m)'], ['espMin', 'Espessura mínima de parede (m)'], ['espMax', 'Espessura máxima de parede (m)'],
                 ['minParede', 'Trecho mínimo de parede (m)'], ['naoFabricar', 'Marcar "n fabricar" abaixo de (m)'],
@@ -402,7 +402,7 @@ export default function App() {
             </div>
             <h3>Lajes</h3>
             <div className="grade">
-              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima da parede com laje dos dois lados (m)'], ['lajeApoioBorda', 'Apoio onde só uma laje apoia na parede (m)'], ['lajeFolga', 'Folga entre painéis de laje (m)'], ['lajeEsp', 'Espessura da laje (m)'], ['vazioLaje', 'Vazios (alvéolos) da laje (%)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima da parede com laje dos dois lados (m)'], ['lajeApoioBorda', 'Apoio onde só uma laje apoia na parede (m)'], ['lajeFolga', 'Folga entre painéis de laje (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
@@ -495,14 +495,16 @@ export default function App() {
 
 // quadro de m² e m³ por pavimento
 function Quantitativos({ linhas }: { linhas: ReturnType<typeof quantitativos> }) {
-  const tot = (k: 'area' | 'recortes' | 'm3' | 'm3liq', it?: string) => linhas.filter(l => !it || l.item === it).reduce((s, l) => s + l[k], 0);
+  type K = 'qtd' | 'area' | 'bruto' | 'isoporM' | 'isoporPecas' | 'isoporM3' | 'concreto';
+  const tot = (k: K, it?: string) => linhas.filter(l => !it || l.item === it).reduce((s, l) => s + l[k], 0);
   const m3 = (v: number) => v.toFixed(3).replace('.', ',');
+  const cel = (g: (k: K) => number) => <><td>{g('qtd')}</td><td>{br(g('area'))}</td><td>{m3(g('bruto'))}</td><td>{br(g('isoporM'))}</td><td>{m3(g('isoporM3'))}</td><td><b>{m3(g('concreto'))}</b></td></>;
   return <table className="tquant"><thead>
-    <tr><th colSpan={8}>QUANTITATIVOS — ÁREA E VOLUME DE CONCRETO</th></tr>
-    <tr><th>Pavimento</th><th>Item</th><th>Painéis</th><th>Área (m²)</th><th>Aberturas (m²)</th><th>Espessura (m)</th><th>Volume painel inteiro (m³)</th><th>Volume sem aberturas (m³)</th></tr></thead>
-    <tbody>{linhas.map((l, i) => <tr key={i}><td>{l.pav}</td><td>{l.item}</td><td>{l.qtd}</td><td>{br(l.area)}</td><td>{l.recortes ? br(l.recortes) : '—'}</td><td>{br(l.esp)}</td><td>{m3(l.m3)}</td><td>{m3(l.m3liq)}</td></tr>)}
-      {(['Paredes', 'Lajes'] as const).map(it => <tr key={it} className="tot"><td>Total</td><td>{it}</td><td>{linhas.filter(l => l.item === it).reduce((s, l) => s + l.qtd, 0)}</td><td>{br(tot('area', it))}</td><td>{it === 'Paredes' ? br(tot('recortes', it)) : '—'}</td><td></td><td>{m3(tot('m3', it))}</td><td>{m3(tot('m3liq', it))}</td></tr>)}
-      <tr className="tot"><td>Total geral</td><td></td><td>{linhas.reduce((s, l) => s + l.qtd, 0)}</td><td>{br(tot('area'))}</td><td>{br(tot('recortes'))}</td><td></td><td><b>{m3(tot('m3'))}</b></td><td><b>{m3(tot('m3liq'))}</b></td></tr>
+    <tr><th colSpan={9}>QUANTITATIVOS — ÁREA, CONCRETO E ISOPOR</th></tr>
+    <tr><th>Pavimento</th><th>Item</th><th>Espessura (m)</th><th>Painéis</th><th>Área (m²)</th><th>Volume do painel (m³)</th><th>Isopor (m)</th><th>Volume de isopor (m³)</th><th>Concreto (m³)</th></tr></thead>
+    <tbody>{linhas.map((l, i) => <tr key={i}><td>{l.pav}</td><td>{l.item}</td><td>{br(l.esp)}</td>{cel(k => l[k])}</tr>)}
+      {(['Paredes', 'Lajes'] as const).map(it => <tr key={it} className="tot"><td>Total</td><td>{it}</td><td></td>{cel(k => tot(k, it))}</tr>)}
+      <tr className="tot"><td>Total geral</td><td></td><td></td>{cel(k => tot(k))}</tr>
     </tbody></table>;
 }
 
@@ -752,7 +754,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras }: { ativos: 
   if (novo) folhas.push(<div className="folha" key="quant">
     <div className="cab">QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)</div>
     <Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} />
-    {rod(`Paredes: espessura ${br(regras.paredeEsp ?? 0.15)} m, vazios ${regras.vazioParede ?? 0}% · Lajes: espessura ${br(regras.lajeEsp)} m, vazios ${regras.vazioLaje ?? 0}% · painel inteiro = antes de recortar portas e janelas`)}
+    {rod(`Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · painel inteiro, antes de recortar portas e janelas`)}
   </div>);
   return <div className="folhas">{folhas}</div>;
 }
