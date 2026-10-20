@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
@@ -28,7 +28,11 @@ type VigaN = Viga & { n: number };
 interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[] }
 
 export default function App() {
-  const [aba, setAba] = useState<Aba>('arquivo');
+  const [aba, setAbaEstado] = useState<Aba>('arquivo');
+  // aba atual também num ref: o carregamento (que demora) só troca de aba se o usuário não tiver saído dela
+  const abaRef = useRef<Aba>('arquivo');
+  const setAba = (a: Aba) => { abaRef.current = a; setAbaEstado(a); };
+  const irSeParado = (de: Aba, para: Aba) => { if (abaRef.current === de) setAba(para); };
   const [nome, setNome] = useState('');
   const [dxf, setDxf] = useState<Dxf | null>(null);
   const [lendo, setLendo] = useState(false);
@@ -164,20 +168,22 @@ export default function App() {
       } else { txt = await f.text(); setAvisoPdf([]); }
       // aproveita ajustes da versão antiga (salvos pelo nome do arquivo)
       const antigo = (() => { try { return JSON.parse(localStorage.getItem(chave(f.name)) || 'null') as Salvo | null; } catch { return null; } })();
+      const de = abaRef.current;
       carregarTexto(txt, f.name, antigo, true);
+      irSeParado(de, antigo ? 'modulacao' : 'pavimentos');
       const p = await repo.criar(f.name.replace(/\.(dxf|pdf)$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
       setProjId(p.id); setProjNome(p.nome); atualizarLista();
-      setAba(antigo ? 'modulacao' : 'pavimentos');
     } catch (e) { setErro((e as Error).message); }
     setLendo(false);
   };
   const abrirProjeto = async (id: string) => {
     setLendo(true); setErro('');
     try {
+      const de = abaRef.current;
       const p = await repo.carregar(id); if (!p) throw new Error('Projeto não encontrado.');
       carregarTexto(await p.dxf.text(), p.arquivo, p.config);
       setProjId(p.id); setProjNome(p.nome);
-      setAba(p.config && p.config.pavs.some(x => x.ativo) ? 'modulacao' : 'pavimentos');
+      irSeParado(de, p.config && p.config.pavs.some(x => x.ativo) ? 'modulacao' : 'pavimentos');
     } catch (e) { setErro((e as Error).message); }
     setLendo(false);
   };
