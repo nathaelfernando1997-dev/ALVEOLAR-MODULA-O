@@ -179,7 +179,7 @@ function lerQuadro(textos: Leitura['textos'], regioes: Box[]): Esquadria[] {
 }
 
 // ---------------- paredes ----------------
-type Face = { c: number; a: number; b: number };
+type Face = { c: number; a: number; b: number; k?: number };   // k = inclinação (linha quase reta, terreno torto)
 type Eixo = { c: number; ps: [number, number][]; esp: number };
 
 function faces(ps: Prim[], box: Box) {
@@ -192,8 +192,8 @@ function faces(ps: Prim[], box: Box) {
       if (!inn(a) || !inn(b)) continue;
       const dx = b[0] - a[0], dy = b[1] - a[1];
       if (Math.hypot(dx, dy) < 0.03) continue;
-      if (Math.abs(dy) <= 0.05 * Math.abs(dx)) H.push({ c: (a[1] + b[1]) / 2, a: Math.min(a[0], b[0]), b: Math.max(a[0], b[0]) });
-      else if (Math.abs(dx) <= 0.05 * Math.abs(dy)) V.push({ c: (a[0] + b[0]) / 2, a: Math.min(a[1], b[1]), b: Math.max(a[1], b[1]) });
+      if (Math.abs(dy) <= 0.05 * Math.abs(dx)) H.push({ c: (a[1] + b[1]) / 2, a: Math.min(a[0], b[0]), b: Math.max(a[0], b[0]), k: Math.abs(dy / dx) >= 0.004 ? dy / dx : 0 });
+      else if (Math.abs(dx) <= 0.05 * Math.abs(dy)) V.push({ c: (a[0] + b[0]) / 2, a: Math.min(a[1], b[1]), b: Math.max(a[1], b[1]), k: Math.abs(dx / dy) >= 0.004 ? dx / dy : 0 });
     }
   }
   const junta = (F: Face[]) => {
@@ -215,14 +215,34 @@ function eixos(F: Face[], r: Regras): Eixo[] {
     if (d < r.espMin || d > r.espMax) continue;
     const lo = Math.max(F[i].a, F[j].a), hi = Math.min(F[i].b, F[j].b);
     // parede grossa (> 22 cm) só com trecho longo: evita juntar linhas de detalhe com a face externa
-    if (hi - lo > 0.03 && (d <= 0.22 || hi - lo >= 0.3)) pedacos.push({ c: (F[i].c + F[j].c) / 2, a: lo, b: hi, d });
+    if (hi - lo > 0.03 && (d <= 0.22 || hi - lo >= 0.3)) pedacos.push({ c: (F[i].c + F[j].c) / 2, a: lo, b: hi, d, k: ((F[i].k ?? 0) + (F[j].k ?? 0)) / 2 });
   }
   pedacos.sort((p, q) => p.c - q.c);
-  const grupos: { cs: number[]; ps: [number, number][]; ds: number[] }[] = [];
+  const grupos: { cs: number[]; ps: [number, number][]; ds: number[]; ks: number[] }[] = [];
   for (const p of pedacos) {
     const g = grupos.find(g => Math.abs(g.cs.reduce((s, v) => s + v, 0) / g.cs.length - p.c) < 0.07);
-    if (g) { g.cs.push(p.c); g.ps.push([p.a, p.b]); g.ds.push(p.d); } else grupos.push({ cs: [p.c], ps: [[p.a, p.b]], ds: [p.d] });
+    if (g) { g.cs.push(p.c); g.ps.push([p.a, p.b]); g.ds.push(p.d); g.ks.push(p.k ?? 0); } else grupos.push({ cs: [p.c], ps: [[p.a, p.b]], ds: [p.d], ks: [p.k ?? 0] });
   }
+  // parede inclinada (terreno torto): os pedaços entre as janelas ficam com eixos diferentes;
+  // junta os que estão na mesma reta (mesma inclinação, um no prolongamento do outro)
+  const med = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
+  const meio = (g: (typeof grupos)[number]) => { const as = g.ps.map(p => (p[0] + p[1]) / 2); return med(as); };
+  for (let mudou = true; mudou;) {
+    mudou = false;
+    for (const g of grupos) for (const h of grupos) {
+      if (g === h || !g.cs.length || !h.cs.length) continue;
+      const k = med(g.ks);
+      if (Math.abs(k) < 0.004 || Math.abs(med(h.ks) - k) > 0.006 || Math.abs(med(g.ds) - med(h.ds)) > 0.04) continue;
+      const [ga, gb] = [Math.min(...g.ps.map(p => p[0])), Math.max(...g.ps.map(p => p[1]))], [ha, hb] = [Math.min(...h.ps.map(p => p[0])), Math.max(...h.ps.map(p => p[1]))];
+      const vao = Math.max(ha - gb, ga - hb);
+      if (vao < -0.05 || vao > 3) continue;
+      if (Math.abs(med(g.cs) + k * (meio(h) - meio(g)) - med(h.cs)) > 0.04) continue;
+      if (Math.abs(k) * (Math.max(gb, hb) - Math.min(ga, ha)) > 0.4) continue;
+      g.cs.push(...h.cs); g.ps.push(...h.ps); g.ds.push(...h.ds); g.ks.push(...h.ks);
+      h.cs = []; h.ps = []; h.ds = []; h.ks = []; mudou = true;
+    }
+  }
+  for (let i = grupos.length - 1; i >= 0; i--) if (!grupos[i].cs.length) grupos.splice(i, 1);
   return grupos.map(g => {
     const ps = g.ps.sort((a, b) => a[0] - b[0]);
     const m: [number, number][] = [];

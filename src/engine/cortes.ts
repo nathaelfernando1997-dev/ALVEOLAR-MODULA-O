@@ -83,7 +83,8 @@ export function adivinharPapeis(d: Dxf, regioes: Box[], tags: { x: number; y: nu
   for (const t of textos) {
     const up = t.text.toUpperCase();
     if (!/[A-ZÀ-Ú]{4,}/.test(up) || /^\s*(FACHADA|VISTA|LATERAL|FRENTE|FUNDOS|RUA|AV|PROJ|LINHA|LIMITE|DIVISA)/.test(up)) continue;
-    if (!(SIM.test(up) || NAO.test(up) || /PLANTA/.test(up))) continue;
+    // só conta como título o texto que nomeia uma planta (as palavras de exclusão sozinhas aparecem em notas e legendas)
+    if (!(/PLANTA/.test(up) || SIM.test(up))) continue;
     let mi = -1, md = 12;
     regioes.forEach((b, i) => {
       if (t.x < b.x0 - 0.5 || t.x > b.x1 + 0.5) return;

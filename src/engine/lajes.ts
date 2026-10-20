@@ -20,7 +20,12 @@ const agrupa = (vs: number[], tol = 0.06) => {
 
 // extras = apoios que não são parede (viga na linha de piso); vazios = áreas sem laje (VAZIO do pavimento de cima)
 export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], vazios: Box[] = []): Ambiente[] {
-  const T = [...ts.filter(t => t.pav === pav.id), ...extras];
+  const T0 = [...ts.filter(t => t.pav === pav.id), ...extras];
+  // ponta que para antes do eixo da parede perpendicular (quina com pilar/shaft, parede torta) vai até ele
+  const chega = (q: Trecho, c: number) => q.s - 0.12 <= c && c <= q.e + 0.12;
+  const ate = (t: Trecho, lim: number, dir: 1 | -1) => T0.filter(q => q.o !== t.o && chega(q, t.c) && dir * (q.c - lim) > 0 && dir * (q.c - lim) <= 0.4)
+    .reduce((m, q) => dir * (q.c - m) > 0 ? q.c : m, lim);
+  const T = T0.map(t => ({ ...t, s: ate(t, t.s, -1), e: ate(t, t.e, 1) }));
   const xs = agrupa([...T.filter(t => t.o === 'V').map(t => t.c), ...vazios.flatMap(v => [v.x0, v.x1])]);
   const ys = agrupa([...T.filter(t => t.o === 'H').map(t => t.c), ...vazios.flatMap(v => [v.y0, v.y1])]);
   if (xs.length < 2 || ys.length < 2) return [];
@@ -117,7 +122,8 @@ export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], v
     const L = ret(k, true).map(amb), C = ret(k, false).map(amb);
     out.push(...(custo(C) < custo(L) ? C : L));
   }
-  return out;
+  // sobra entre eixos muito próximos (encontro de paredes) não é ambiente
+  return out.filter(a => a.x1 - a.x0 >= 0.3 || a.y1 - a.y0 >= 0.3);
 }
 
 // cargas = paredes do pavimento de cima sem parede embaixo (coordenadas desta planta)

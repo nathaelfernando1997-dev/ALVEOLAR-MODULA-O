@@ -109,20 +109,31 @@ export default function App() {
       const L = ler(d, cam);
       // papéis e pés-direitos automáticos: plantas da esquerda para a direita / de cima para baixo recebem os pés-direitos dos cortes em ordem
       const papeis = adivinharPapeis(d, L.regioes, L.tags);
-      // planta repetida no arquivo (cópia do mesmo desenho em outro lugar): fica só a primeira
-      const assinatura = (b: Box) => {
-        const tg = L.tags.filter(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3)
-          .map(t => `${t.text}@${(t.x - b.x0).toFixed(1)},${(t.y - b.y0).toFixed(1)}`).sort().join(';');
-        return `${(b.x1 - b.x0).toFixed(1)}x${(b.y1 - b.y0).toFixed(1)}|${tg}`;
+      // planta repetida no arquivo (cópia do mesmo desenho em outra prancha, às vezes com as etiquetas um pouco deslocadas):
+      // mesmas etiquetas na mesma arrumação (tolerância de 1 m) e tamanho parecido = mesma planta
+      const etq = (b: Box) => {
+        const tg = L.tags.filter(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3);
+        const mx = Math.min(...tg.map(t => t.x)), my = Math.min(...tg.map(t => t.y));
+        return tg.map(t => ({ s: t.text, x: t.x - mx, y: t.y - my })).sort((p, q) => p.s.localeCompare(q.s) || p.y - q.y || p.x - q.x);
+      };
+      const mesma = (i: number, j: number) => {
+        const A = L.regioes[i], B = L.regioes[j];
+        if (Math.abs((A.x1 - A.x0) - (B.x1 - B.x0)) > 1.5 || Math.abs((A.y1 - A.y0) - (B.y1 - B.y0)) > 4) return false;
+        const a = etq(A), b = etq(B);
+        return a.length >= 2 && a.length === b.length && a.every((t, k) => t.s === b[k].s && Math.abs(t.x - b[k].x) < 1 && Math.abs(t.y - b[k].y) < 1);
       };
       // entre as cópias fica a que está junto dos cortes (o jogo original de desenhos)
       const cortesC = L.regioes.filter((_, i) => papeis[i] === 'corte').map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]);
       const distC = (b: Box) => cortesC.length ? Math.min(...cortesC.map(([x, y]) => Math.hypot((b.x0 + b.x1) / 2 - x, (b.y0 + b.y1) / 2 - y))) : 0;
-      const grupos = new Map<string, number[]>();
-      L.regioes.forEach((b, i) => { if (papeis[i] === 'planta') { const a = assinatura(b); grupos.set(a, [...(grupos.get(a) || []), i]); } });
-      for (const ids of grupos.values()) if (ids.length > 1) {
-        const fica = ids.reduce((m, i) => distC(L.regioes[i]) < distC(L.regioes[m]) ? i : m, ids[0]);
-        for (const i of ids) if (i !== fica) papeis[i] = 'nao';
+      const plantasI = L.regioes.map((_, i) => i).filter(i => papeis[i] === 'planta');
+      const visto = new Set<number>();
+      for (const i of plantasI) {
+        if (visto.has(i)) continue;
+        const ids = plantasI.filter(j => j === i || (!visto.has(j) && mesma(i, j)));
+        ids.forEach(j => visto.add(j));
+        if (ids.length < 2) continue;
+        const fica = ids.reduce((m, k) => distC(L.regioes[k]) < distC(L.regioes[m]) ? k : m, ids[0]);
+        for (const k of ids) if (k !== fica) papeis[k] = 'nao';
       }
       const pes = detectarPes(d, L.regioes.filter((_, i) => papeis[i] !== 'planta'));
       const nomes = ['Térreo', 'Pavimento superior', '2º pavimento', '3º pavimento'];
