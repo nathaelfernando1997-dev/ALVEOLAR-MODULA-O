@@ -125,6 +125,42 @@ export function vistaSvg(p: Painel): string {
 
 // planta das lajes: planta baixa + painéis de laje
 import type { LajeAmb, PainelLaje } from './lajes.ts';
+
+// painel de laje em coordenadas do painel: u = comprimento (sentido do vão), v = largura
+export function lajeLocal(p: PainelLaje) {
+  const d = p.dente && (p.sentido === 'H'
+    ? { u0: p.dente.x0 - p.x0, u1: p.dente.x1 - p.x0, v0: p.dente.y0 - p.y0, v1: p.dente.y1 - p.y0 }
+    : { u0: p.dente.y0 - p.y0, u1: p.dente.y1 - p.y0, v0: p.dente.x0 - p.x0, v1: p.dente.x1 - p.x0 });
+  return { L: p.comp, W: p.larg, d };
+}
+
+// vista de produção de um painel de laje (unidades: 1 m = 100), como a vista das paredes
+export function vistaLajeSvg(p: PainelLaje, notas: string[] = []): string {
+  const k = 100, { L: w, W: h, d } = lajeLocal(p), mx = 0.5, my = 0.45;
+  const Hh = (h + my + 0.35 + notas.length * 0.13 + 0.15) * k, Wd = (w + 2 * mx) * k;
+  const X = (x: number) => (x + mx) * k, Y = (y: number) => (h + my - y) * k;
+  const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(Wd / 100 * 18).toFixed(1)}mm">`];
+  const Ln = (x1: number, y1: number, x2: number, y2: number, c = '#000', sw = 1.2, da = '') => s.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${c}" stroke-width="${sw}"${da ? ` stroke-dasharray="${da}"` : ''}/>`);
+  const T = (x: number, y: number, t: string, fs = 12, c = VERM, rot = false) => s.push(`<text x="${X(x).toFixed(1)}" y="${Y(y).toFixed(1)}" font-size="${fs}" fill="${c}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3"${rot ? ` transform="rotate(-90 ${X(x).toFixed(1)} ${Y(y).toFixed(1)})"` : ''}>${t}</text>`);
+  const dimH = (a: number, b: number, y: number, t: string) => { Ln(a, y, b, y, AZUL, 0.8); Ln(a, y - 0.04, a, y + 0.04, AZUL, 0.8); Ln(b, y - 0.04, b, y + 0.04, AZUL, 0.8); T((a + b) / 2, y + 0.03, t, 11); };
+  const dimV = (x: number, a: number, b: number, t: string) => { Ln(x, a, x, b, AZUL, 0.8); Ln(x - 0.04, a, x + 0.04, a, AZUL, 0.8); Ln(x - 0.04, b, x + 0.04, b, AZUL, 0.8); T(x - 0.03, (a + b) / 2, t, 11, VERM, true); };
+  // contorno (com o dente recortado num canto)
+  if (d) {
+    const iu = d.u0 <= 1e-6 ? d.u1 : d.u0, iv = d.v0 <= 1e-6 ? d.v1 : d.v0, cu = d.u0 <= 1e-6 ? 0 : w, cv = d.v0 <= 1e-6 ? 0 : h, ou = w - cu, ov = h - cv;
+    const pts = [[iu, cv], [ou, cv], [ou, ov], [cu, ov], [cu, iv], [iu, iv], [iu, cv]];
+    for (let i = 0; i < pts.length - 1; i++) Ln(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+    Ln(cu, cv, iu, cv, '#999', 0.8, '4 3'); Ln(cu, cv, cu, iv, '#999', 0.8, '4 3');
+    T((d.u0 + d.u1) / 2, (d.v0 + d.v1) / 2 - 0.04, 'dente', 10, '#900');
+    dimH(d.u0, d.u1, cv === 0 ? d.v1 + 0.12 : d.v0 - 0.18, br(d.u1 - d.u0)); dimV(cu === 0 ? d.u1 + 0.18 : d.u0 - 0.18, d.v0, d.v1, br(d.v1 - d.v0));
+  } else { Ln(0, 0, w, 0); Ln(w, 0, w, h); Ln(w, h, 0, h); Ln(0, h, 0, 0); }
+  // sentido do vão (alvéolos ao longo do comprimento)
+  Ln(0.15, h / 2, w - 0.15, h / 2, '#888', 0.8, '6 4'); Ln(w - 0.3, h / 2 + 0.08, w - 0.15, h / 2, '#888', 0.8); Ln(w - 0.3, h / 2 - 0.08, w - 0.15, h / 2, '#888', 0.8);
+  s.push(`<text x="${X(0.06)}" y="${Y(h - 0.2)}" font-size="16" fill="${VERM}" font-weight="bold">L${p.num}</text>`);
+  dimH(0, w, h + 0.2, br(w)); dimV(-0.22, 0, h, br(h));
+  notas.forEach((n, i) => T(w / 2, -0.22 - i * 0.13, esc(n), 10, '#b00'));
+  s.push('</svg>');
+  return s.join('');
+}
 export function lajesConteudo(lj: LajeAmb[], P: PainelLaje[], q: Quadro, tr: (Viga & { n: number })[] = []): string {
   const { X, Y } = q; const g: string[] = [];
   for (const a of lj) {

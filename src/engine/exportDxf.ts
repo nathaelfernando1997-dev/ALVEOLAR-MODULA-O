@@ -3,6 +3,7 @@ import type { Painel, Pavimento } from './model.ts';
 import type { Prim } from './dxf.ts';
 import type { PainelLaje } from './lajes.ts';
 import { areaLaje } from './lajes.ts';
+import { lajeLocal } from './draw.ts';
 
 class W {
   out: string[] = [];
@@ -95,6 +96,27 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
       w.text('LAJE', x0 + (p.x1 - p.x0) / 2, y0 + (p.y1 - p.y0) / 2 - .25, .1, `${br(p.comp)} x ${br(p.larg)}`, 7, 0, true);
     }
     if (L.length) w.text('TEXTO', X, -(b.y1 - b.y0) - 3, .3, `LAJE SOBRE ${pav.nome.toUpperCase()}`);
+    // produção: vista de cada painel de laje ao lado da planta das lajes
+    if (cotas && L.length) {
+      let ux = lx, uy = Math.min(-4, vy - 5.5), alt = 0;   // abaixo das vistas das paredes
+      w.text('TEXTO', lx, uy + .6, .3, `PRODUÇÃO DA LAJE SOBRE ${pav.nome.toUpperCase()}`);
+      for (const p of L) {
+        const { L: cl, W: wl, d } = lajeLocal(p);
+        if (ux + cl > lx + 24) { ux = lx; uy -= alt + 1.2; alt = 0; }
+        const y = uy - wl;
+        if (d) {
+          const iu = d.u0 <= 1e-6 ? d.u1 : d.u0, iv = d.v0 <= 1e-6 ? d.v1 : d.v0, cu = d.u0 <= 1e-6 ? 0 : cl, cv = d.v0 <= 1e-6 ? 0 : wl, ou = cl - cu, ov = wl - cv;
+          const pts = [[iu, cv], [ou, cv], [ou, ov], [cu, ov], [cu, iv], [iu, iv], [iu, cv]];
+          for (let i = 0; i < pts.length - 1; i++) w.line('LAJE-PROD', ux + pts[i][0], y + pts[i][1], ux + pts[i + 1][0], y + pts[i + 1][1], 7);
+          w.dimH(ux + d.u0, ux + d.u1, y + (cv === 0 ? d.v1 + .12 : d.v0 - .18), br(d.u1 - d.u0)); w.dimV(ux + (cu === 0 ? d.u1 + .18 : d.u0 - .18), y + d.v0, y + d.v1, br(d.v1 - d.v0));
+        } else w.rect('LAJE-PROD', ux, y, cl, wl);
+        w.line('LAJE-PROD', ux + .15, y + wl / 2, ux + cl - .15, y + wl / 2, 8); w.line('LAJE-PROD', ux + cl - .3, y + wl / 2 + .08, ux + cl - .15, y + wl / 2, 8); w.line('LAJE-PROD', ux + cl - .3, y + wl / 2 - .08, ux + cl - .15, y + wl / 2, 8);
+        w.text('NUMERO', ux + .06, y + wl - .22, .14, `L${p.num}`);
+        w.dimH(ux, ux + cl, y + wl + .2, br(cl)); w.dimV(ux - .22, y, y + wl, br(wl));
+        w.text('TEXTO', ux + cl / 2, y - .22, .09, `${br(areaLaje(p))} m²`, 1, 0, true);
+        ux += cl + 1.1; alt = Math.max(alt, wl);
+      }
+    }
     X = lx + 30;
   }
   return w.str();

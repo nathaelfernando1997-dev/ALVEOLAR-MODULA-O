@@ -3,7 +3,7 @@ import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, trechos, paineis, numerar, resumo, continuarVaos, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
-import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
+import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
@@ -484,7 +484,7 @@ export default function App() {
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras({ ...REGRAS_PADRAO, motor: 1, ...s.regras }); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
-            <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} />
+            <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} />
           </section>
         )}
       </main>
@@ -667,7 +667,7 @@ function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: C
   </div>;
 }
 
-function Folhas({ ativos, calc, leitura, arqDe, nome }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string }) {
+function Folhas({ ativos, calc, leitura, arqDe, nome, novo }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean }) {
   const folhas: JSX.Element[] = [];
   const rod = (t: string) => <div className="rod"><span>{t}</span><span>{nome}</span></div>;
   for (const pav of ativos) {
@@ -713,6 +713,20 @@ function Folhas({ ativos, calc, leitura, arqDe, nome }: { ativos: Pavimento[]; c
           </tbody></table></div>
         {rod('Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · * = painel com dente (recorte no canto) · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
       </div>);
+      // produção: uma vista por painel de laje, como as paredes
+      if (novo) {
+        const pgs: PainelLaje[][][] = []; let pg: PainelLaje[][] = [[]], w = 0, nl = 1;
+        for (const p of P) {
+          if (w + p.comp + 1.1 > 13.8) { if (nl === 3) { pgs.push(pg); pg = [[]]; nl = 1; } else { pg.push([]); nl++; } w = 0; }
+          pg[pg.length - 1].push(p); w += p.comp + 1.1;
+        }
+        pgs.push(pg);
+        pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
+          <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
+          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [`${br(areaLaje(p))} m²`, ...TPf.filter(t => t.painel === p.num).map(t => `T${t.t} ${t.ao}: ${t.onde} (${br(t.comp)} m)`)]) }} />)}</div>)}</div>
+          {rod('Comprimento no sentido do vão (seta = alvéolos) · largura · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
+        </div>));
+      }
       if (TPf.length) folhas.push(<div className="folha" key={pav.id + 't'}>
         <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()}</div>
         <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf) }} />
