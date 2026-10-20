@@ -51,7 +51,8 @@ export interface Leitura {
 }
 export interface LinhaProjeto { tipo: 'piso' | 'proj'; o: 'H' | 'V'; c: number; a: number; b: number; texto: string }
 
-const TAG_RE = /^[PJ]\s?-?\d{1,2}[A-Z]?$/i;
+// P01, J1 e também com letras do tipo: PM1 (madeira), PA1 (alumínio), PV1 (vidro), PT1 (portão), PP (pivotante)
+const TAG_RE = /^(?:[PJ][A-Z]{0,2}\s?-?\d{1,2}[A-Z]?|PP)$/i;
 const normTag = (t: string) => t.toUpperCase().replace(/[\s-]/g, '');
 
 export function ler(d: Dxf, camadaParede: string): Leitura {
@@ -282,6 +283,9 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   const Q = new Map(quadro.map(q => [q.tag, q]));
   const tags = L.tags.filter(t => t.x > pav.box.x0 - 0.5 && t.x < pav.box.x1 + 0.5 && t.y > pav.box.y0 - 0.5 && t.y < pav.box.y1 + 0.5);
   const out: Trecho[] = [];
+  const novo = (r.motor ?? 1) >= 2;
+  // projeto com etiquetas de porta: o arco sem etiqueta não vira porta do quadro (vão livre, o usuário escolhe)
+  const temPorta = novo && tags.some(t => t.text.startsWith('P'));
   const arcos = L.prims.filter((p): p is Extract<Prim, { kind: 'arc' }> => p.kind === 'arc' && p.c[0] > pav.box.x0 - 0.5 && p.c[0] < pav.box.x1 + 0.5 && p.c[1] > pav.box.y0 - 0.5 && p.c[1] < pav.box.y1 + 0.5);
   for (const o of ['H', 'V'] as const) {
     const perp = ax[o === 'H' ? 'V' : 'H'];
@@ -294,9 +298,10 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
         let best: string | null = null, bd = 1e9;
         for (const t of tags) {
           const along = o === 'H' ? t.x : t.y, pd = o === 'H' ? t.y - c : t.x - c;
-          if (Math.abs(pd) < 0.6 && along >= l - 0.1 && along <= h + 0.1) { const d = Math.abs(along - (l + h) / 2); if (d < bd) { bd = d; best = t.text; } }
+          // cálculo novo: a distância até a parede também conta (etiqueta da parede ao lado não rouba o vão)
+          if (Math.abs(pd) < (novo ? 0.45 : 0.6) && along >= l - 0.1 && along <= h + 0.1) { const d = Math.abs(along - (l + h) / 2) + (novo ? Math.abs(pd) : 0); if (d < bd) { bd = d; best = t.text; } }
         }
-        return best ?? portaPorArco(l, h);
+        return best ?? (temPorta ? null : portaPorArco(l, h));
       };
       // sem etiqueta: se tem a folha da porta desenhada no vão (arco com centro numa ponta), é porta
       // do tamanho mais próximo do quadro
@@ -381,6 +386,31 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     const tj = montar(pav, o, c, s, e, [{ a: s, b: e, tag: q.tag }], esp);
     out.push(tj); soJanela.add(tj);
     usadas.push({ tag: q.tag, x: o === 'H' ? (s + e) / 2 : c, y: o === 'H' ? c : (s + e) / 2 });
+  }
+  // etiqueta do quadro perto de uma parede sem o vão dela: a abertura não foi recortada nas linhas do desenho
+  // (Revit); abre o vão pela etiqueta, ou dá a etiqueta ao vão livre que estiver ali
+  if (novo) for (const tg of tags) {
+    const q = Q.get(tg.text);
+    if (!q) continue;
+    const ja = out.some(t => t.pav === pav.id && t.vaos.some(v => v.tag === q.tag && Math.hypot((t.o === 'H' ? (v.a + v.b) / 2 : t.c) - tg.x, (t.o === 'H' ? t.c : (v.a + v.b) / 2) - tg.y) < 0.8 + q.larg / 2));
+    if (ja) continue;
+    let best: { t: Trecho; pd: number; along: number } | null = null;
+    for (const t of out) {
+      if (t.pav !== pav.id) continue;
+      const along = t.o === 'H' ? tg.x : tg.y, pd = Math.abs((t.o === 'H' ? tg.y : tg.x) - t.c);
+      if (pd > 0.45 || along < t.s - 0.1 || along > t.e + 0.1) continue;
+      // na mesma parede, prefere o pedaço do tamanho da abertura, depois o que contém a etiqueta
+      const nota = (x: Trecho, al: number) => (x.e - x.s <= q.larg + 0.3 ? Math.abs(x.e - x.s - q.larg) : 1) + (al >= x.s && al <= x.e ? 0 : 0.5);
+      if (!best || pd < best.pd - 0.05 || (Math.abs(pd - best.pd) <= 0.05 && nota(t, along) < nota(best.t, along))) best = { t, pd, along };
+    }
+    if (!best) continue;
+    const { t, along } = best;
+    const livre = t.vaos.find(v => !v.tag && v.a - q.larg / 2 <= along && along <= v.b + q.larg / 2);
+    // trecho do tamanho da abertura: é a própria abertura (o desenho trouxe o batente como parede)
+    const m = livre ? (livre.a + livre.b) / 2 : t.e - t.s <= q.larg + 0.3 ? (t.s + t.e) / 2 : along;
+    const a = Math.max(t.s, m - q.larg / 2), b = Math.min(t.e, m + q.larg / 2);
+    const nv = vao(t.id, { a, b, tag: q.tag }, t.H);
+    if (livre) t.vaos.splice(t.vaos.indexOf(livre), 1, nv); else t.vaos.push(nv);
   }
   function montar(pav: Pavimento, o: 'H' | 'V', c: number, s: number, e: number, vs: { a: number; b: number; tag: string | null }[], esp: number): Trecho {
     const id = idTrecho(pav.id, o, c, s);
@@ -490,8 +520,10 @@ export function continuarVaos(baixo: Trecho[], cima: Trecho[], quadro: Esquadria
   const Q = new Map(quadro.map(q => [q.tag, q]));
   for (const t of baixo) for (const v of t.vaos) {
     const q = v.tag ? Q.get(v.tag) : undefined;
-    if (!q || q.tag.startsWith('J')) continue;
-    const topo = r.boneca + q.alt;
+    // janela mais alta que o pavimento (cálculo novo): o recorte também continua na parede de cima
+    const jan = q?.tag.startsWith('J');
+    if (!q || (jan && (r.motor ?? 1) < 2)) continue;
+    const topo = jan ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt;
     const resto = topo - (t.H + r.lajeEsp);
     if (resto <= 0.02) continue;
     const off = t.o === 'H' ? dx : dy, offC = t.o === 'H' ? dy : dx;

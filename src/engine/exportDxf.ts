@@ -25,7 +25,7 @@ const br = (v: number) => v.toFixed(2).replace('.', ',');
 export type ArqPav = { prims: Prim[]; textos: { text: string; x: number; y: number; h: number }[] };
 // vigas = vigas sugeridas (menos as treliças), desenhadas na planta das lajes (camada VIGA)
 export type VigaDxf = { n: number; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; obrigatoria: boolean; tipo: string };
-export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = [], arq: Record<string, ArqPav> = {}, vigas: VigaDxf[] = [], larg = 0.15): string {
+export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = [], arq: Record<string, ArqPav> = {}, vigas: VigaDxf[] = [], larg = 0.15, cotas = false): string {
   const w = new W();
   let X = 0;
   const planta = (a: ArqPav | undefined, dx: number, dy: number) => {
@@ -45,6 +45,8 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
       const m = (p.a + p.b) / 2;
       const [tx, ty] = p.o === 'H' ? [m, p.c - .25] : [p.c + .25, m];
       w.text('NUMERO', tx + ox, ty + oy, .18, String(p.num), 1, 0, true);
+      // cota do painel do outro lado da parede
+      if (cotas) { if (p.o === 'H') w.dimH(x1 + ox, x2 + ox, p.c + .35 + oy, br(p.larg)); else w.dimV(p.c - .35 + ox, y1 + oy, y2 + oy, br(p.larg)); }
     }
     // vistas ao lado
     let vx = X + (b.x1 - b.x0) + 3, vy = b.y1 - b.y0, lx = vx;
