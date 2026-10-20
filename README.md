@@ -53,3 +53,7 @@ Sem configuração, os projetos ficam salvos só no navegador. Para salvar na nu
    - `VITE_SUPABASE_URL` = *Project URL* (Supabase → Project Settings → API)
    - `VITE_SUPABASE_ANON_KEY` = chave *anon public*
 5. Faça um novo deploy. O site passa a pedir login; os projetos que estavam só no navegador podem ser enviados para a nuvem pelo botão na aba Arquivo.
+
+## Projeto em PDF
+
+Também aceita PDF vetorial (exportado do AutoCAD, ArchiCAD, Revit...). O PDF é convertido em um DXF simples: cada camada do PDF (ou cada cor/espessura de linha) vira uma camada, a escala sai das cotas escritas no desenho e a camada das paredes é escolhida pelas linhas que formam pares na espessura de parede (dá para trocar em "1. Arquivo"). PDF escaneado não funciona. O DXF continua sendo o mais preciso.

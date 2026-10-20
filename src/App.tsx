@@ -53,6 +53,7 @@ export default function App() {
   const [recuperando, setRecuperando] = useState(false);
   const [locais, setLocais] = useState<Projeto[]>([]);
   const [colar, setColar] = useState('');
+  const [avisoPdf, setAvisoPdf] = useState<string[]>([]);
   useEffect(() => {
     if (!cloud.nuvemConfigurada) return;
     cloud.sessao().then(s => { setSess(s); setChecou(true); });
@@ -141,11 +142,19 @@ export default function App() {
   const novo = async (f: File) => {
     setLendo(true); setErro('');
     try {
-      const txt = await f.text();
+      let txt: string;
+      if (/\.pdf$/i.test(f.name)) {
+        // PDF vetorial: vira um DXF simples (linhas, arcos e textos em metros) e segue o mesmo caminho
+        const [lib, w, conv] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url'), import('./engine/pdf2dxf.ts')]);
+        lib.GlobalWorkerOptions.workerSrc = w.default;
+        const r = await conv.pdfParaDxf(lib as unknown as Parameters<typeof conv.pdfParaDxf>[0], new Uint8Array(await f.arrayBuffer()));
+        txt = r.dxf;
+        setAvisoPdf([`Projeto lido do PDF na escala 1:${Math.round(r.escala / (0.0254 / 72))}.`, ...r.avisos, 'Confira as medidas das paredes com as cotas do projeto: o PDF não separa parede de mobília e hachura como o DXF.']);
+      } else { txt = await f.text(); setAvisoPdf([]); }
       // aproveita ajustes da versão antiga (salvos pelo nome do arquivo)
       const antigo = (() => { try { return JSON.parse(localStorage.getItem(chave(f.name)) || 'null') as Salvo | null; } catch { return null; } })();
       carregarTexto(txt, f.name, antigo, true);
-      const p = await repo.criar(f.name.replace(/\.dxf$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
+      const p = await repo.criar(f.name.replace(/\.(dxf|pdf)$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
       setProjId(p.id); setProjNome(p.nome); atualizarLista();
       setAba(antigo ? 'modulacao' : 'pavimentos');
     } catch (e) { setErro((e as Error).message); }
@@ -241,9 +250,10 @@ export default function App() {
           <>
           <section className="card">
             <h2>Novo projeto</h2>
-            <p>Envie o projeto em <b>DXF</b> (no AutoCAD: <i>Salvar como → DXF</i>). {sess ? 'O arquivo e todos os ajustes ficam salvos na sua conta, na nuvem.' : 'O arquivo e todos os ajustes ficam salvos neste navegador.'}</p>
-            <input type="file" accept=".dxf" onChange={e => { const f = e.target.files?.[0]; if (f) novo(f); e.target.value = ''; }} />
+            <p>Envie o projeto em <b>DXF</b> (no AutoCAD: <i>Salvar como → DXF</i>) ou em <b>PDF</b> exportado do programa de projeto (PDF vetorial, não escaneado). O DXF é mais preciso. {sess ? 'O arquivo e todos os ajustes ficam salvos na sua conta, na nuvem.' : 'O arquivo e todos os ajustes ficam salvos neste navegador.'}</p>
+            <input type="file" accept=".dxf,.pdf" onChange={e => { const f = e.target.files?.[0]; if (f) novo(f); e.target.value = ''; }} />
             {lendo && <p>Lendo o arquivo…</p>}
+            {avisoPdf.length > 0 && <ul className="dica">{avisoPdf.map((a, i) => <li key={i}>{a}</li>)}</ul>}
             {erro && <p className="erro">{erro}</p>}
             {dxf && <div className="campo"><label>Camada das paredes do projeto aberto</label>
               <select value={camada} onChange={e => setCamada(e.target.value)}>{dxf.layers.map(l => <option key={l}>{l}</option>)}</select>
