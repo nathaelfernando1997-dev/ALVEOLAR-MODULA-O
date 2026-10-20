@@ -37,6 +37,10 @@ function traduz(m: string): Error {
 }
 
 const caminho = async (id: string) => `${(await sb!.auth.getUser()).data.user!.id}/${id}.dxf`;
+// DXF compactado (gzip): o texto do DXF fica ~10x menor, sobe e desce bem mais rápido
+const gz = typeof CompressionStream !== 'undefined';
+const compactar = (b: Blob) => new Response(b.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+const descompactar = async (b: Blob) => new Blob([await new Response(b.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()], { type: 'application/dxf' });
 const linha = (r: { id: string; nome: string; arquivo: string | null; config: Config | null; criado: string; atualizado: string }): Projeto =>
   ({ id: r.id, nome: r.nome, arquivo: r.arquivo || '', config: r.config, criado: Date.parse(r.criado), atualizado: Date.parse(r.atualizado) });
 
@@ -48,14 +52,18 @@ export async function listar(): Promise<Projeto[]> {
 export async function criar(nome: string, arquivo: string, dxf: Blob, config: Config | null = null): Promise<Projeto> {
   const { data, error } = await sb!.from('projetos').insert({ nome, arquivo, config }).select('id,nome,arquivo,config,criado,atualizado').single();
   if (error) throw error;
-  const up = await sb!.storage.from('projetos').upload(await caminho(data.id), dxf, { upsert: true, contentType: 'application/dxf' });
+  const up = gz
+    ? await sb!.storage.from('projetos').upload((await caminho(data.id)) + '.gz', await compactar(dxf), { upsert: true, contentType: 'application/gzip' })
+    : await sb!.storage.from('projetos').upload(await caminho(data.id), dxf, { upsert: true, contentType: 'application/dxf' });
   if (up.error) { await sb!.from('projetos').delete().eq('id', data.id); throw up.error; }
   return linha(data);
 }
 export async function carregar(id: string): Promise<ProjetoCompleto | null> {
   const { data, error } = await sb!.from('projetos').select('id,nome,arquivo,config,criado,atualizado').eq('id', id).single();
   if (error || !data) return null;
-  const arq = await sb!.storage.from('projetos').download(await caminho(id));
+  const c = await caminho(id);
+  if (gz) { const z = await sb!.storage.from('projetos').download(c + '.gz'); if (!z.error && z.data) return { ...linha(data), dxf: await descompactar(z.data) }; }
+  const arq = await sb!.storage.from('projetos').download(c);
   if (arq.error || !arq.data) throw new Error('Não encontrei o arquivo DXF deste projeto na nuvem.');
   return { ...linha(data), dxf: arq.data };
 }
@@ -65,6 +73,7 @@ export async function salvarConfig(id: string, config: Config) {
 }
 export async function renomear(id: string, nome: string) { await sb!.from('projetos').update({ nome, atualizado: new Date().toISOString() }).eq('id', id); }
 export async function apagar(id: string) {
-  await sb!.storage.from('projetos').remove([await caminho(id)]);
+  const c = await caminho(id);
+  await sb!.storage.from('projetos').remove([c, c + '.gz']);
   await sb!.from('projetos').delete().eq('id', id);
 }

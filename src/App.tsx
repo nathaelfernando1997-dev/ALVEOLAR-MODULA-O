@@ -287,6 +287,7 @@ export default function App() {
         {calc.ps.length > 0 && <Resumo ps={calc.ps} pl={calc.pl} />}
         {sess && <span className="usuario">{sess.user.email} <button onClick={() => { cloud.sair(); setProjId(null); setDxf(null); setNome(''); setProjNome(''); setAba('arquivo'); }}>Sair</button></span>}
       </header>
+      {lendo && <div className="carregando noprint">Abrindo o projeto… arquivos grandes podem levar alguns segundos.</div>}
       <nav className="abas noprint">{tabs.map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} disabled={k !== 'arquivo' && !dxf} onClick={() => setAba(k)}>{t}{k === 'cortes' && erros > 0 ? ` (${erros})` : ''}</button>)}</nav>
       <main>
         {aba === 'arquivo' && (

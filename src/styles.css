@@ -112,3 +112,4 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .tquant td:first-child, .tquant td:nth-child(2), .tquant th { text-align: center; }
 .tquant thead tr:first-child th { background: #1f4e79; color: #fff; }
 .tquant .tot td { font-weight: bold; background: #fff2cc; }
+.carregando { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 50; background: #fff2cc; border: 1px solid #e0b000; padding: 8px 16px; border-radius: 0 0 6px 6px; font-weight: bold; }
