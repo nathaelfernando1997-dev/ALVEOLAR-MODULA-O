@@ -97,8 +97,8 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
         : `Viga de ${br(hV)} m de altura (10% do vão${hV > w * 0.1 + 0.05 ? ', mínimo da regra' : ''}): ${br(abaixo)} m abaixo da laje, ${br(naLaje)} m na laje${sobe > 0.005 ? ` e ${br(sobe)} m para cima${desconto.length ? ` — paredes ${desconto.map(d => d.painel).join(', ')} do ${cima!.nome} apoiam em cima da viga e baixam de ${br(desconto[0].de)} para ${br(desconto[0].para)} m` : ''}` : ''}.`;
       V.push({
         id: `${pav.id}-piso-${t.c.toFixed(2)}-${t.s.toFixed(2)}`, pav: pav.id, o: t.o, c: t.c, a, b, tipo: 'piso', obrigatoria: true, apoio: r.vigaApoio,
-        motivo: `${t.id.includes('|borda|') ? `Borda da laje embaixo do ${cima?.nome ?? 'pavimento de cima'}, sem parede embaixo (garagem/varanda)` : 'Linha de piso do projeto'} (${br(w)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
-        ideia: `Viga ${t.id.includes('|borda|') ? 'na borda da laje' : 'na linha de piso'}, de ${br(b - a)} m, apoiada em pilares nas pontas (sem parede embaixo da viga). ${partes} Conferir com o engenheiro.`,
+        motivo: `${t.id.includes('|borda|') ? `Borda da laje embaixo do ${cima?.nome ?? 'pavimento de cima'}, sem parede embaixo (garagem/varanda)` : t.id.includes('|vparede|') ? 'Viga no lugar da parede (muxarabi/esquadria)' : 'Linha de piso do projeto'} (${br(w)} m): a laje apoia nessa viga${nums.length ? `, com parede ${nums.join(', ')} do ${cima!.nome} em cima` : ''}.`,
+        ideia: `Viga ${t.id.includes('|borda|') ? 'na borda da laje' : t.id.includes('|vparede|') ? 'no lugar da parede' : 'na linha de piso'}, de ${br(b - a)} m, apoiada em pilares nas pontas (sem parede embaixo da viga). ${partes} Conferir com o engenheiro.`,
         altura: pouco ? abaixo + naLaje : hV, desconto,
         rebaixos: [],
       });

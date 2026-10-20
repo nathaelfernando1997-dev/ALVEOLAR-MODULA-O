@@ -345,6 +345,14 @@ export function numerarLajes(P: PainelLaje[], ordem: string[]) {
 }
 
 // áreas marcadas "VAZIO" no pavimento de cima (sem "LAJE" escrito), já nas coordenadas da planta de baixo
+// retângulo fechado pelas paredes mais próximas de um ponto (texto dentro da área), nos quatro lados
+export function caixaDoPonto(ts: Trecho[], x: number, y: number): Box | null {
+  const V = ts.filter(t => t.o === 'V' && t.s - 0.15 <= y && y <= t.e + 0.15), H = ts.filter(t => t.o === 'H' && t.s - 0.15 <= x && x <= t.e + 0.15);
+  const x0 = Math.max(...V.filter(t => t.c < x).map(t => t.c)), x1 = Math.min(...V.filter(t => t.c > x).map(t => t.c));
+  const y0 = Math.max(...H.filter(t => t.c < y).map(t => t.c)), y1 = Math.min(...H.filter(t => t.c > y).map(t => t.c));
+  return [x0, x1, y0, y1].every(isFinite) ? { x0, x1, y0, y1 } : null;
+}
+
 export function vaziosDeCima(cima: Pavimento, tc: Trecho[], textos: { text: string; x: number; y: number }[], dx: number, dy: number): Box[] {
   const tx = textos.filter(t => t.x > cima.box.x0 && t.x < cima.box.x1 && t.y > cima.box.y0 && t.y < cima.box.y1);
   const dentro = (a: Ambiente, re: RegExp) => tx.some(t => re.test(t.text.toUpperCase()) && t.x > a.x0 && t.x < a.x1 && t.y > a.y0 && t.y < a.y1);

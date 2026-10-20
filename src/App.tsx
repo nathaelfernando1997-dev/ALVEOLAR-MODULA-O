@@ -4,7 +4,7 @@ import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, trechos, paineis, numerar, resumo, continuarVaos, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
-import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje } from './engine/lajes.ts';
+import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar } from './engine/vigas.ts';
@@ -25,7 +25,7 @@ const baixar = (nome: string, conteudo: string, tipo: string) => {
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
-interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[] }
+interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[] }
 
 export default function App() {
   const [aba, setAba] = useState<Aba>('arquivo');
@@ -195,7 +195,7 @@ export default function App() {
   const ativos = pavs.filter(p => p.ativo);
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
-    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [] };
+    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [] };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
     // linhas do desenho desta planta (a projeção do beiral pode ficar até 2,5 m para fora das paredes)
@@ -211,19 +211,29 @@ export default function App() {
       // "LINHA DE PISO" do projeto: viga que serve de apoio para a laje
       const pp: Trecho[] = leitura.linhas.filter(l => l.tipo === 'piso' && naCaixa(p.box, l))
         .map(l => ({ id: `${p.id}|piso|${l.c.toFixed(2)}|${l.a.toFixed(2)}`, pav: p.id, o: l.o, c: l.c, s: l.a, e: l.b, vaos: [], H: p.altura, esp: regras.vigaLargura }));
+      // parede marcada como viga (muxarabi, vidro): não vira painel, a laje apoia nela
+      const vp = porPav[i].filter(x => (aj.viga || []).includes(x.id));
+      vazio.vigasParede.push(...vp);
+      pp.push(...vp.map(x => ({ ...x, id: `${p.id}|vparede|${x.id}`, vaos: [], esp: regras.vigaLargura })));
+      const semVp = porPav[i].filter(x => !vp.includes(x));
       pisos.push(...pp);
       const al = cima && tc.length && porPav[i].length ? alinhar(porPav[i], tc) : null;
       // cálculo novo (motor 2); projetos salvos antes continuam com o cálculo de quando foram feitos
       const novo = (regras.motor ?? 1) >= 2;
       // área coberta pelo pavimento de cima (nesta planta): embaixo dela leva laje mesmo sem paredes (garagem)
       const cob = novo && cima && al ? ambientes(cima, tc, [], [], { fechar: true }).map(a => ({ x0: a.x0 + al.dx, x1: a.x1 + al.dx, y0: a.y0 + al.dy, y1: a.y1 + al.dy })) : [];
+      // "LAJE IMPERMEABILIZADA" na planta de cima: é a laje deste pavimento (cobertura de varanda, área gourmet)
+      if (novo && cima && al) for (const x of leitura.textos.filter(x => /LAJE\s+IMPERME/i.test(x.text) && x.x > cima.box.x0 && x.x < cima.box.x1 && x.y > cima.box.y0 && x.y < cima.box.y1)) {
+        const c = caixaDoPonto(tc, x.x, x.y);
+        if (c) cob.push({ x0: c.x0 + al.dx, x1: c.x1 + al.dx, y0: c.y0 + al.dy, y1: c.y1 + al.dy });
+      }
       // muro: parede que não encosta em nenhum ambiente (fica toda do lado de fora) — não é fabricado
-      const amb0 = novo ? ambientes(p, porPav[i], pp, [], { fechar: true, cobertas: cob }) : [];
+      const amb0 = novo ? ambientes(p, semVp, pp, [], { fechar: true, cobertas: cob }) : [];
       const encosta = (x: Trecho) => (aj.naoMuro || []).includes(x.id) || amb0.some(a => x.o === 'V'
         ? x.c > a.x0 - 0.1 && x.c < a.x1 + 0.1 && Math.min(x.e, a.y1) - Math.max(x.s, a.y0) > Math.min(0.3, (x.e - x.s) / 2)
         : x.c > a.y0 - 0.1 && x.c < a.y1 + 0.1 && Math.min(x.e, a.x1) - Math.max(x.s, a.x0) > Math.min(0.3, (x.e - x.s) / 2));
-      const t = amb0.length ? porPav[i].filter(encosta) : porPav[i];
-      vazio.muros.push(...porPav[i].filter(x => !t.includes(x)));
+      const t = amb0.length ? semVp.filter(encosta) : semVp;
+      vazio.muros.push(...semVp.filter(x => !t.includes(x)));
       const r = paineis(t, regras, aj);
       vazio.ts.push(...t); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
       // projeções de laje/beiral desta planta e áreas marcadas VAZIO no pavimento de cima
@@ -468,7 +478,7 @@ export default function App() {
               <p>As folhas abaixo saem em <b>A4 deitado</b>. Use <i>Imprimir → Salvar como PDF</i>.</p>
               <div className="botoes">
                 <button onClick={() => window.print()}>Imprimir / salvar PDF</button>
-                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}), 'application/dxf')}>Baixar DXF da modulação</button>
+                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura), 'application/dxf')}>Baixar DXF da modulação</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras({ ...REGRAS_PADRAO, motor: 1, ...s.regras }); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
@@ -603,6 +613,11 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
         <button onClick={() => setAj({ ...aj, naoMuro: [...(aj.naoMuro || []), m.id] })}>é parede</button></li>)}</ul>
     </>}
     {(aj.naoMuro || []).length > 0 && <button onClick={() => setAj({ ...aj, naoMuro: [] })}>Voltar a separar os muros automaticamente</button>}
+    {calc.vigasParede.some(m => m.pav === pav.id) && <>
+      <p className="dica">Vigas no lugar de parede (a laje apoia nelas):</p>
+      <ul className="dica">{calc.vigasParede.filter(m => m.pav === pav.id).map(m => <li key={m.id}>{m.o === 'H' ? 'horizontal' : 'vertical'} de {br(m.e - m.s)} m{' '}
+        <button onClick={() => setAj({ ...aj, viga: (aj.viga || []).filter(x => x !== m.id) })}>voltar a ser parede</button></li>)}</ul>
+    </>}
   </div>;
   const P = calc.ps.filter(p => p.trecho === t.id);
   const tog = (k: 'excluir' | 'juntar' | 'naoDividir' | 'naoPinar') => setAj({ ...aj, [k]: (aj[k] || []).includes(t.id) ? (aj[k] || []).filter(x => x !== t.id) : [...(aj[k] || []), t.id] });
@@ -611,6 +626,7 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
     <p>Comprimento {br(t.e - t.s)} m · espessura {br(t.esp)} m{t.pinado ? ' · pinada (sem emenda)' : ''}<br />{P.map(p => `${p.num}: ${br(p.larg)} × ${br(p.H)}`).join(' · ')}</p>
     {P.some(p => p.aviso) && <p className="erro">{P.filter(p => p.aviso).map(p => `${p.num}: ${p.aviso}`).join(' · ')}</p>}
     <button onClick={() => tog('excluir')}>Não modular esta parede (shaft, platibanda, torre…)</button>
+    <button onClick={() => setAj({ ...aj, viga: [...(aj.viga || []), t.id] })}>É viga, não parede (muxarabi, vidro, esquadria) — a laje apoia nela</button>
     <button onClick={() => tog('juntar')}>{aj.juntar.includes(t.id) ? 'Desfazer pinagem/junção' : 'Pinar no T: passar direto pela próxima parede (sem coluna, sem emenda)'}</button>
     {regras.pinarAuto && <button onClick={() => tog('naoPinar')}>{(aj.naoPinar || []).includes(t.id) ? 'Permitir pinagem automática' : 'Não pinar automaticamente aqui'}</button>}
     <button onClick={() => tog('naoDividir')}>{aj.naoDividir.includes(t.id) ? 'Dividir automaticamente' : 'Não dividir (um painel só)'}</button>

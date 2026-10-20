@@ -23,7 +23,9 @@ const br = (v: number) => v.toFixed(2).replace('.', ',');
 
 // arq = planta baixa de cada pavimento (linhas e textos do projeto), desenhada embaixo da modulação em cinza (camada ARQ)
 export type ArqPav = { prims: Prim[]; textos: { text: string; x: number; y: number; h: number }[] };
-export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = [], arq: Record<string, ArqPav> = {}): string {
+// vigas = vigas sugeridas (menos as treliças), desenhadas na planta das lajes (camada VIGA)
+export type VigaDxf = { n: number; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; obrigatoria: boolean; tipo: string };
+export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = [], arq: Record<string, ArqPav> = {}, vigas: VigaDxf[] = [], larg = 0.15): string {
   const w = new W();
   let X = 0;
   const planta = (a: ArqPav | undefined, dx: number, dy: number) => {
@@ -64,6 +66,13 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
     // lajes: abaixo da planta
     const L = pl.filter(p => p.pav === pav.id);
     if (L.length) planta(arq[pav.id], ox, oy - (b.y1 - b.y0) - 4);
+    for (const v of vigas.filter(v => v.pav === pav.id && v.tipo !== 'trelica')) {
+      const dy = oy - (b.y1 - b.y0) - 4, h = larg / 2, cor = v.obrigatoria ? 1 : 3;
+      if (v.o === 'H') { w.line('VIGA', v.a + ox, v.c - h + dy, v.b + ox, v.c - h + dy, cor); w.line('VIGA', v.a + ox, v.c + h + dy, v.b + ox, v.c + h + dy, cor); }
+      else { w.line('VIGA', v.c - h + ox, v.a + dy, v.c - h + ox, v.b + dy, cor); w.line('VIGA', v.c + h + ox, v.a + dy, v.c + h + ox, v.b + dy, cor); }
+      const [tx, ty] = v.o === 'H' ? [(v.a + v.b) / 2, v.c + .2] : [v.c + .2, (v.a + v.b) / 2];
+      w.text('VIGA', tx + ox, ty + dy, .16, `V${v.n}${v.obrigatoria ? '' : ' (recomendada)'} ${br(v.b - v.a)}`, cor, v.o === 'V' ? 90 : 0, true);
+    }
     for (const p of L) {
       const x0 = p.x0 + ox, y0 = p.y0 + oy - (b.y1 - b.y0) - 4;
       if (p.dente) {
