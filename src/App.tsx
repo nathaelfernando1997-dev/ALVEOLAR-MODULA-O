@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { ler, trechos, paineis, numerar, resumo, continuarVaos, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto } from './engine/lajes.ts';
@@ -390,7 +390,7 @@ export default function App() {
             <h3>Paredes</h3>
             <div className="grade">
               {([
-                ['larguraMax', 'Largura máxima do painel (m)'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['folga', 'Diminuir de cada painel (m)'],
+                ['larguraMax', 'Largura máxima do painel (m)'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['paredeEsp', 'Espessura do painel de parede, para o volume (m)'], ['vazioParede', 'Vazios (alvéolos) do painel de parede (%)'], ['folga', 'Diminuir de cada painel (m)'],
                 ['boneca', 'Boneca de transporte nas laterais e embaixo (m)'], ['acrescimoLargura', 'Vão de porta/janela maior em (m)'],
                 ['janelaDesce', 'Janela: recorte desce e sobe (m)'], ['espMin', 'Espessura mínima de parede (m)'], ['espMax', 'Espessura máxima de parede (m)'],
                 ['minParede', 'Trecho mínimo de parede (m)'], ['naoFabricar', 'Marcar "n fabricar" abaixo de (m)'],
@@ -402,7 +402,7 @@ export default function App() {
             </div>
             <h3>Lajes</h3>
             <div className="grade">
-              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima da parede com laje dos dois lados (m)'], ['lajeApoioBorda', 'Apoio onde só uma laje apoia na parede (m)'], ['lajeFolga', 'Folga entre painéis de laje (m)'], ['lajeEsp', 'Espessura da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['lajeComp', 'Vão máximo do painel de laje (m)'], ['lajeLarg', 'Largura máxima do painel (m)'], ['lajeApoio', 'Apoio em cima da parede com laje dos dois lados (m)'], ['lajeApoioBorda', 'Apoio onde só uma laje apoia na parede (m)'], ['lajeFolga', 'Folga entre painéis de laje (m)'], ['lajeEsp', 'Espessura da laje (m)'], ['vazioLaje', 'Vazios (alvéolos) da laje (%)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
@@ -479,17 +479,31 @@ export default function App() {
               <div className="botoes">
                 <button onClick={() => window.print()}>Imprimir / salvar PDF</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
-                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl), 'text/csv')}>Baixar lista de painéis (CSV)</button>
+                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras) : []), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras({ ...REGRAS_PADRAO, motor: 1, ...s.regras }); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
-            <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} />
+            {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} /></div>}
+            <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} />
           </section>
         )}
       </main>
     </div>
   );
+}
+
+// quadro de m² e m³ por pavimento
+function Quantitativos({ linhas }: { linhas: ReturnType<typeof quantitativos> }) {
+  const tot = (k: 'area' | 'recortes' | 'm3' | 'm3liq', it?: string) => linhas.filter(l => !it || l.item === it).reduce((s, l) => s + l[k], 0);
+  const m3 = (v: number) => v.toFixed(3).replace('.', ',');
+  return <table className="tquant"><thead>
+    <tr><th colSpan={8}>QUANTITATIVOS — ÁREA E VOLUME DE CONCRETO</th></tr>
+    <tr><th>Pavimento</th><th>Item</th><th>Painéis</th><th>Área (m²)</th><th>Aberturas (m²)</th><th>Espessura (m)</th><th>Volume painel inteiro (m³)</th><th>Volume sem aberturas (m³)</th></tr></thead>
+    <tbody>{linhas.map((l, i) => <tr key={i}><td>{l.pav}</td><td>{l.item}</td><td>{l.qtd}</td><td>{br(l.area)}</td><td>{l.recortes ? br(l.recortes) : '—'}</td><td>{br(l.esp)}</td><td>{m3(l.m3)}</td><td>{m3(l.m3liq)}</td></tr>)}
+      {(['Paredes', 'Lajes'] as const).map(it => <tr key={it} className="tot"><td>Total</td><td>{it}</td><td>{linhas.filter(l => l.item === it).reduce((s, l) => s + l.qtd, 0)}</td><td>{br(tot('area', it))}</td><td>{it === 'Paredes' ? br(tot('recortes', it)) : '—'}</td><td></td><td>{m3(tot('m3', it))}</td><td>{m3(tot('m3liq', it))}</td></tr>)}
+      <tr className="tot"><td>Total geral</td><td></td><td>{linhas.reduce((s, l) => s + l.qtd, 0)}</td><td>{br(tot('area'))}</td><td>{br(tot('recortes'))}</td><td></td><td><b>{m3(tot('m3'))}</b></td><td><b>{m3(tot('m3liq'))}</b></td></tr>
+    </tbody></table>;
 }
 
 function Resumo({ ps, pl }: { ps: Painel[]; pl: PainelLaje[] }) {
@@ -667,7 +681,7 @@ function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: C
   </div>;
 }
 
-function Folhas({ ativos, calc, leitura, arqDe, nome, novo }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean }) {
+function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras }) {
   const folhas: JSX.Element[] = [];
   const rod = (t: string) => <div className="rod"><span>{t}</span><span>{nome}</span></div>;
   for (const pav of ativos) {
@@ -723,7 +737,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo }: { ativos: Paviment
         pgs.push(pg);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [`${br(areaLaje(p))} m²`], TRf) }} />)}</div>)}</div>
+          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf) }} />)}</div>)}</div>
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
@@ -735,5 +749,10 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo }: { ativos: Paviment
       </div>);
     }
   }
+  if (novo) folhas.push(<div className="folha" key="quant">
+    <div className="cab">QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)</div>
+    <Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} />
+    {rod(`Paredes: espessura ${br(regras.paredeEsp ?? 0.15)} m, vazios ${regras.vazioParede ?? 0}% · Lajes: espessura ${br(regras.lajeEsp)} m, vazios ${regras.vazioLaje ?? 0}% · painel inteiro = antes de recortar portas e janelas`)}
+  </div>);
   return <div className="folhas">{folhas}</div>;
 }

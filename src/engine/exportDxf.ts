@@ -1,5 +1,5 @@
 // Exporta a modulação em DXF (R12, só LINE e TEXT) para abrir no AutoCAD.
-import type { Painel, Pavimento } from './model.ts';
+import type { Painel, Pavimento, LinhaQuant } from './model.ts';
 import type { Prim } from './dxf.ts';
 import type { PainelLaje } from './lajes.ts';
 import { areaLaje } from './lajes.ts';
@@ -120,7 +120,6 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
         }
         w.text('NUMERO', ux + .06, y + wl - .22, .14, `L${p.num}`);
         w.dimH(ux, ux + cl, y + wl + .2, br(cl)); w.dimV(ux - .22, y, y + wl, br(wl));
-        w.text('TEXTO', ux + cl / 2, y - .22, .09, `${br(areaLaje(p))} m²`, 1, 0, true);
         ux += cl + 1.1; alt = Math.max(alt, wl);
       }
     }
@@ -129,11 +128,18 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
   return w.str();
 }
 
-export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = []): string {
+export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = [], quant: LinhaQuant[] = []): string {
   const nome = new Map(pavs.map(p => [p.id, p.nome]));
   const linhas = ['Painel;Pavimento;Largura (m);Altura (m);Área (m²);Recortes;Observação'];
   for (const p of ps) linhas.push([p.num, nome.get(p.pav), br(p.larg), br(p.H), br(p.larg * p.H), p.recortes.map(r => `${r.tipo} ${br(r.w)}x${br(r.h)} (base ${br(r.base)}, lateral ${br(r.dl)})`).join(' | '), p.aviso || ''].join(';'));
   linhas.push('', 'Laje;Sobre o pavimento;Comprimento (m);Largura (m);Área (m²)');
   for (const p of pl) linhas.push([`L${p.num}`, nome.get(p.pav), br(p.comp), br(p.larg), br(areaLaje(p)), p.dente ? `dente ${br(p.dente.x1 - p.dente.x0)} x ${br(p.dente.y1 - p.dente.y0)}` : ''].join(';'));
+  if (quant.length) {
+    const m3 = (v: number) => v.toFixed(3).replace('.', ',');
+    linhas.push('', 'Quantitativos;Item;Painéis;Área (m²);Aberturas (m²);Espessura (m);Volume painel inteiro (m³);Volume sem aberturas (m³)');
+    for (const l of quant) linhas.push([l.pav, l.item, l.qtd, br(l.area), br(l.recortes), br(l.esp), m3(l.m3), m3(l.m3liq)].join(';'));
+    const s = (k: 'area' | 'recortes' | 'm3' | 'm3liq') => quant.reduce((t, l) => t + l[k], 0);
+    linhas.push(['Total geral', '', quant.reduce((t, l) => t + l.qtd, 0), br(s('area')), br(s('recortes')), '', m3(s('m3')), m3(s('m3liq'))].join(';'));
+  }
   return '﻿' + linhas.join('\r\n');
 }

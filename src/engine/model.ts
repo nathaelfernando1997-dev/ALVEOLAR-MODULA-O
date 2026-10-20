@@ -23,6 +23,9 @@ export interface Regras {
   vigaAltura: number;      // altura da viga (rebaixo nas paredes embaixo dela)
   vigaLargura: number;     // largura da viga
   vigaApoio: number;       // quanto a viga entra em cima da parede de apoio
+  paredeEsp?: number;      // espessura do painel de parede, para o volume (m³)
+  vazioParede?: number;    // % de vazios (alvéolos) do painel de parede, descontado do volume
+  vazioLaje?: number;      // % de vazios (alvéolos) da laje
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
   motor?: number;          // versão do cálculo: projetos salvos antes (sem o campo) continuam com o cálculo antigo (1)
   vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
@@ -33,7 +36,7 @@ export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15,
-  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, vaoViga: 5.0, beiral: 1.0,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, paredeEsp: 0.15, vazioParede: 0, vazioLaje: 0, vaoViga: 5.0, beiral: 1.0,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
@@ -643,6 +646,21 @@ export function numerar(P: Painel[], ordemPav: string[]) {
     for (const p of ps) p.num = ++n;
   }
   return P.sort((a, b) => a.num - b.num);
+}
+
+// quadro de quantitativos: área e volume de concreto por pavimento (paredes e lajes)
+export interface LinhaQuant { pav: string; item: 'Paredes' | 'Lajes'; qtd: number; area: number; recortes: number; esp: number; m3: number; m3liq: number }
+export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; comp: number; larg: number; dente?: Box }[], r: Regras): LinhaQuant[] {
+  const out: LinhaQuant[] = [];
+  const ep = r.paredeEsp ?? 0.15, el = r.lajeEsp, vp = 1 - (r.vazioParede ?? 0) / 100, vl = 1 - (r.vazioLaje ?? 0) / 100;
+  for (const pav of pavs) {
+    const ps = P.filter(p => p.pav === pav.id), q = resumo(ps);
+    if (ps.length) out.push({ pav: pav.nome, item: 'Paredes', qtd: q.qtd, area: q.bruta, recortes: q.recortes, esp: ep, m3: q.bruta * ep * vp, m3liq: q.liquida * ep * vp });
+    const ls = PL.filter(p => p.pav === pav.id);
+    const a = ls.reduce((s, p) => s + p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), 0);
+    if (ls.length) out.push({ pav: pav.nome, item: 'Lajes', qtd: ls.length, area: a, recortes: 0, esp: el, m3: a * el * vl, m3liq: a * el * vl });
+  }
+  return out;
 }
 
 export function resumo(P: Painel[]) {
