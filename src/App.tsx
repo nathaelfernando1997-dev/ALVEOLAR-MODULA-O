@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto } from './engine/lajes.ts';
@@ -104,7 +104,7 @@ export default function App() {
     setDxf(d); setNome(arquivo); setSel(null); setVaoSel(null); setAmbSel(null); setCortando(null); setPavSel('');
     const cam = cfg?.camada ?? (d.layers.find(l => /parede|wall|alven/i.test(l)) || 'PAREDE');
     setCamada(cam);
-    if (cfg && !deOutraVersao) { setPavs(cfg.pavs); setQuadro(cfg.quadro); setRegras({ ...REGRAS_PADRAO, motor: 1, ...cfg.regras }); setAj({ ...AJUSTES_VAZIOS, ...cfg.ajustes }); }
+    if (cfg && !deOutraVersao) { setPavs(cfg.pavs); setQuadro(cfg.quadro); setRegras(regrasDoSalvo(cfg.regras)); setAj({ ...AJUSTES_VAZIOS, ...cfg.ajustes }); }
     else {
       const L = ler(d, cam);
       // papéis e pés-direitos automáticos: plantas da esquerda para a direita / de cima para baixo recebem os pés-direitos dos cortes em ordem
@@ -145,7 +145,7 @@ export default function App() {
       });
       if (cfg) {
         const m = mesclar(auto, cfg);
-        setPavs(m.pavs); setQuadro(cfg.quadro?.length ? cfg.quadro : L.quadro); setRegras({ ...REGRAS_PADRAO, motor: 1, ...cfg.regras }); setAj(m.aj);
+        setPavs(m.pavs); setQuadro(cfg.quadro?.length ? cfg.quadro : L.quadro); setRegras(regrasDoSalvo(cfg.regras)); setAj(m.aj);
       } else { setPavs(auto); setQuadro(L.quadro); setRegras(REGRAS_PADRAO); setAj(AJUSTES_VAZIOS); }
     }
     setTimeout(() => setPronto(true), 0);
@@ -397,7 +397,7 @@ export default function App() {
               ] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
-              <label className="chk"><input type="checkbox" checked={(regras.motor ?? 1) >= 2} onChange={e => setRegras({ ...regras, motor: e.target.checked ? 2 : 1 })} /> Cálculo novo: separa os muros, põe laje na garagem (área sem paredes embaixo do pavimento de cima), fecha cômodos com parede torta. Projetos antigos ficam sem, para não mudar o que já foi feito</label>
+              <label className="chk"><input type="checkbox" checked={(regras.motor ?? 1) >= 2} onChange={e => setRegras({ ...regras, motor: e.target.checked ? 2 : 1, motorFixo: !e.target.checked })} /> Cálculo atual (padrão): muros fora, laje na garagem e na laje impermeabilizada, paredes tortas, esquadrias pela etiqueta, 17 cm entre painéis, boneca de transporte, produção das lajes e quantitativos. Desmarque só para refazer um projeto pelo cálculo antigo</label>
               <label className="chk"><input type="checkbox" checked={regras.pinarAuto} onChange={e => setRegras({ ...regras, pinarAuto: e.target.checked })} /> No encontro em T, pinar a parede que chega e deixar a parede contínua sem emenda quando ela couber num painel só</label>
             </div>
             <h3>Lajes</h3>
@@ -481,7 +481,7 @@ export default function App() {
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras) : []), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
-                <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras({ ...REGRAS_PADRAO, motor: 1, ...s.regras }); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
+                <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} /></div>}

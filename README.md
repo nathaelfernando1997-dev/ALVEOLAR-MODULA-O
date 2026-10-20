@@ -31,7 +31,9 @@ O arquivo é lido no próprio navegador (não vai para servidor). Os ajustes de 
 - Projeto: "LINHA DE PISO" vira viga de apoio da laje; linhas de "PROJ. LAJE / COBERTURA / BEIRAL" marcam até onde a laje vai (beiral nas pontas dos painéis); áreas escritas "VAZIO" no pavimento de cima ficam sem laje.
 - Muros: parede que não encosta em nenhum ambiente (divisa, jardim) é muro e não é modulada; aparece tracejada na aba Paredes e pode ser marcada como parede.
 - Garagem/varanda: área sem paredes embaixo de um ambiente do pavimento de cima leva laje, com viga na borda apoiada em pilares.
-- Projetos salvos antes dessas regras (muros, garagem, paredes tortas e quinas abertas) continuam com o cálculo de quando foram feitos.
+- Cálculo atual (padrão em todo projeto, novo ou salvo): muros fora, laje embaixo do pavimento de cima (garagem) e na área escrita LAJE IMPERMEABILIZADA, paredes tortas e quinas abertas, esquadrias pela etiqueta (PM1, PA1, PV1, PP…), janela que continua na parede de cima com boneca de transporte, no máximo 17 cm entre painéis alinhados, beiral só pela projeção que acompanha o lado da laje.
+- Saídas: DXF com planta baixa, cotas, pontos de solda, vigas e produção das lajes (em pé, com treliças cotadas); impressão com as folhas de produção das lajes e o quadro de quantitativos (m², isopor e m³ de concreto: isopor 12 × 9 a cada 15 cm, capeamento de 2,5 cm).
+- Para refazer um projeto pelo cálculo antigo, desmarque "Cálculo atual" na aba Regras.
 - Vigas sugeridas: vão sem parede onde a laje apoia ou com parede em cima (obrigatória acima de 5,00 m); laje com vão maior que o painel mesmo usando as paredes. Paredes de cima sobre a laje não levam viga: a laje é reforçada com treliças embaixo delas.
 
 ## Desenvolvimento

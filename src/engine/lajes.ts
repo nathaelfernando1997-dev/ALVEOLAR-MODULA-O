@@ -189,7 +189,9 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? -1 : 1;
       const [r0, r1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
       if (a.externo && !a.externo[lado]) return [];
-      return bordas.filter(b => b.o === o && dir * (b.c - ed) > (novo ? -0.05 : 0.1) && dir * (b.c - ed) <= 2.5 && Math.min(b.b, r1) - Math.max(b.a, r0) > 0.3)
+      // cálculo novo: a linha tem que acompanhar boa parte do lado da laje (beiral de verdade);
+      // pedaço solto de outro desenho (contorno do poço, jardim) não vira beiral
+      return bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 2.5 && Math.min(b.b, r1) - Math.max(b.a, r0) > (novo ? Math.max(0.3, 0.6 * (r1 - r0)) : 0.3))
         .sort((p, q) => Math.abs(p.c - ed) - Math.abs(q.c - ed));
     };
     // com várias linhas de projeção, fica a que fecha o contorno com a do lado vizinho (quina); senão a mais perto
@@ -197,8 +199,6 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const quina = (b: LinhaProjeto, c: LinhaProjeto) => [b.a, b.b].some(t => Math.abs(t - c.c) < 0.05) && [c.a, c.b].some(t => Math.abs(t - b.c) < 0.05);
     const beiral = (lado: 'o' | 'l' | 's' | 'n') => {
       const cs = todos[lado]; if (!cs.length) return null;
-      // projeção em cima da parede: a laje termina ali (a linha mais longe é de outro desenho, ex.: poço, jardim)
-      if (novo && Math.abs(cs[0].c - { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado]) <= 0.1) return null;
       const viz = (lado === 'o' || lado === 'l' ? [...todos.s, ...todos.n] : [...todos.o, ...todos.l]);
       const c = cs.find(b => viz.some(v => quina(b, v))) ?? cs[0];
       const ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado];
@@ -333,6 +333,31 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       if (semDente) { if (ponta === 0) p.y0 = novo; else p.y1 = novo; }
       else if (ponta === 0) { p.dente = { x0: corte[0], x1: corte[1], y0: novo, y1: p.y0 }; p.y0 = novo; } else { p.dente = { x0: corte[0], x1: corte[1], y0: p.y1, y1: novo }; p.y1 = novo; }
       p.comp = p.y1 - p.y0;
+    }
+  }
+  // cálculo novo: painel estreito (faixa entre duas paredes, < 0,60 m) ao lado de outro do mesmo vão:
+  // junta os dois e divide a largura meio a meio
+  if (novo) {
+    const minL = 0.6, f = r.lajeFolga ?? 0.02;
+    const larg = (q: PainelLaje) => q.sentido === 'H' ? [q.y0, q.y1] : [q.x0, q.x1];
+    const vao = (q: PainelLaje) => q.sentido === 'H' ? [q.x0, q.x1] : [q.y0, q.y1];
+    for (const p of [...P].sort((x, y) => x.larg - y.larg)) {
+      if (p.larg >= minL || p.dente) continue;
+      const [pb0, pb1] = larg(p), [pa0, pa1] = vao(p);
+      const viz = P.filter(q => q !== p && q.pav === p.pav && q.sentido === p.sentido && !q.dente && q.larg >= minL &&
+        Math.abs(vao(q)[0] - pa0) <= 0.1 && Math.abs(vao(q)[1] - pa1) <= 0.1 &&
+        Math.min(Math.abs(larg(q)[0] - pb1), Math.abs(pb0 - larg(q)[1])) <= 0.05)
+        .sort((x, y) => (Math.abs(vao(x)[0] - pa0) + Math.abs(vao(x)[1] - pa1)) - (Math.abs(vao(y)[0] - pa0) + Math.abs(vao(y)[1] - pa1)))[0];
+      if (!viz) continue;
+      const b0 = Math.min(pb0, larg(viz)[0]), b1 = Math.max(pb1, larg(viz)[1]), w = (b1 - b0 - f) / 2;
+      if (w > (r.lajeLarg ?? 3) + 1e-6) continue;
+      const a0 = Math.min(pa0, vao(viz)[0]), a1 = Math.max(pa1, vao(viz)[1]);
+      // o de baixo/esquerda fica com a primeira metade
+      const [q0, q1] = pb0 < larg(viz)[0] ? [p, viz] : [viz, p];
+      for (const [q, c0] of [[q0, b0], [q1, b0 + w + f]] as [PainelLaje, number][]) {
+        if (q.sentido === 'H') { q.x0 = a0; q.x1 = a1; q.y0 = c0; q.y1 = c0 + w; } else { q.y0 = a0; q.y1 = a1; q.x0 = c0; q.x1 = c0 + w; }
+        q.comp = a1 - a0; q.larg = w;
+      }
     }
   }
   return { ambs: res, paineis: P };

@@ -30,11 +30,19 @@ export interface Regras {
   isoporEspaco?: number;   // concreto entre um isopor e o outro: 0,03
   capeamento?: number;     // concreto em cima e embaixo do isopor: 0,025
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
+  motorFixo?: boolean;     // o usuário desligou o cálculo novo neste projeto (senão todo projeto abre no cálculo atual)
   motor?: number;          // versão do cálculo: projetos salvos antes (sem o campo) continuam com o cálculo antigo (1)
   vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
   vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
   beiral: number;          // balanço de laje permitido sem viga
 }
+// regras de um projeto salvo: completa com as atuais e abre sempre no cálculo atual,
+// a não ser que o usuário tenha desligado o cálculo novo nele
+export function regrasDoSalvo(s?: Partial<Regras>): Regras {
+  const r = { ...REGRAS_PADRAO, ...s };
+  return { ...r, motor: s?.motorFixo ? (s.motor ?? 1) : REGRAS_PADRAO.motor };
+}
+
 export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
