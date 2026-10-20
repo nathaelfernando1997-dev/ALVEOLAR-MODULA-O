@@ -11,6 +11,8 @@ class W {
     this.out.push('0', 'LINE', '8', l, '62', String(cor), '10', x1.toFixed(4), '20', y1.toFixed(4), '11', x2.toFixed(4), '21', y2.toFixed(4));
   }
   text(l: string, x: number, y: number, h: number, t: string, cor = 1, rot = 0, centro = false) {
+    // acentos e ² no formato do AutoCAD (\U+00B2): o DXF sem cabeçalho é lido como ANSI e o UTF-8 vira "mÂ²"
+    t = t.replace(/[^\x20-\x7e]/g, ch => '\\U+' + ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0'));
     this.out.push('0', 'TEXT', '8', l, '62', String(cor), '10', x.toFixed(4), '20', y.toFixed(4), '40', h.toFixed(3), '1', t);
     if (rot) this.out.push('50', String(rot));
     if (centro) this.out.push('72', '1', '11', x.toFixed(4), '21', y.toFixed(4));
