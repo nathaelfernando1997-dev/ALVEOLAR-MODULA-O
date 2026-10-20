@@ -19,15 +19,27 @@ const agrupa = (vs: number[], tol = 0.06) => {
 };
 
 // extras = apoios que não são parede (viga na linha de piso); vazios = áreas sem laje (VAZIO do pavimento de cima)
-export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], vazios: Box[] = []): Ambiente[] {
+// op.fechar = cálculo novo (motor 2): fecha quinas abertas e tira sobras minúsculas
+// op.cobertas = ambientes do pavimento de cima (nesta planta): área sem paredes embaixo deles (garagem, varanda) leva laje,
+// apoiada em vigas na borda, que voltam em `op.vigasBorda`
+export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], vazios: Box[] = [], op: { fechar?: boolean; cobertas?: Box[]; vigasBorda?: Trecho[] } = {}): Ambiente[] {
+  let cobertas = op.cobertas ?? [];
+  const vigasBorda = op.vigasBorda;
+  if (cobertas.length) {
+    // só as áreas de cima que ficam (quase todas) fora dos ambientes daqui
+    const base = ambientes(pav, ts, extras, vazios, { fechar: op.fechar });
+    const sob = (b: Box) => base.reduce((s, a) => s + Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)), 0);
+    cobertas = cobertas.filter(b => { const A = (b.x1 - b.x0) * (b.y1 - b.y0); return A > 1 && A - sob(b) > 0.3 * A; });
+    if (!cobertas.length) return base;
+  }
   const T0 = [...ts.filter(t => t.pav === pav.id), ...extras];
   // ponta que para antes do eixo da parede perpendicular (quina com pilar/shaft, parede torta) vai até ele
   const chega = (q: Trecho, c: number) => q.s - 0.12 <= c && c <= q.e + 0.12;
   const ate = (t: Trecho, lim: number, dir: 1 | -1) => T0.filter(q => q.o !== t.o && chega(q, t.c) && dir * (q.c - lim) > 0 && dir * (q.c - lim) <= 0.4)
     .reduce((m, q) => dir * (q.c - m) > 0 ? q.c : m, lim);
-  const T = T0.map(t => ({ ...t, s: ate(t, t.s, -1), e: ate(t, t.e, 1) }));
-  const xs = agrupa([...T.filter(t => t.o === 'V').map(t => t.c), ...vazios.flatMap(v => [v.x0, v.x1])]);
-  const ys = agrupa([...T.filter(t => t.o === 'H').map(t => t.c), ...vazios.flatMap(v => [v.y0, v.y1])]);
+  const T = op.fechar ? T0.map(t => ({ ...t, s: ate(t, t.s, -1), e: ate(t, t.e, 1) })) : T0;
+  const xs = agrupa([...T.filter(t => t.o === 'V').map(t => t.c), ...[...vazios, ...cobertas].flatMap(v => [v.x0, v.x1])]);
+  const ys = agrupa([...T.filter(t => t.o === 'H').map(t => t.c), ...[...vazios, ...cobertas].flatMap(v => [v.y0, v.y1])]);
   if (xs.length < 2 || ys.length < 2) return [];
   // parede cobrindo uma aresta da malha (folga para colunas nos encontros)
   // a aresta pode estar coberta por mais de um trecho (parede dividida nos encontros em T)
@@ -60,6 +72,31 @@ export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], v
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2;
     if (vazios.some(v => cx > v.x0 && cx < v.x1 && cy > v.y0 && cy < v.y1)) fora[id(i, j)] = true;
+  }
+  // embaixo do pavimento de cima sem paredes: leva laje; onde a borda não tem parede, viga
+  if (cobertas.length) {
+    const novo = new Array(nx * ny).fill(false);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2;
+      if (fora[id(i, j)] && !vazios.some(v => cx > v.x0 && cx < v.x1 && cy > v.y0 && cy < v.y1) &&
+        cobertas.some(v => cx > v.x0 && cx < v.x1 && cy > v.y0 && cy < v.y1)) { fora[id(i, j)] = false; novo[id(i, j)] = true; }
+    }
+    const fo = (i: number, j: number) => i < 0 || j < 0 || i >= nx || j >= ny || fora[id(i, j)];
+    const arestas: { o: 'H' | 'V'; c: number; a: number; b: number }[] = [];
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      if (!novo[id(i, j)]) continue;
+      if (fo(i - 1, j) && !parede('V', xs[i], ys[j], ys[j + 1])) arestas.push({ o: 'V', c: xs[i], a: ys[j], b: ys[j + 1] });
+      if (fo(i + 1, j) && !parede('V', xs[i + 1], ys[j], ys[j + 1])) arestas.push({ o: 'V', c: xs[i + 1], a: ys[j], b: ys[j + 1] });
+      if (fo(i, j - 1) && !parede('H', ys[j], xs[i], xs[i + 1])) arestas.push({ o: 'H', c: ys[j], a: xs[i], b: xs[i + 1] });
+      if (fo(i, j + 1) && !parede('H', ys[j + 1], xs[i], xs[i + 1])) arestas.push({ o: 'H', c: ys[j + 1], a: xs[i], b: xs[i + 1] });
+    }
+    arestas.sort((p, q) => p.o.localeCompare(q.o) || p.c - q.c || p.a - q.a);
+    const vs: typeof arestas = [];
+    for (const e of arestas) { const u = vs[vs.length - 1]; if (u && u.o === e.o && u.c === e.c && Math.abs(u.b - e.a) < 1e-6) u.b = e.b; else vs.push({ ...e }); }
+    for (const v of vs) {
+      const t: Trecho = { id: `${pav.id}|borda|${v.o}|${v.c.toFixed(2)}|${v.a.toFixed(2)}`, pav: pav.id, o: v.o, c: v.c, s: v.a, e: v.b, vaos: [], H: pav.altura, esp: 0.15 };
+      T.push(t); vigasBorda?.push(t);
+    }
   }
   // ambientes = componentes internas
   const comp = new Array(nx * ny).fill(-1); let nc = 0;
@@ -123,7 +160,7 @@ export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], v
     out.push(...(custo(C) < custo(L) ? C : L));
   }
   // sobra entre eixos muito próximos (encontro de paredes) não é ambiente
-  return out.filter(a => a.x1 - a.x0 >= 0.3 || a.y1 - a.y0 >= 0.3);
+  return op.fechar ? out.filter(a => a.x1 - a.x0 >= 0.3 || a.y1 - a.y0 >= 0.3) : out;
 }
 
 // cargas = paredes do pavimento de cima sem parede embaixo (coordenadas desta planta)

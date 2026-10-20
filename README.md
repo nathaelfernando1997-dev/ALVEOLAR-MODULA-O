@@ -29,6 +29,9 @@ O arquivo é lido no próprio navegador (não vai para servidor). Os ajustes de 
 - Viga da linha de piso: também 10% do vão; 0,45 m fica abaixo da laje (regra ajustável), 0,15 m na laje e o restante sobe — as paredes de cima baixam o mesmo tanto.
 - Laje: vão máximo 5,00 m (pode ser menor), largura máxima 3,00 m, folga de 2 cm entre painéis vizinhos, apoio em cima das paredes em todos os lados: 6 cm onde a parede recebe laje dos dois lados e 10 cm onde só uma laje apoia; a laje apoia nas paredes (inclusive internas) e o sentido é escolhido para usar menos vigas; beiral até 1,00 m sem viga.
 - Projeto: "LINHA DE PISO" vira viga de apoio da laje; linhas de "PROJ. LAJE / COBERTURA / BEIRAL" marcam até onde a laje vai (beiral nas pontas dos painéis); áreas escritas "VAZIO" no pavimento de cima ficam sem laje.
+- Muros: parede que não encosta em nenhum ambiente (divisa, jardim) é muro e não é modulada; aparece tracejada na aba Paredes e pode ser marcada como parede.
+- Garagem/varanda: área sem paredes embaixo de um ambiente do pavimento de cima leva laje, com viga na borda apoiada em pilares.
+- Projetos salvos antes dessas regras (muros, garagem, paredes tortas e quinas abertas) continuam com o cálculo de quando foram feitos.
 - Vigas sugeridas: vão sem parede onde a laje apoia ou com parede em cima (obrigatória acima de 5,00 m); laje com vão maior que o painel mesmo usando as paredes. Paredes de cima sobre a laje não levam viga: a laje é reforçada com treliças embaixo delas.
 
 ## Desenvolvimento

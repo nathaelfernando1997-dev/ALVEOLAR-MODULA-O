@@ -23,6 +23,7 @@ export interface Regras {
   vigaAltura: number;      // altura da viga (rebaixo nas paredes embaixo dela)
   vigaLargura: number;     // largura da viga
   vigaApoio: number;       // quanto a viga entra em cima da parede de apoio
+  motor?: number;          // versão do cálculo: projetos salvos antes (sem o campo) continuam com o cálculo antigo (1)
   vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
   vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
   beiral: number;          // balanço de laje permitido sem viga
@@ -31,7 +32,7 @@ export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15,
-  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, vaoViga: 5.0, beiral: 1.0,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, vaoViga: 5.0, beiral: 1.0,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
@@ -227,7 +228,7 @@ function eixos(F: Face[], r: Regras): Eixo[] {
   // junta os que estão na mesma reta (mesma inclinação, um no prolongamento do outro)
   const med = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
   const meio = (g: (typeof grupos)[number]) => { const as = g.ps.map(p => (p[0] + p[1]) / 2); return med(as); };
-  for (let mudou = true; mudou;) {
+  for (let mudou = (r.motor ?? 1) >= 2; mudou;) {
     mudou = false;
     for (const g of grupos) for (const h of grupos) {
       if (g === h || !g.cs.length || !h.cs.length) continue;
@@ -267,6 +268,7 @@ export interface Ajustes {
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
+  naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
 }
 export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, colunas: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
 
