@@ -1,5 +1,6 @@
 // Conferência com os cortes: lê as cotas verticais de cada corte e compara
 // com os pés-direitos, a espessura da laje e as alturas de portas e janelas.
+import { entText } from './dxf.ts';
 import type { Dxf } from './dxf.ts';
 import type { Box, Esquadria, Pavimento, Regras, Painel } from './model.ts';
 
@@ -72,10 +73,39 @@ export function detectarPes(d: Dxf, boxes: Box[]): number[] {
 
 // tenta adivinhar o papel de cada desenho: com etiquetas de porta/janela = planta; com cotas verticais = corte
 export function adivinharPapeis(d: Dxf, regioes: Box[], tags: { x: number; y: number }[]): ('planta' | 'corte' | 'nao')[] {
-  return regioes.map(b => {
+  // título do desenho (texto logo abaixo ou acima dele): "PLANTA BAIXA - TÉRREO" é planta a modular;
+  // planta de cobertura, situação, layout, esquadrias, instalações etc. têm etiquetas mas não são moduladas
+  const textos = d.ents.map(entText).filter((t): t is NonNullable<typeof t> => !!t && !!t.text);
+  const NAO = /COBERTURA|SITUA[CÇ]|LOCA[CÇ]|IMPLANTA|ESQUADRIA|LAYOUT|HUMANIZ|PONTOS|EL[EÉ]TRIC|HIDR[AÁ]U|SANIT|FORRO|PAGINA|DEMOLI|ACESSIBIL|PISO|REVEST|LUMIN|FUNDA|ESTRUTUR|PILARES|LAJE|TELHADO|CORTE|DETALHE|MOBILI/;
+  const SIM = /PLANTA\s*BAIXA|T[ÉE]RREO|PAVIMENTO|SUPERIOR|SUBSOLO|MEZANINO|ANDAR/;
+  // cada título fica com o desenho mais próximo (o título costuma ficar logo abaixo do desenho)
+  const tituloDe = new Map<number, { t: string; d: number }>();
+  for (const t of textos) {
+    const up = t.text.toUpperCase();
+    if (!/[A-ZÀ-Ú]{4,}/.test(up) || /^\s*(FACHADA|VISTA|LATERAL|FRENTE|FUNDOS|RUA|AV|PROJ|LINHA|LIMITE|DIVISA)/.test(up)) continue;
+    if (!(SIM.test(up) || NAO.test(up) || /PLANTA/.test(up))) continue;
+    let mi = -1, md = 12;
+    regioes.forEach((b, i) => {
+      if (t.x < b.x0 - 0.5 || t.x > b.x1 + 0.5) return;
+      const d = t.y < b.y0 ? b.y0 - t.y : t.y > b.y1 ? (t.y - b.y1) * 3 : 99;   // acima do desenho só bem perto
+      if (d < md) { md = d; mi = i; }
+    });
+    if (mi >= 0 && (!tituloDe.has(mi) || md < tituloDe.get(mi)!.d)) tituloDe.set(mi, { t: up, d: md });
+  }
+  const titulo = (_b: Box, i: number) => tituloDe.get(i)?.t ?? '';
+  const base = regioes.map(b => {
     const nTags = tags.filter(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3).length;
-    if (nTags >= 2) return 'planta';
+    if (nTags >= 2) return 'planta' as const;
     const nV = d.cotas.filter(k => k.vertical && k.x > b.x0 - 2 && k.x < b.x1 + 2 && k.y > b.y0 - 1 && k.y < b.y1 + 1 && k.valor > 2 && k.valor < 4.6).length;
-    return nV >= 1 ? 'corte' : 'nao';
+    return nV >= 1 ? 'corte' as const : 'nao' as const;
+  });
+  const tit = regioes.map(titulo);
+  const comTitulo = base.some((p, i) => p === 'planta' && SIM.test(tit[i]) && !NAO.test(tit[i]));
+  return base.map((p, i) => {
+    if (p !== 'planta') return p;
+    if (NAO.test(tit[i]) && !/PLANTA\s*BAIXA/.test(tit[i].replace(/PLANTA\s*BAIXA\s*(DE|-)?\s*(LAYOUT|ESQUADRIA|COBERTURA)/, ''))) return 'nao';
+    // havendo plantas com título de planta baixa/pavimento, as sem título ficam de fora
+    if (comTitulo && !SIM.test(tit[i])) return 'nao';
+    return 'planta';
   });
 }
