@@ -98,7 +98,7 @@ export default function App() {
     const lista = (v?: string[]) => (v || []).map(troca).filter((x): x is string => !!x);
     const reg = <T,>(v?: Record<string, T>) => Object.fromEntries(Object.entries(v || {}).map(([k, x]) => [troca(k), x] as const).filter(([k]) => !!k)) as Record<string, T>;
     const a = { ...AJUSTES_VAZIOS, ...salvo.ajustes };
-    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro), laje16: lista(a.laje16),
+    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro), laje16: lista(a.laje16), lajeEspAmb: reg(a.lajeEspAmb),
       cortes: reg(a.cortes), colunas: reg(a.colunas), altura: reg(a.altura), vaoTipo: reg(a.vaoTipo) } };
   };
   const carregarTexto = (txt: string, arquivo: string, cfg: Config | null, deOutraVersao = false) => {
@@ -436,7 +436,7 @@ export default function App() {
               <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setSel(null); setVaoSel(null); setAmbSel(null); }}>{p.nome}</button>)}</div>
               {aba === 'modulacao'
                 ? <Acoes pav={pavAtual} sel={sel} vaoSel={vaoSel} calc={calc} aj={aj} setAj={setAj} quadro={quadro} regras={regras} cortando={cortando} setCortando={setCortando} limpar={() => { setSel(null); setVaoSel(null); setCortando(null); }} />
-                : <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} />}
+                : <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />}
               <details><summary>Desfazer ajustes</summary>
                 <button onClick={() => { if (confirm('Apagar todos os ajustes manuais deste projeto?')) setAj(AJUSTES_VAZIOS); }}>Apagar todos os ajustes</button>
               </details>
@@ -486,12 +486,12 @@ export default function App() {
               <div className="botoes">
                 <button onClick={() => window.print()}>Imprimir / salvar PDF</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
-                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras) : []) + ((regras.motor ?? 1) >= 2 ? csvTrelicas(ativos, calc, aj, regras.perda ?? 10) : ''), 'text/csv')}>Baixar lista de painéis (CSV)</button>
+                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras, espDoAmb(aj)) : []) + ((regras.motor ?? 1) >= 2 ? csvTrelicas(ativos, calc, aj, regras.perda ?? 10) : ''), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
-            {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
+            {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDoAmb(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
             <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} />
           </section>
         )}
@@ -502,12 +502,14 @@ export default function App() {
 
 // treliças de reforço: TG8 (ferro 6,3 mm); TG12 (ferro 8,0 mm) onde a laje é de 16 cm
 const TRELICA = { TG8: 'ferro 6,3 mm', TG12: 'ferro 8,0 mm' } as const;
+// espessura da laje do ambiente (m), quando alterada; o "laje16" antigo vale 16 cm
+const espDoAmb = (aj: Ajustes) => (amb: string) => aj.lajeEspAmb?.[amb] ?? ((aj.laje16 || []).includes(amb) ? 0.16 : undefined);
 function quantTrelicas(pavs: Pavimento[], calc: Calc, aj: Ajustes) {
   const out: { pav: string; tipo: keyof typeof TRELICA; pecas: number; metros: number; cortes: Map<string, number> }[] = [];
   for (const pav of pavs) {
     const P = calc.pl.filter(p => p.pav === pav.id), TR = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica');
     for (const tp of trelicasNasLajes(TR, P)) {
-      const pn = P.find(p => p.num === tp.painel), tipo = pn && (aj.laje16 || []).includes(pn.amb) ? 'TG12' : 'TG8';
+      const pn = P.find(p => p.num === tp.painel), tipo = pn && (espDoAmb(aj)(pn.amb) ?? 0) >= 0.16 - 1e-6 ? 'TG12' : 'TG8';
       let l = out.find(x => x.pav === pav.nome && x.tipo === tipo);
       if (!l) out.push(l = { pav: pav.nome, tipo, pecas: 0, metros: 0, cortes: new Map() });
       l.pecas++; l.metros += tp.comp; const k = br(tp.comp); l.cortes.set(k, (l.cortes.get(k) || 0) + 1);
@@ -629,7 +631,7 @@ function PlantaLajes({ pav, calc, arq, ambSel, onAmb }: { pav: Pavimento; calc: 
           </g>;
         })}
       </ZoomSvg>
-      <p className="dica">Laje sobre este pavimento. Clique num ambiente para tirar a laje (vazio, área externa) ou girar o sentido dos painéis. Marcador laranja "!" = precisa de atenção (passe o mouse ou clique para ver). Linha roxa = treliça de reforço embaixo de parede de cima.</p>
+      <p className="dica">Laje sobre este pavimento. Clique num ambiente para tirar a laje (vazio, área externa), girar o sentido dos painéis ou mudar a espessura (ex.: 16 cm). Marcador laranja "!" = precisa de atenção (passe o mouse ou clique para ver). Linha roxa = treliça de reforço embaixo de parede de cima.</p>
       {TP.length > 0 && <TabelaTrelicas TP={TP} TR={TR} />}
     </div>
   );
@@ -705,7 +707,7 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
   </div>;
 }
 
-function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento }) {
+function AcoesLaje({ amb, calc, aj, setAj, pav, espPadrao }: { amb: LajeAmb | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento; espPadrao: number }) {
   const lj = calc.lajes.filter(a => a.pav === pav.id && a.incluida), P = calc.pl.filter(p => p.pav === pav.id);
   const area = P.reduce((s, p) => s + areaLaje(p), 0);
   const tog = (k: 'lajeFora' | 'lajeGiro' | 'laje16', id: string) => setAj({ ...aj, [k]: (aj[k] || []).includes(id) ? (aj[k] || []).filter(x => x !== id) : [...(aj[k] || []), id] });
@@ -721,7 +723,13 @@ function AcoesLaje({ amb, calc, aj, setAj, pav }: { amb: LajeAmb | null; calc: C
       {P.filter(p => p.amb === amb.id).map(p => <div key={p.num} className="dica">L{p.num}: {br(p.comp)} × {br(p.larg)}{p.dente ? ` · dente ${br(p.dente.x1 - p.dente.x0)} × ${br(p.dente.y1 - p.dente.y0)}` : ''}</div>)}
       <button onClick={() => tog('lajeFora', amb.id)}>{(aj.lajeFora || []).includes(amb.id) ? 'Colocar laje neste ambiente' : 'Sem laje aqui (vazio, área externa)'}</button>
       <button onClick={() => tog('lajeGiro', amb.id)}>Girar o sentido dos painéis</button>
-      <button onClick={() => tog('laje16', amb.id)}>{(aj.laje16 || []).includes(amb.id) ? 'Voltar para treliça TG8' : 'Laje de 16 cm aqui (treliça TG12)'}</button>
+      <label>Espessura da laje neste ambiente (cm)
+        <input type="number" step="1" key={amb.id} defaultValue={Math.round((espDoAmb(aj)(amb.id) ?? espPadrao) * 100)} onBlur={e => {
+          const v = parseFloat(e.target.value.replace(',', '.')); const m = { ...(aj.lajeEspAmb || {}) };
+          if (isFinite(v) && v > 0 && Math.abs(v / 100 - espPadrao) > 1e-6) m[amb.id] = v / 100; else delete m[amb.id];
+          setAj({ ...aj, lajeEspAmb: m, laje16: (aj.laje16 || []).filter(x => x !== amb.id) }); }} />
+      </label>
+      <p className="dica">{(espDoAmb(aj)(amb.id) ?? espPadrao) >= 0.16 - 1e-6 ? 'Treliça TG12 (ferro 8,0 mm)' : 'Treliça TG8 (ferro 6,3 mm)'} · 16 cm ou mais usa TG12</p>
     </> : <p className="dica">Clique num ambiente na planta.</p>}
   </div>;
 }
@@ -782,7 +790,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
         pgs.push(pg);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: (aj.laje16 || []).includes(p.amb) ? 'TG12' : 'TG8' }))) }} />)}</div>)}</div>
+          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: (espDoAmb(aj)(p.amb) ?? 0) >= 0.16 - 1e-6 ? 'TG12' : 'TG8' }))) }} />)}</div>)}</div>
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
@@ -796,7 +804,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
   }
   if (novo) folhas.push(<div className="folha" key="quant">
     <div className="cab">QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)</div>
-    <Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras)} perda={regras.perda ?? 10} />
+    <Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDoAmb(aj))} perda={regras.perda ?? 10} />
     <TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} />
     {rod(`Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, em barras de ${br(regras.isoporComp ?? 4)} m, sobras aproveitadas (em cima das janelas e nas lajes), ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · portas e janelas sem concreto e sem isopor`)}
   </div>);

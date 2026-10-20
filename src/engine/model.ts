@@ -286,7 +286,8 @@ export interface Ajustes {
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
-  laje16?: string[];                       // ambientes com laje de 16 cm (treliça TG12 em vez de TG8)
+  laje16?: string[];                       // (antigo) ambientes com laje de 16 cm
+  lajeEspAmb?: Record<string, number>;     // espessura da laje por ambiente (m); 16 cm ou mais usa treliça TG12
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
 }
@@ -668,26 +669,30 @@ export function numerar(P: Painel[], ordemPav: string[]) {
 // Porta/janela não leva isopor nem concreto; as sobras das barras são usadas (em cima das janelas, nas lajes),
 // então as barras saem do total de metros, sem perda
 export interface LinhaQuant { pav: string; item: 'Paredes' | 'Lajes'; qtd: number; area: number; aberturas: number; esp: number; bruto: number; isoporM: number; isoporPecas: number; isoporM3: number; concreto: number; isoporPerda: number; concretoPerda: number }
-export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; comp: number; larg: number; dente?: Box }[], r: Regras): LinhaQuant[] & { barras: number; barrasPerda: number } {
+export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; amb: string; comp: number; larg: number; dente?: Box }[], r: Regras, espAmb: (amb: string) => number | undefined = () => undefined): LinhaQuant[] & { barras: number; barrasPerda: number } {
   const out: LinhaQuant[] = [];
   const il = r.isoporLarg ?? 0.12, ia = r.isoporAlt ?? 0.09, ic = r.isoporComp ?? 4, ie = r.isoporEspaco ?? 0.03, cap = r.capeamento ?? 0.025;
   const k = 1 + (r.perda ?? 10) / 100;
   const esp = ia + 2 * cap, passo = il + ie, nIso = (w: number) => Math.max(0, Math.floor(w / passo + 1e-6));
-  const linha = (pav: string, item: LinhaQuant['item'], xs: { larg: number; comp: number; area: number; furos: { w: number; h: number }[] }[]) => {
+  const linha = (pav: string, item: LinhaQuant['item'], xs: { larg: number; comp: number; area: number; furos: { w: number; h: number }[] }[], e = esp) => {
     let area = 0, ab = 0, iso = 0;
     for (const x of xs) {
       area += x.area; iso += nIso(x.larg) * x.comp;
       for (const f of x.furos) { ab += f.w * f.h; iso -= nIso(f.w) * f.h; }
     }
     const liq = area - ab, isoM3 = iso * il * ia;
-    out.push({ pav, item, qtd: xs.length, area, aberturas: ab, esp, bruto: liq * esp, isoporM: iso, isoporPecas: Math.ceil(iso / ic - 1e-6), isoporM3: isoM3, concreto: liq * esp - isoM3,
-      isoporPerda: Math.ceil(iso * k / ic - 1e-6), concretoPerda: (liq * esp - isoM3) * k });
+    out.push({ pav, item, qtd: xs.length, area, aberturas: ab, esp: e, bruto: liq * e, isoporM: iso, isoporPecas: Math.ceil(iso / ic - 1e-6), isoporM3: isoM3, concreto: liq * e - isoM3,
+      isoporPerda: Math.ceil(iso * k / ic - 1e-6), concretoPerda: (liq * e - isoM3) * k });
   };
   for (const pav of pavs) {
     const ps = P.filter(p => p.pav === pav.id);
     if (ps.length) linha(pav.nome, 'Paredes', ps.map(p => ({ larg: p.larg, comp: p.H, area: p.larg * p.H, furos: p.recortes.map(rc => ({ w: rc.w, h: rc.h })) })));
     const ls = PL.filter(p => p.pav === pav.id);
-    if (ls.length) linha(pav.nome, 'Lajes', ls.map(p => ({ larg: p.larg, comp: p.comp, area: p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), furos: [] })));
+    // uma linha por espessura de laje (ambiente alterado para 16 cm, por exemplo)
+    const porEsp = new Map<number, typeof ls>();
+    for (const p of ls) { const e = Math.round((espAmb(p.amb) ?? esp) * 1000) / 1000; porEsp.set(e, [...(porEsp.get(e) || []), p]); }
+    for (const [e, g] of [...porEsp].sort((a, b) => a[0] - b[0]))
+      linha(pav.nome, 'Lajes', g.map(p => ({ larg: p.larg, comp: p.comp, area: p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), furos: [] })), e);
   }
   const total = out.reduce((s, l) => s + l.isoporM, 0);
   return Object.assign(out, { barras: Math.ceil(total / ic - 1e-6), barrasPerda: Math.ceil(total * k / ic - 1e-6) });
