@@ -1,5 +1,6 @@
 // Exporta a modulação em DXF (R12, só LINE e TEXT) para abrir no AutoCAD.
 import type { Painel, Pavimento } from './model.ts';
+import type { Prim } from './dxf.ts';
 import type { PainelLaje } from './lajes.ts';
 import { areaLaje } from './lajes.ts';
 
@@ -20,13 +21,21 @@ class W {
 }
 const br = (v: number) => v.toFixed(2).replace('.', ',');
 
-export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = []): string {
+// arq = planta baixa de cada pavimento (linhas e textos do projeto), desenhada embaixo da modulação em cinza (camada ARQ)
+export type ArqPav = { prims: Prim[]; textos: { text: string; x: number; y: number; h: number }[] };
+export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = [], arq: Record<string, ArqPav> = {}): string {
   const w = new W();
   let X = 0;
+  const planta = (a: ArqPav | undefined, dx: number, dy: number) => {
+    if (!a) return;
+    for (const p of a.prims) for (let i = 0; i < p.pts.length - 1; i++) w.line('ARQ', p.pts[i][0] + dx, p.pts[i][1] + dy, p.pts[i + 1][0] + dx, p.pts[i + 1][1] + dy, 8);
+    for (const t of a.textos) w.text('ARQ-TEXTO', t.x + dx, t.y + dy, t.h || .1, t.text, 8);
+  };
   for (const pav of pavs) {
     const P = ps.filter(p => p.pav === pav.id);
     if (!P.length) continue;
     const b = pav.box, ox = X - b.x0, oy = -b.y0;
+    planta(arq[pav.id], ox, oy);
     w.text('TEXTO', X, b.y1 - b.y0 + 1, .35, `MODULAÇÃO PAREDES - ${pav.nome.toUpperCase()}`);
     for (const p of P) {
       const [x1, y1, x2, y2] = p.o === 'H' ? [p.a, p.c, p.a + p.larg, p.c] : [p.c, p.a, p.c, p.a + p.larg];
@@ -54,6 +63,7 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
     }
     // lajes: abaixo da planta
     const L = pl.filter(p => p.pav === pav.id);
+    if (L.length) planta(arq[pav.id], ox, oy - (b.y1 - b.y0) - 4);
     for (const p of L) {
       const x0 = p.x0 + ox, y0 = p.y0 + oy - (b.y1 - b.y0) - 4;
       if (p.dente) {

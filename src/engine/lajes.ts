@@ -169,6 +169,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
   const dentes: { p: PainelLaje; ponta: 0 | 1; c: number }[] = [];
   const fora = aj.lajeFora || [], giro = aj.lajeGiro || [];
   const esV = r.vigaLargura || 0.15;
+  const novo = (r.motor ?? 1) >= 2;
   for (const a of ambs) {
     // vão livre entre faces das paredes
     const cx0 = a.x0 + a.esp.o / 2, cx1 = a.x1 - a.esp.l / 2, cy0 = a.y0 + a.esp.s / 2, cy1 = a.y1 - a.esp.n / 2;
@@ -188,7 +189,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? -1 : 1;
       const [r0, r1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
       if (a.externo && !a.externo[lado]) return [];
-      return bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 2.5 && Math.min(b.b, r1) - Math.max(b.a, r0) > 0.3)
+      return bordas.filter(b => b.o === o && dir * (b.c - ed) > (novo ? -0.05 : 0.1) && dir * (b.c - ed) <= 2.5 && Math.min(b.b, r1) - Math.max(b.a, r0) > 0.3)
         .sort((p, q) => Math.abs(p.c - ed) - Math.abs(q.c - ed));
     };
     // com várias linhas de projeção, fica a que fecha o contorno com a do lado vizinho (quina); senão a mais perto
@@ -196,6 +197,8 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const quina = (b: LinhaProjeto, c: LinhaProjeto) => [b.a, b.b].some(t => Math.abs(t - c.c) < 0.05) && [c.a, c.b].some(t => Math.abs(t - b.c) < 0.05);
     const beiral = (lado: 'o' | 'l' | 's' | 'n') => {
       const cs = todos[lado]; if (!cs.length) return null;
+      // projeção em cima da parede: a laje termina ali (a linha mais longe é de outro desenho, ex.: poço, jardim)
+      if (novo && Math.abs(cs[0].c - { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado]) <= 0.1) return null;
       const viz = (lado === 'o' || lado === 'l' ? [...todos.s, ...todos.n] : [...todos.o, ...todos.l]);
       const c = cs.find(b => viz.some(v => quina(b, v))) ?? cs[0];
       const ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado];
