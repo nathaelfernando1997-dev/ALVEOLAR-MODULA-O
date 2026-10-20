@@ -387,6 +387,7 @@ export default function App() {
               ] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
+              <label className="chk"><input type="checkbox" checked={(regras.motor ?? 1) >= 2} onChange={e => setRegras({ ...regras, motor: e.target.checked ? 2 : 1 })} /> Cálculo novo: separa os muros, põe laje na garagem (área sem paredes embaixo do pavimento de cima), fecha cômodos com parede torta. Projetos antigos ficam sem, para não mudar o que já foi feito</label>
               <label className="chk"><input type="checkbox" checked={regras.pinarAuto} onChange={e => setRegras({ ...regras, pinarAuto: e.target.checked })} /> No encontro em T, pinar a parede que chega e deixar a parede contínua sem emenda quando ela couber num painel só</label>
             </div>
             <h3>Lajes</h3>
