@@ -56,12 +56,19 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
       w.rect('PAINEL', vx, y, p.larg, p.H);
       w.text('NUMERO', vx + .06, y + p.H - .22, .14, String(p.num));
       w.dimH(vx, vx + p.larg, y + p.H + .2, br(p.larg)); w.dimV(vx - .22, y, y + p.H, br(p.H));
+      // pontos de solda nas laterais (4 de cada lado), como na vista do sistema
+      if (cotas) for (let i = 1; i < 5; i++) { const z = y + p.H * i / 5; w.line('SOLDA', vx - .08, z, vx, z, 3); w.line('SOLDA', vx + p.larg, z, vx + p.larg + .08, z, 3); }
       for (const r of p.recortes) {
         w.rect('RECORTE', vx + r.dl, y + r.base, r.w, r.h);
         w.text('TEXTO', vx + r.dl + r.w * .42, y + r.base + Math.min(r.h * .25, .22), .08, r.tipo, 1, 0, true);
         w.dimH(vx + r.dl, vx + r.dl + r.w, y + r.base + r.h - .12, br(r.w)); w.dimV(vx + r.dl + r.w - .1, y + r.base, y + r.base + r.h, br(r.h));
         if (r.dl > .02) w.dimH(vx, vx + r.dl, y + r.base + r.h * .35, br(r.dl));
         if (r.base > .005) w.dimV(vx + r.dl + r.w / 2, y, y + r.base, br(r.base));
+        // bonecas da direita e de cima também cotadas
+        if (cotas) {
+          const dr = p.larg - r.dl - r.w; if (dr > .02) w.dimH(vx + r.dl + r.w, vx + p.larg, y + r.base + r.h * .6, br(dr));
+          const top = p.H - r.base - r.h; if (top > .005) w.dimV(vx + r.dl + r.w / 2, y + r.base + r.h, y + p.H, br(top));
+        }
       }
       vx += p.larg + 1.1;
     }
