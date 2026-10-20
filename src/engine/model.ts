@@ -23,6 +23,7 @@ export interface Regras {
   vigaAltura: number;      // altura da viga (rebaixo nas paredes embaixo dela)
   vigaLargura: number;     // largura da viga
   vigaApoio: number;       // quanto a viga entra em cima da parede de apoio
+  espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
   motor?: number;          // versão do cálculo: projetos salvos antes (sem o campo) continuam com o cálculo antigo (1)
   vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
   vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
@@ -32,7 +33,7 @@ export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15,
-  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, vaoViga: 5.0, beiral: 1.0,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, vaoViga: 5.0, beiral: 1.0,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
@@ -594,6 +595,30 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
         }
         if (larg < r.naoFabricar) aviso = 'n fabricar';
         P.push({ num: 0, trecho: t.id, pav: t.pav, o: t.o, c: t.c, a: pa, b: pb, larg, H: t.H, comp: pb - pa, recortes: rec, aviso });
+      }
+    }
+  }
+  // dois painéis alinhados: o espaço entre eles (coluna, encontro) não passa do máximo; os dois crescem para fechar
+  const max = (r.motor ?? 1) >= 2 ? r.espacoMax : undefined;
+  if (max) {
+    const lin = new Map<string, Painel[]>();
+    for (const p of P) { const k = `${p.pav}|${p.o}|${Math.round(p.c * 20)}`; (lin.get(k) ?? lin.set(k, []).get(k)!).push(p); }
+    for (const ps of lin.values()) {
+      ps.sort((x, y) => x.a - y.a);
+      for (let i = 0; i < ps.length - 1; i++) {
+        const p = ps[i], q = ps[i + 1], fim = p.a + p.larg, gap = q.a - fim;
+        if (gap <= max + 1e-6 || gap > 0.6 || Math.abs(p.c - q.c) > 0.05) continue;
+        // vão entre eles, ou parede que atravessa (o painel dela ocupa o espaço): não é emenda
+        if (VI.some(v => v.pav === p.pav && v.o === p.o && Math.abs(v.c - p.c) < 0.05 && v.a < q.a && v.b > fim)) continue;
+        if (P.some(x => x.pav === p.pav && x.o !== p.o && x.c > fim - 0.02 && x.c < q.a + 0.02 && x.a < p.c - 0.02 && x.a + x.larg > p.c + 0.02)) continue;
+        const e = gap - max;
+        let ep = e / 2, eq = e / 2;
+        if (p.larg + ep > r.larguraMax) { eq += ep - Math.max(0, r.larguraMax - p.larg); ep = Math.max(0, r.larguraMax - p.larg); }
+        if (q.larg + eq > r.larguraMax) { const sobra = q.larg + eq - r.larguraMax; eq -= sobra; ep += Math.min(sobra, Math.max(0, r.larguraMax - p.larg - ep)); }
+        p.larg += ep; q.a -= eq; q.larg += eq; for (const rc of q.recortes) rc.dl += eq;
+        if (q.a - (p.a + p.larg) > max + 0.005) q.aviso = (q.aviso ? q.aviso + ' · ' : '') + `espaço de ${Math.round((q.a - p.a - p.larg) * 100)} cm até o painel vizinho (máx. ${Math.round(max * 100)}) — painéis no limite de largura`;
+        if (p.aviso === 'n fabricar' && p.larg >= r.naoFabricar) p.aviso = undefined;
+        if (q.aviso === 'n fabricar' && q.larg >= r.naoFabricar) q.aviso = undefined;
       }
     }
   }
