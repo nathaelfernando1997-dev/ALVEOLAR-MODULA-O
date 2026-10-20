@@ -52,6 +52,7 @@ export default function App() {
   const [checou, setChecou] = useState(!cloud.nuvemConfigurada);
   const [recuperando, setRecuperando] = useState(false);
   const [locais, setLocais] = useState<Projeto[]>([]);
+  const [colar, setColar] = useState('');
   useEffect(() => {
     if (!cloud.nuvemConfigurada) return;
     cloud.sessao().then(s => { setSess(s); setChecou(true); });
@@ -317,6 +318,21 @@ export default function App() {
               })}
             </tbody></table>
             <button onClick={() => setQuadro([...quadro, { tag: 'P0' + (quadro.length + 1), larg: 0.8, alt: 2.1, peit: 0 }])}>+ adicionar</button>
+            <h3>Colar quadro</h3>
+            <p className="dica">Quando o quadro só existe em PDF: cole uma linha por esquadria — código, largura, altura e (nas janelas) peitoril. Aceita metros ou centímetros, separados por espaço, tab ou ponto e vírgula. Ex.: <code>J1 140 405 50</code> ou <code>PM1 0,70 2,10</code>. Códigos já existentes são atualizados.</p>
+            <textarea rows={6} style={{ width: '100%', fontFamily: 'monospace' }} value={colar} onChange={e => setColar(e.target.value)} placeholder={'J1 140 405 50\nPM1 70 210'} />
+            <button onClick={() => {
+              const novos = colar.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+                const [tag, ...r] = l.split(/[\s;\t]+/);
+                const n = r.map(x => parseFloat(x.replace(',', '.'))).filter(x => !isNaN(x));
+                const m = (x: number | undefined) => x === undefined ? 0 : x > 9 ? x / 100 : x;   // centímetros ou metros
+                const t = tag.toUpperCase();
+                return n.length >= 2 ? { tag: t, larg: m(n[0]), alt: m(n[1]), peit: t.startsWith('J') ? m(n[2]) : 0 } : null;
+              }).filter((x): x is Esquadria => !!x);
+              if (!novos.length) { setErro('Nenhuma linha válida no quadro colado (código, largura, altura e peitoril).'); return; }
+              setQuadro([...quadro.filter(q => !novos.some(n => n.tag === q.tag)), ...novos].sort((a, b) => a.tag.localeCompare(b.tag, 'pt', { numeric: true })));
+              setColar('');
+            }}>Preencher a tabela</button>
             <p className="dica">Etiquetas encontradas nas plantas: {[...new Set(leitura?.tags.map(t => t.text))].join(', ') || 'nenhuma'}</p>
           </section>
         )}
