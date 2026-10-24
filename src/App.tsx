@@ -215,6 +215,8 @@ export default function App() {
       continuarVaos(porPav[i], porPav[i + 1], quadro, regras, al.dx, al.dy);
     }
     const pisos: Trecho[] = [];
+    // por pavimento: deslocamento da planta de cima para esta e áreas descobertas (LAJE IMPERMEÁVEL na planta)
+    const desloc = new Map<string, { baixo: string; dx: number; dy: number }>(), descob = new Map<string, Box[]>();
     ativos.forEach((p, i) => {
       const cima = ativos[i + 1], tc = porPav[i + 1] || [];
       // "LINHA DE PISO" do projeto: viga que serve de apoio para a laje
@@ -284,6 +286,8 @@ export default function App() {
       const txP = leitura.textos.filter(x => /LAJE\s+IMPERME/i.test(x.text) && x.x > p.box.x0 && x.x < p.box.x1 && x.y > p.box.y0 && x.y < p.box.y1);
       const descobertas = txP.length ? ambientes(p, t, pp, vz, { fechar: novo }).filter(a => txP.some(x => x.x > a.x0 && x.x < a.x1 && x.y > a.y0 && x.y < a.y1)).map(a => ({ x0: a.x0, x1: a.x1, y0: a.y0, y1: a.y1 })) : [];
       vz.push(...descobertas);
+      descob.set(p.id, descobertas);
+      if (cima && al) desloc.set(cima.id, { baixo: p.id, dx: al.dx, dy: al.dy });
       // o sentido da laje leva em conta as paredes do pavimento de cima
       // sem parede embaixo da borda da área coberta: viga apoiada em pilares
       const bv: Trecho[] = [];
@@ -299,13 +303,43 @@ export default function App() {
         if (apoia) pisos.push({ ...g.t, id: `${p.id}|gcorpo|${g.t.o}|${g.t.c.toFixed(2)}|${g.a.toFixed(2)}`, s: g.a, e: g.b, vaos: [], esp: regras.vigaLargura });
       }
     });
+    // paredes que passam pela altura da laje (não tem laje dos dois lados):
+    // - em cima do vazio (pé-direito duplo): a parede de cima desce até a parede de baixo (+ espessura da laje)
+    // - em volta de área descoberta (laje impermeável sem cobertura): a parede sobe até o topo da platibanda
+    const desceu = new Set<Painel>(), espLaje = regras.lajeEsp ?? 0.15;
+    if ((regras.motor ?? 1) >= 2) {
+      const esp = espLaje, plat = regras.platibanda ?? 0.4;
+      const temLaje = (pav: string, x: number, y: number) => vazio.pl.some(L => L.pav === pav && x > L.x0 && x < L.x1 && y > L.y0 && y < L.y1);
+      const dentro = (bs: Box[], x: number, y: number) => bs.some(b => x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1);
+      for (const P of vazio.ps) {
+        const m = (P.a + P.b) / 2, d = 0.3;
+        const lados: [number, number][] = P.o === 'H' ? [[m, P.c - d], [m, P.c + d]] : [[P.c - d, m], [P.c + d, m]];
+        const ds = desloc.get(P.pav);
+        if (ds && P.H >= (ativos.find(a => a.id === P.pav)?.altura ?? 0) - 0.01) {
+          const emBaixo = lados.map(([x, y]) => [x + ds.dx, y + ds.dy] as [number, number]);
+          const cb = P.o === 'H' ? P.c + ds.dy : P.c + ds.dx, ab = P.o === 'H' ? P.a + ds.dx : P.a + ds.dy, bb = P.o === 'H' ? P.b + ds.dx : P.b + ds.dy;
+          const paredeEmbaixo = vazio.ts.some(t => t.pav === ds.baixo && t.o === P.o && Math.abs(t.c - cb) < 0.15 && Math.min(t.e, bb) - Math.max(t.s, ab) > 0.3);
+          if (paredeEmbaixo && !emBaixo.some(([x, y]) => temLaje(ds.baixo, x, y))) {
+            P.H += esp; desceu.add(P); P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: sem laje embaixo (vazio), a parede desce até a parede de baixo`;
+          }
+        }
+        const dsc = descob.get(P.pav) || [];
+        if (dsc.length && lados.some(([x, y]) => dentro(dsc, x, y)) && !lados.some(([x, y]) => temLaje(P.pav, x, y))) {
+          P.H += esp + plat; P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: área descoberta, a parede sobe até o topo da platibanda`;
+        }
+      }
+    }
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
     { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv })); }
     // parede de cima que apoia em cima da viga fica mais baixa
+    // (no vazio a viga ocupa a altura da laje: a parede não desce até a parede de baixo)
     for (const v of vazio.vigas) for (const d of v.desconto || []) {
-      const p = vazio.ps.find(x => x.num === d.painel); if (!p || p.H <= d.para) continue;
-      p.H = d.para; p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(d.para)} m: apoia em cima da viga V${v.n}`;
+      const p = vazio.ps.find(x => x.num === d.painel); if (!p) continue;
+      const para = desceu.has(p) ? d.para - espLaje : d.para;
+      if (p.H <= para) continue;
+      if (desceu.has(p)) { desceu.delete(p); p.aviso = p.aviso?.split(' · ').filter(x => !x.includes('(vazio)')).join(' · ') || undefined; }
+      p.H = para; p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(para)} m: apoia em cima da viga V${v.n}`;
     }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
@@ -441,6 +475,7 @@ export default function App() {
                 ['boneca', 'Boneca de transporte nas laterais e embaixo (m)'], ['acrescimoLargura', 'Vão de porta/janela maior em (m)'],
                 ['janelaDesce', 'Janela: recorte desce e sobe (m)'], ['espMin', 'Espessura mínima de parede (m)'], ['espMax', 'Espessura máxima de parede (m)'],
                 ['minParede', 'Trecho mínimo de parede (m)'], ['naoFabricar', 'Marcar "n fabricar" abaixo de (m)'],
+                ['lajeEsp', 'Espessura da laje entre pavimentos (m)'], ['platibanda', 'Platibanda acima da laje de cobertura (m)'],
               ] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
