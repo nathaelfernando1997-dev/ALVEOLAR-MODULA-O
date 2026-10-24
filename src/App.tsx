@@ -291,6 +291,12 @@ export default function App() {
       pisos.push(...bv);
       const m = modularLajes(am, regras, aj, [...t, ...pp, ...bv], cargasDeCima([...t, ...pp, ...bv], tc), bordas);
       vazio.lajes.push(...m.ambs); vazio.pl.push(...m.paineis);
+      // laje apoiada na linha do guarda-corpo (sacada coberta): ali não tem parede, vai viga na borda
+      for (const g of gp) {
+        const apoia = m.ambs.some(L => L.incluida && L.sentido && (L.sentido === 'H' ? g.t.o === 'V' && [L.x0, L.x1].some(x => Math.abs(x - g.t.c) < 0.15) && Math.min(g.b, L.y1) - Math.max(g.a, L.y0) > 0.3
+          : g.t.o === 'H' && [L.y0, L.y1].some(y => Math.abs(y - g.t.c) < 0.15) && Math.min(g.b, L.x1) - Math.max(g.a, L.x0) > 0.3));
+        if (apoia) pisos.push({ ...g.t, id: `${p.id}|gcorpo|${g.t.o}|${g.t.c.toFixed(2)}|${g.a.toFixed(2)}`, s: g.a, e: g.b, vaos: [], esp: regras.vigaLargura });
+      }
     });
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
