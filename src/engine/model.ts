@@ -292,6 +292,7 @@ export interface Ajustes {
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
   laje16?: string[];                       // (antigo) ambientes com laje de 16 cm
   lajeEspAmb?: Record<string, number>;     // espessura da laje por ambiente (m); 16 cm usa treliça TG12, 20 cm TG16, 25 cm TG20
+  lajeEspPainel?: Record<string, number>;  // espessura de um painel de laje só (chave = ambiente@canto), vale mais que a do ambiente
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
 }
@@ -673,7 +674,7 @@ export function numerar(P: Painel[], ordemPav: string[]) {
 // Porta/janela não leva isopor nem concreto; as sobras das barras são usadas (em cima das janelas, nas lajes),
 // então as barras saem do total de metros, sem perda
 export interface LinhaQuant { pav: string; item: 'Paredes' | 'Lajes'; qtd: number; area: number; aberturas: number; esp: number; bruto: number; isoporM: number; isoporPecas: number; isoporM3: number; concreto: number; isoporPerda: number; concretoPerda: number }
-export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; amb: string; comp: number; larg: number; dente?: Box }[], r: Regras, espAmb: (amb: string) => number | undefined = () => undefined): LinhaQuant[] & { barras: number; barrasPerda: number } {
+export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string; amb: string; comp: number; larg: number; dente?: Box }[], r: Regras, espAmb: (p: { amb: string; x0?: number; y0?: number }) => number | undefined = () => undefined): LinhaQuant[] & { barras: number; barrasPerda: number } {
   const out: LinhaQuant[] = [];
   const il = r.isoporLarg ?? 0.12, ia = r.isoporAlt ?? 0.09, ic = r.isoporComp ?? 4, ie = r.isoporEspaco ?? 0.03, cap = r.capeamento ?? 0.025;
   const k = 1 + (r.perda ?? 10) / 100;
@@ -694,7 +695,7 @@ export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string;
     const ls = PL.filter(p => p.pav === pav.id);
     // uma linha por espessura de laje (ambiente alterado para 16 cm, por exemplo)
     const porEsp = new Map<number, typeof ls>();
-    for (const p of ls) { const e = Math.round((espAmb(p.amb) ?? esp) * 1000) / 1000; porEsp.set(e, [...(porEsp.get(e) || []), p]); }
+    for (const p of ls) { const e = Math.round((espAmb(p) ?? esp) * 1000) / 1000; porEsp.set(e, [...(porEsp.get(e) || []), p]); }
     for (const [e, g] of [...porEsp].sort((a, b) => a[0] - b[0]))
       linha(pav.nome, 'Lajes', g.map(p => ({ larg: p.larg, comp: p.comp, area: p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), furos: [] })), e);
   }
