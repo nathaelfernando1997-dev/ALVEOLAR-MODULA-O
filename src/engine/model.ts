@@ -291,7 +291,7 @@ export interface Ajustes {
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
   laje16?: string[];                       // (antigo) ambientes com laje de 16 cm
-  lajeEspAmb?: Record<string, number>;     // espessura da laje por ambiente (m); 16 cm ou mais usa treliça TG12
+  lajeEspAmb?: Record<string, number>;     // espessura da laje por ambiente (m); 16 cm usa treliça TG12, 20 cm TG16, 25 cm TG20
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
 }

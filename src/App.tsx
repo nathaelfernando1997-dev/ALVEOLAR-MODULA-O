@@ -543,8 +543,11 @@ export default function App() {
   );
 }
 
-// treliças de reforço: TG8 (ferro 6,3 mm); TG12 (ferro 8,0 mm) onde a laje é de 16 cm
-const TRELICA = { TG8: 'ferro 6,3 mm', TG12: 'ferro 8,0 mm' } as const;
+// treliças de reforço pela espessura da laje: TG8 (ferro 6,3 mm); TG12 (ferro 8,0 mm) de 16 cm;
+// TG16 (TR 16745, banzo de 7,0 mm) de 20 cm; TG20 (TR 20745, banzo de 7,0 mm) de 25 cm
+const TRELICA = { TG8: 'ferro 6,3 mm', TG12: 'ferro 8,0 mm', TG16: 'TR 16745 · ferro 7,0 mm', TG20: 'TR 20745 · ferro 7,0 mm' } as const;
+const trelicaDaEsp = (e: number): keyof typeof TRELICA => e >= 0.25 - 1e-6 ? 'TG20' : e >= 0.20 - 1e-6 ? 'TG16' : e >= 0.16 - 1e-6 ? 'TG12' : 'TG8';
+const REGRA_TRELICA = 'até 15 cm TG8 · 16 cm TG12 · 20 cm TG16 · 25 cm ou mais TG20';
 // espessura da laje do ambiente (m), quando alterada; o "laje16" antigo vale 16 cm
 const espDoAmb = (aj: Ajustes) => (amb: string) => aj.lajeEspAmb?.[amb] ?? ((aj.laje16 || []).includes(amb) ? 0.16 : undefined);
 function quantTrelicas(pavs: Pavimento[], calc: Calc, aj: Ajustes) {
@@ -552,7 +555,7 @@ function quantTrelicas(pavs: Pavimento[], calc: Calc, aj: Ajustes) {
   for (const pav of pavs) {
     const P = calc.pl.filter(p => p.pav === pav.id), TR = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica');
     for (const tp of trelicasNasLajes(TR, P)) {
-      const pn = P.find(p => p.num === tp.painel), tipo = pn && (espDoAmb(aj)(pn.amb) ?? 0) >= 0.16 - 1e-6 ? 'TG12' : 'TG8';
+      const pn = P.find(p => p.num === tp.painel), tipo = trelicaDaEsp(pn ? espDoAmb(aj)(pn.amb) ?? 0 : 0);
       let l = out.find(x => x.pav === pav.nome && x.tipo === tipo);
       if (!l) out.push(l = { pav: pav.nome, tipo, pecas: 0, metros: 0, cortes: new Map() });
       l.pecas++; l.metros += tp.comp; const k = br(tp.comp); l.cortes.set(k, (l.cortes.get(k) || 0) + 1);
@@ -576,7 +579,7 @@ function TabelaQuantTrelicas({ pavs, calc, aj, perda }: { pavs: Pavimento[]; cal
     <tr><th>Pavimento</th><th>Treliça</th><th>Ferro</th><th>Peças</th><th>Comprimento (m)</th><th>Com {perda}% de perda (m)</th><th>Peças cortadas</th></tr></thead>
     <tbody>{L.map((l, i) => <tr key={i}><td>{l.pav}</td><td>{l.tipo}</td><td>{TRELICA[l.tipo]}</td><td>{l.pecas}</td><td>{br(l.metros)}</td><td><b>{br(l.metros * k)}</b></td>
       <td style={{ textAlign: 'left' }}>{[...l.cortes].sort((a, b) => parseFloat(b[0].replace(',', '.')) - parseFloat(a[0].replace(',', '.'))).map(([c, n]) => `${n} × ${c} m`).join(' · ')}</td></tr>)}
-      {(['TG8', 'TG12'] as const).filter(t => tot(t) > 0).map(t => <tr key={t} className="tot"><td>Total</td><td>{t}</td><td>{TRELICA[t]}</td><td>{L.filter(l => l.tipo === t).reduce((s, l) => s + l.pecas, 0)}</td><td>{br(tot(t))}</td><td>{br(tot(t) * k)}</td><td></td></tr>)}
+      {(Object.keys(TRELICA) as (keyof typeof TRELICA)[]).filter(t => tot(t) > 0).map(t => <tr key={t} className="tot"><td>Total</td><td>{t}</td><td>{TRELICA[t]}</td><td>{L.filter(l => l.tipo === t).reduce((s, l) => s + l.pecas, 0)}</td><td>{br(tot(t))}</td><td>{br(tot(t) * k)}</td><td></td></tr>)}
     </tbody></table>;
 }
 
@@ -866,7 +869,7 @@ function AcoesLaje({ amb, calc, aj, setAj, pav, espPadrao }: { amb: LajeAmb | nu
           if (isFinite(v) && v > 0 && Math.abs(v / 100 - espPadrao) > 1e-6) m[amb.id] = v / 100; else delete m[amb.id];
           setAj({ ...aj, lajeEspAmb: m, laje16: (aj.laje16 || []).filter(x => x !== amb.id) }); }} />
       </label>
-      <p className="dica">{(espDoAmb(aj)(amb.id) ?? espPadrao) >= 0.16 - 1e-6 ? 'Treliça TG12 (ferro 8,0 mm)' : 'Treliça TG8 (ferro 6,3 mm)'} · 16 cm ou mais usa TG12</p>
+      {(() => { const t = trelicaDaEsp(espDoAmb(aj)(amb.id) ?? espPadrao); return <p className="dica">Treliça {t} ({TRELICA[t]}) · {REGRA_TRELICA}</p>; })()}
     </> : <p className="dica">Clique num ambiente na planta.</p>}
   </div>;
 }
@@ -927,7 +930,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
         pgs.push(pg);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: (espDoAmb(aj)(p.amb) ?? 0) >= 0.16 - 1e-6 ? 'TG12' : 'TG8' }))) }} />)}</div>)}</div>
+          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: trelicaDaEsp(espDoAmb(aj)(p.amb) ?? 0) }))) }} />)}</div>)}</div>
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
