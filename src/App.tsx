@@ -544,8 +544,8 @@ export default function App() {
 }
 
 // treliças de reforço pela espessura da laje: TG8 (ferro 6,3 mm); TG12 (ferro 8,0 mm) de 16 cm;
-// TG16 (TR 16745, banzo de 7,0 mm) de 20 cm; TG20 (TR 20745, banzo de 7,0 mm) de 25 cm
-const TRELICA = { TG8: 'ferro 6,3 mm', TG12: 'ferro 8,0 mm', TG16: 'TR 16745 · ferro 7,0 mm', TG20: 'TR 20745 · ferro 7,0 mm' } as const;
+// TG16 (ferro 8,0 mm) de 20 cm; TG20 (ferro 8,0 mm) de 25 cm
+const TRELICA = { TG8: 'ferro 6,3 mm', TG12: 'ferro 8,0 mm', TG16: 'ferro 8,0 mm', TG20: 'ferro 8,0 mm' } as const;
 const trelicaDaEsp = (e: number): keyof typeof TRELICA => e >= 0.25 - 1e-6 ? 'TG20' : e >= 0.20 - 1e-6 ? 'TG16' : e >= 0.16 - 1e-6 ? 'TG12' : 'TG8';
 const REGRA_TRELICA = 'até 15 cm TG8 · 16 cm TG12 · 20 cm TG16 · 25 cm ou mais TG20';
 // espessura da laje do ambiente (m), quando alterada; o "laje16" antigo vale 16 cm
