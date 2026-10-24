@@ -244,7 +244,11 @@ export default function App() {
       vazio.muros.push(...semVp.filter(x => !t.includes(x)));
       // guarda-corpo é feito na obra: não vira painel (a laje continua contando com ele no contorno)
       const noBox = (x: { x: number; y: number }) => x.x > p.box.x0 - 1 && x.x < p.box.x1 + 1 && x.y > p.box.y0 - 1 && x.y < p.box.y1 + 1;
-      const gp = novo ? guardaCorpos(i > 0, t, amb0, leitura.textos.filter(noBox)).filter(g => !(aj.naoMuro || []).includes(g.t.id)) : [];
+      const grades = novo ? leitura.prims.filter(q => q.kind === 'line' && /BALA[UÚ]ST|CORRIM|GUARDA|RAIL|GRADIL/i.test(q.layer) && q.pts.every(([x, y]) => noBox({ x, y })))
+        .flatMap(q => q.pts.slice(1).map((b, k) => [q.pts[k], b] as const))
+        .flatMap(([[x1, y1], [x2, y2]]): { o: 'H' | 'V'; c: number; a: number; b: number }[] => Math.abs(y1 - y2) < 0.02 ? [{ o: 'H', c: (y1 + y2) / 2, a: Math.min(x1, x2), b: Math.max(x1, x2) }]
+          : Math.abs(x1 - x2) < 0.02 ? [{ o: 'V', c: (x1 + x2) / 2, a: Math.min(y1, y2), b: Math.max(y1, y2) }] : []) : [];
+      const gp = novo ? guardaCorpos(i > 0, t, amb0, leitura.textos.filter(noBox), grades).filter(g => !(aj.naoMuro || []).includes(g.t.id)) : [];
       // a parede fica só com o que não é guarda-corpo (pedaços de mais de 30 cm, com os vãos que caem neles)
       const tp: Trecho[] = [];
       for (const x of t) {
@@ -261,7 +265,13 @@ export default function App() {
       if (novo) {
         const ehVazio = (a: { x0: number; x1: number; y0: number; y1: number }) => leitura.textos.some(x => /\bVAZIO\b/i.test(x.text) && x.x > a.x0 && x.x < a.x1 && x.y > a.y0 && x.y < a.y1);
         const esps = t.map(x => x.esp).sort((a, b) => a - b);
-        vazio.areaPav.push({ pav: p.id, area: areaConstruida(amb0.filter(a => !ehVazio(a)), esps[Math.floor(esps.length / 2)] ?? 0.15) });
+        // nos pavimentos de cima, área descoberta (solarium, sacada, terraço) ou ambiente com um lado todo aberto
+        // (vão livre na fachada) não conta como área construída
+        type R4 = { x0: number; x1: number; y0: number; y1: number };
+        const descoberto = (a: R4) => i > 0 && (leitura.textos.some(x => /SOLARIUM|SOL[ÁA]RIO|SACADA|TERRA[ÇC]O|DECK/i.test(x.text) && x.x > a.x0 && x.x < a.x1 && x.y > a.y0 && x.y < a.y1) ||
+          ([['H', a.y0, a.x0, a.x1], ['H', a.y1, a.x0, a.x1], ['V', a.x0, a.y0, a.y1], ['V', a.x1, a.y0, a.y1]] as const).some(([o, c, l0, l1]) =>
+            t.filter(x => x.o === o && Math.abs(x.c - c) < 0.1).reduce((s, x) => s + x.vaos.filter(v => !v.tag && v.inteiro).reduce((q, v) => q + Math.max(0, Math.min(v.b, l1) - Math.max(v.a, l0)), 0), 0) >= 0.6 * (l1 - l0)));
+        vazio.areaPav.push({ pav: p.id, area: areaConstruida(amb0.filter(a => !ehVazio(a) && !descoberto(a)), esps[Math.floor(esps.length / 2)] ?? 0.15) });
       }
       const r = paineis(tp, regras, aj);
       vazio.ts.push(...tp); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
@@ -617,7 +627,7 @@ function Orcamento({ linhas, ativos, pl, areaPav, regras, setRegras, nome }: { l
         {num('orcValor1', 'Ou valor global (R$)', reais(tp + tl))}
       </div>
       <h3>Opção 2 — obra cinza (paredes e lajes da opção 1 + parte cinza)</h3>
-      <p className="dica">Área construída pelo projeto: {areaPav.map(a => `${ativos.find(p => p.id === a.pav)?.nome ?? ''} ${br(a.area)} m²`).join(' + ')} = <b>{br(acCalc)} m²</b> (pela face de fora das paredes, sem os vazios). Se o quadro de áreas do projeto der outro valor, digite abaixo.</p>
+      <p className="dica">Área construída pelo projeto: {areaPav.map(a => `${ativos.find(p => p.id === a.pav)?.nome ?? ''} ${br(a.area)} m²`).join(' + ')} = <b>{br(acCalc)} m²</b> (pela face de fora das paredes, sem vazios e sem áreas descobertas como solarium e sacada). Se o quadro de áreas do projeto der outro valor, digite abaixo.</p>
       <div className="grade">
         {num('orcCinza', 'Parte cinza — valor por m² de área construída (R$)')}{num('orcAreaCinza', 'Área construída (m²)', br(acCalc || al))}
         {num('orcValor2', 'Ou valor global (R$)', reais(op1 + ac * vc))}
