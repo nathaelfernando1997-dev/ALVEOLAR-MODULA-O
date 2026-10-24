@@ -30,6 +30,10 @@ export interface Regras {
   isoporEspaco?: number;   // concreto entre um isopor e o outro: 0,03
   capeamento?: number;     // concreto em cima e embaixo do isopor: 0,025
   perda?: number;          // % de perda no isopor e no concreto: 10
+  // orçamento: valores por m²; área construída em branco = área das lajes; valor global em branco = calculado
+  orcParede?: number; orcLaje?: number; orcCinza?: number; orcAreaCinza?: number; orcValor1?: number; orcValor2?: number;
+  orcCliente?: string; orcObra?: string; orcValidade?: number; orcInicio?: string; orcPrazos?: string; orcPagamento?: string;
+  orcEspParede?: number; orcEspLaje?: number;
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
   motorFixo?: boolean;     // o usuário desligou o cálculo novo neste projeto (senão todo projeto abre no cálculo atual)
   motor?: number;          // versão do cálculo: projetos salvos antes (sem o campo) continuam com o cálculo antigo (1)
@@ -696,6 +700,22 @@ export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string;
   }
   const total = out.reduce((s, l) => s + l.isoporM, 0);
   return Object.assign(out, { barras: Math.ceil(total / ic - 1e-6), barrasPerda: Math.ceil(total * k / ic - 1e-6) });
+}
+
+// orçamento: área cheia das paredes (comprimento de eixo a eixo × pé-direito, sem descontar portas, janelas
+// nem a folga dos painéis) e área das lajes, por pavimento
+export interface LinhaOrc { pav: string; paredes: number; lajes: number }
+export function orcamentoAreas(pavs: Pavimento[], ts: Trecho[], PL: { pav: string; comp: number; larg: number; dente?: Box }[]): LinhaOrc[] {
+  return pavs.map(p => ({
+    pav: p.nome,
+    paredes: ts.filter(t => t.pav === p.id).reduce((s, t) => {
+      // de eixo a eixo: a ponta que para na face da parede perpendicular vai até o eixo dela
+      const T = ts.filter(q => q.pav === p.id && q.o !== t.o && q.s - 0.12 <= t.c && t.c <= q.e + 0.12);
+      const ate = (lim: number, dir: 1 | -1) => T.filter(q => dir * (q.c - lim) > 0 && dir * (q.c - lim) <= 0.3).reduce((m, q) => dir * (q.c - m) > 0 ? q.c : m, lim);
+      return s + (ate(t.e, 1) - ate(t.s, -1)) * t.H;
+    }, 0),
+    lajes: PL.filter(l => l.pav === p.id).reduce((s, l) => s + l.comp * l.larg - (l.dente ? (l.dente.x1 - l.dente.x0) * (l.dente.y1 - l.dente.y0) : 0), 0),
+  })).filter(l => l.paredes > 0 || l.lajes > 0);
 }
 
 export function resumo(P: Painel[]) {

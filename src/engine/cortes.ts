@@ -94,9 +94,12 @@ export function adivinharPapeis(d: Dxf, regioes: Box[], tags: { x: number; y: nu
     if (mi >= 0 && (!tituloDe.has(mi) || md < tituloDe.get(mi)!.d)) tituloDe.set(mi, { t: up, d: md });
   }
   const titulo = (_b: Box, i: number) => tituloDe.get(i)?.t ?? '';
-  const base = regioes.map(b => {
+  const base = regioes.map((b, i) => {
     const nTags = tags.filter(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3).length;
     if (nTags >= 2) return 'planta' as const;
+    // planta baixa sem etiquetas de portas/janelas (só para orçamento): vale pelo título
+    const ti = titulo(b, i);
+    if (/PLANTA\s*BAIXA/.test(ti) && !NAO.test(ti)) return 'planta' as const;
     const nV = d.cotas.filter(k => k.vertical && k.x > b.x0 - 2 && k.x < b.x1 + 2 && k.y > b.y0 - 1 && k.y < b.y1 + 1 && k.valor > 2 && k.valor < 4.6).length;
     return nV >= 1 ? 'corte' as const : 'nao' as const;
   });

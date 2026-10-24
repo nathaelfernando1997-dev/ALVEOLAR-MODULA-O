@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto } from './engine/lajes.ts';
@@ -9,6 +9,8 @@ import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar } from './engine/vigas.ts';
 import type { Viga, TrelicaPainel } from './engine/vigas.ts';
+import { gerarProposta } from './engine/proposta.ts';
+import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
@@ -17,7 +19,7 @@ import type { Session } from '@supabase/supabase-js';
 import { Login } from './Login.tsx';
 import type { Projeto, Config } from './db.ts';
 
-type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao';
+type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'orcamento';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
 const baixar = (nome: string, conteudo: string, tipo: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
@@ -277,7 +279,7 @@ export default function App() {
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
   if (cloud.nuvemConfigurada && (!checou || !sess || recuperando)) return <Login carregando={!checou} recuperando={recuperando} fimRecuperacao={() => setRecuperando(false)} />;
-  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos']];
+  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['orcamento', '10. Orçamento']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
     <div className="app">
@@ -478,6 +480,10 @@ export default function App() {
           </section>
         )}
 
+        {aba === 'orcamento' && leitura && (
+          ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos e informe o pé-direito.</p></section> :
+          <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl)} ativos={ativos} pl={calc.pl} regras={regras} setRegras={setRegras} nome={projNome || nome} />
+        )}
         {aba === 'impressao' && leitura && (
           <section>
             <div className="card noprint">
@@ -535,6 +541,86 @@ function TabelaQuantTrelicas({ pavs, calc, aj, perda }: { pavs: Pavimento[]; cal
       <td style={{ textAlign: 'left' }}>{[...l.cortes].sort((a, b) => parseFloat(b[0].replace(',', '.')) - parseFloat(a[0].replace(',', '.'))).map(([c, n]) => `${n} × ${c} m`).join(' · ')}</td></tr>)}
       {(['TG8', 'TG12'] as const).filter(t => tot(t) > 0).map(t => <tr key={t} className="tot"><td>Total</td><td>{t}</td><td>{TRELICA[t]}</td><td>{L.filter(l => l.tipo === t).reduce((s, l) => s + l.pecas, 0)}</td><td>{br(tot(t))}</td><td>{br(tot(t) * k)}</td><td></td></tr>)}
     </tbody></table>;
+}
+
+// orçamento: paredes (área cheia) e lajes; opção 1 só paredes e lajes, opção 2 a obra cinza (por m² de área construída)
+const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const reais = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function Orcamento({ linhas, ativos, pl, regras, setRegras, nome }: { linhas: ReturnType<typeof orcamentoAreas>; ativos: Pavimento[]; pl: PainelLaje[]; regras: Regras; setRegras: (r: Regras) => void; nome: string }) {
+  const [erro, setErro] = useState('');
+  const ap = linhas.reduce((s, l) => s + l.paredes, 0), al = linhas.reduce((s, l) => s + l.lajes, 0);
+  const vp = regras.orcParede ?? 0, vl = regras.orcLaje ?? 0, vc = regras.orcCinza ?? 0;
+  const ac = regras.orcAreaCinza || al;
+  const tp = ap * vp, tl = al * vl;
+  const op1 = regras.orcValor1 || tp + tl, op2 = regras.orcValor2 || ac * vc;
+  const num = (k: 'orcParede' | 'orcLaje' | 'orcCinza' | 'orcAreaCinza' | 'orcValidade' | 'orcValor1' | 'orcValor2' | 'orcEspParede' | 'orcEspLaje', rot: string, ph?: string) =>
+    <label>{rot}<input type="number" step="0.01" placeholder={ph} value={regras[k] ?? ''} onChange={e => setRegras({ ...regras, [k]: e.target.value === '' ? undefined : parseFloat(e.target.value) })} /></label>;
+  const txt = (k: 'orcCliente' | 'orcObra' | 'orcInicio' | 'orcPrazos' | 'orcPagamento', rot: string, ph?: string) =>
+    <label>{rot}<input value={regras[k] ?? ''} placeholder={ph} onChange={e => setRegras({ ...regras, [k]: e.target.value })} /></label>;
+  const validade = regras.orcValidade ?? 5;
+  const alturas = [...new Set(ativos.map(p => br(p.altura)))];
+  const campos = (valor: number): Record<string, string> => ({
+    CLIENTE: regras.orcCliente || '', ENDERECO: regras.orcObra || '', DATA: new Date().toLocaleDateString('pt-BR'),
+    INICIO: regras.orcInicio || 'A combinar', PRAZOS: regras.orcPrazos || 'A combinar', PAGAMENTO: regras.orcPagamento || 'A combinar',
+    VALIDADE: `${validade} (${numeroPorExtenso(validade).toLowerCase()}) dias`,
+    AREA_CONSTRUIDA: br(ac), M2_PAREDES: br(ap), M2_LAJES: br(al), M2_TOTAL: br(ap + al),
+    ALTURA_PAREDES: alturas.length > 1 ? alturas.slice(0, -1).join(', ') + ' e ' + alturas[alturas.length - 1] : alturas[0] ?? '',
+    ESP_PAREDE: String(regras.orcEspParede ?? 14), ESP_LAJE: String(regras.orcEspLaje ?? 15),
+    VAO_LAJE: br(Math.max(0, ...pl.map(p => p.comp))),
+    VALOR: reais(valor), VALOR_EXTENSO: reaisPorExtenso(valor),
+  });
+  const baixar = async (modelo: 'proposta-paredes-lajes' | 'proposta-obra-cinza', valor: number) => {
+    setErro('');
+    try {
+      const b = await gerarProposta(modelo, campos(valor));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+      a.download = `${modelo === 'proposta-paredes-lajes' ? 'Proposta paredes e lajes' : 'Proposta obra cinza'} - ${regras.orcCliente || nome}.docx`; a.click();
+    } catch (e) { setErro((e as Error).message); }
+  };
+  return <section>
+    <div className="card noprint">
+      <h2>Orçamento</h2>
+      <p className="dica">Paredes pela área cheia: comprimento de cada parede × pé-direito, <b>sem descontar portas, janelas nem os 5 cm dos painéis</b>. Lajes pela área dos painéis. Para orçar só pela planta baixa, marque a planta na aba Desenhos e informe o pé-direito lá.</p>
+      <div className="grade">
+        {txt('orcCliente', 'Cliente')}{txt('orcObra', 'Endereço da obra')}
+        {txt('orcInicio', 'Previsão de início', 'A combinar')}{txt('orcPrazos', 'Prazos', 'A combinar')}{txt('orcPagamento', 'Condições de pagamento', 'A combinar')}
+        {num('orcValidade', 'Validade da proposta (dias)', '5')}
+        {num('orcEspParede', 'Espessura da parede no texto (cm)', '14')}{num('orcEspLaje', 'Espessura da laje no texto (cm)', '15')}
+      </div>
+      <h3>Opção 1 — paredes e lajes</h3>
+      <div className="grade">
+        {num('orcParede', 'Paredes — valor por m² (R$)')}{num('orcLaje', 'Lajes — valor por m² (R$)')}
+        {num('orcValor1', 'Ou valor global (R$)', reais(tp + tl))}
+      </div>
+      <h3>Opção 2 — obra cinza (paredes, lajes e parte cinza)</h3>
+      <div className="grade">
+        {num('orcCinza', 'Valor por m² de área construída (R$)')}{num('orcAreaCinza', 'Área construída (m²)', `${br(al)} (área das lajes)`)}
+        {num('orcValor2', 'Ou valor global (R$)', reais(ac * vc))}
+      </div>
+      <div className="botoes">
+        <button onClick={() => baixar('proposta-paredes-lajes', op1)}>Baixar proposta paredes e lajes (Word)</button>
+        <button onClick={() => baixar('proposta-obra-cinza', op2)}>Baixar proposta obra cinza (Word)</button>
+        <button onClick={() => window.print()}>Imprimir resumo</button>
+      </div>
+      {erro && <p className="erro">{erro}</p>}
+    </div>
+    <div className="folhas"><div className="folha orc">
+      <div className="cab">ORÇAMENTO — {(regras.orcObra || nome).toUpperCase()}</div>
+      <p>{regras.orcCliente ? <>Cliente: <b>{regras.orcCliente}</b> · </> : null}Data: {new Date().toLocaleDateString('pt-BR')} · Validade: {validade} dias · Pé-direito: {alturas.join(' / ')} m</p>
+      <table className="tquant"><thead><tr><th>Pavimento</th><th>Paredes (m²)</th><th>Lajes (m²)</th></tr></thead>
+        <tbody>{linhas.map(l => <tr key={l.pav}><td>{l.pav}</td><td>{br(l.paredes)}</td><td>{br(l.lajes)}</td></tr>)}
+          <tr className="tot"><td>Total</td><td>{br(ap)}</td><td>{br(al)}</td></tr>
+          <tr className="tot"><td>Total de painéis</td><td colSpan={2}>{br(ap + al)} m²</td></tr></tbody></table>
+      <table className="tquant"><thead><tr><th colSpan={4}>OPÇÃO 1 — PAREDES E LAJES</th></tr><tr><th>Item</th><th>Quantidade</th><th>Valor unitário</th><th>Total</th></tr></thead>
+        <tbody><tr><td>Paredes</td><td>{br(ap)} m²</td><td>{moeda(vp)}</td><td>{moeda(tp)}</td></tr>
+          <tr><td>Lajes</td><td>{br(al)} m²</td><td>{moeda(vl)}</td><td>{moeda(tl)}</td></tr>
+          <tr className="tot"><td colSpan={3}>Valor global{regras.orcValor1 ? ' (informado)' : ''}</td><td>{moeda(op1)}</td></tr></tbody></table>
+      <table className="tquant"><thead><tr><th colSpan={4}>OPÇÃO 2 — OBRA CINZA</th></tr><tr><th>Item</th><th>Quantidade</th><th>Valor unitário</th><th>Total</th></tr></thead>
+        <tbody><tr><td>Área construída</td><td>{br(ac)} m²</td><td>{moeda(vc)}</td><td>{moeda(ac * vc)}</td></tr>
+          <tr className="tot"><td colSpan={3}>Valor global{regras.orcValor2 ? ' (informado)' : ''}</td><td>{moeda(op2)}</td></tr></tbody></table>
+      <div className="rod"><span>Paredes pela área cheia (comprimento × pé-direito), sem descontar portas e janelas · lajes pela área dos painéis</span><span>{nome}</span></div>
+    </div></div>
+  </section>;
 }
 
 // quadro de m² e m³ por pavimento
