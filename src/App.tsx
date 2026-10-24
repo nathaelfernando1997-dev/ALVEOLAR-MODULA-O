@@ -4,7 +4,7 @@ import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
-import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto } from './engine/lajes.ts';
+import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar } from './engine/vigas.ts';
@@ -27,7 +27,7 @@ const baixar = (nome: string, conteudo: string, tipo: string) => {
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
-interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[] }
+interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; areaPav: { pav: string; area: number }[] }
 
 export default function App() {
   const [aba, setAbaEstado] = useState<Aba>('arquivo');
@@ -203,7 +203,7 @@ export default function App() {
   const ativos = pavs.filter(p => p.ativo);
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
-    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [] };
+    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], areaPav: [] };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
     // linhas do desenho desta planta (a projeção do beiral pode ficar até 2,5 m para fora das paredes)
@@ -242,8 +242,29 @@ export default function App() {
         : x.c > a.y0 - 0.1 && x.c < a.y1 + 0.1 && Math.min(x.e, a.x1) - Math.max(x.s, a.x0) > Math.min(0.3, (x.e - x.s) / 2));
       const t = amb0.length ? semVp.filter(encosta) : semVp;
       vazio.muros.push(...semVp.filter(x => !t.includes(x)));
-      const r = paineis(t, regras, aj);
-      vazio.ts.push(...t); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
+      // guarda-corpo é feito na obra: não vira painel (a laje continua contando com ele no contorno)
+      const noBox = (x: { x: number; y: number }) => x.x > p.box.x0 - 1 && x.x < p.box.x1 + 1 && x.y > p.box.y0 - 1 && x.y < p.box.y1 + 1;
+      const gp = novo ? guardaCorpos(i > 0, t, amb0, leitura.textos.filter(noBox)).filter(g => !(aj.naoMuro || []).includes(g.t.id)) : [];
+      // a parede fica só com o que não é guarda-corpo (pedaços de mais de 30 cm, com os vãos que caem neles)
+      const tp: Trecho[] = [];
+      for (const x of t) {
+        const gs = gp.filter(g => g.t === x).sort((p, q) => p.a - q.a);
+        if (!gs.length) { tp.push(x); continue; }
+        let s0 = x.s, k = 0;
+        for (const g of [...gs, { a: x.e, b: x.e }]) {
+          if (g.a - s0 >= 0.3) tp.push({ ...x, id: k++ ? `${x.id}|${s0.toFixed(2)}` : x.id, s: s0, e: g.a, vaos: x.vaos.filter(v => (v.a + v.b) / 2 > s0 && (v.a + v.b) / 2 < g.a) });
+          s0 = Math.max(s0, g.b);
+        }
+        vazio.guardas.push(...gs.map(g => ({ ...x, s: g.a, e: g.b, vaos: [] })));
+      }
+      // área construída do pavimento: ambientes (com garagem/varanda coberta), sem os que são VAZIO, pela face de fora das paredes
+      if (novo) {
+        const ehVazio = (a: { x0: number; x1: number; y0: number; y1: number }) => leitura.textos.some(x => /\bVAZIO\b/i.test(x.text) && x.x > a.x0 && x.x < a.x1 && x.y > a.y0 && x.y < a.y1);
+        const esps = t.map(x => x.esp).sort((a, b) => a - b);
+        vazio.areaPav.push({ pav: p.id, area: areaConstruida(amb0.filter(a => !ehVazio(a)), esps[Math.floor(esps.length / 2)] ?? 0.15) });
+      }
+      const r = paineis(tp, regras, aj);
+      vazio.ts.push(...tp); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
       // projeções de laje/beiral desta planta e áreas marcadas VAZIO no pavimento de cima
       const bordas = leitura.linhas.filter(l => l.tipo === 'proj' && naCaixa(p.box, l));
       const vz = cima && al ? vaziosDeCima(cima, tc, leitura.textos, al.dx, al.dy) : [];
@@ -482,7 +503,7 @@ export default function App() {
 
         {aba === 'orcamento' && leitura && (
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos e informe o pé-direito.</p></section> :
-          <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl)} ativos={ativos} pl={calc.pl} regras={regras} setRegras={setRegras} nome={projNome || nome} />
+          <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl)} ativos={ativos} pl={calc.pl} areaPav={calc.areaPav} regras={regras} setRegras={setRegras} nome={projNome || nome} />
         )}
         {aba === 'impressao' && leitura && (
           <section>
@@ -546,13 +567,16 @@ function TabelaQuantTrelicas({ pavs, calc, aj, perda }: { pavs: Pavimento[]; cal
 // orçamento: paredes (área cheia) e lajes; opção 1 só paredes e lajes, opção 2 a obra cinza (por m² de área construída)
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const reais = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-function Orcamento({ linhas, ativos, pl, regras, setRegras, nome }: { linhas: ReturnType<typeof orcamentoAreas>; ativos: Pavimento[]; pl: PainelLaje[]; regras: Regras; setRegras: (r: Regras) => void; nome: string }) {
+function Orcamento({ linhas, ativos, pl, areaPav, regras, setRegras, nome }: { linhas: ReturnType<typeof orcamentoAreas>; ativos: Pavimento[]; pl: PainelLaje[]; areaPav: { pav: string; area: number }[]; regras: Regras; setRegras: (r: Regras) => void; nome: string }) {
   const [erro, setErro] = useState('');
   const ap = linhas.reduce((s, l) => s + l.paredes, 0), al = linhas.reduce((s, l) => s + l.lajes, 0);
   const vp = regras.orcParede ?? 0, vl = regras.orcLaje ?? 0, vc = regras.orcCinza ?? 0;
-  const ac = regras.orcAreaCinza || al;
+  // área construída: soma dos pavimentos pelo contorno externo das paredes (sem vazios); dá para corrigir à mão
+  const acCalc = areaPav.reduce((s, a) => s + a.area, 0);
+  const ac = regras.orcAreaCinza || acCalc || al;
   const tp = ap * vp, tl = al * vl;
-  const op1 = regras.orcValor1 || tp + tl, op2 = regras.orcValor2 || ac * vc;
+  // obra cinza = painéis (paredes + lajes) + parte cinza por m² de área construída
+  const op1 = regras.orcValor1 || tp + tl, op2 = regras.orcValor2 || op1 + ac * vc;
   const num = (k: 'orcParede' | 'orcLaje' | 'orcCinza' | 'orcAreaCinza' | 'orcValidade' | 'orcValor1' | 'orcValor2' | 'orcEspParede' | 'orcEspLaje', rot: string, ph?: string) =>
     <label>{rot}<input type="number" step="0.01" placeholder={ph} value={regras[k] ?? ''} onChange={e => setRegras({ ...regras, [k]: e.target.value === '' ? undefined : parseFloat(e.target.value) })} /></label>;
   const txt = (k: 'orcCliente' | 'orcObra' | 'orcInicio' | 'orcPrazos' | 'orcPagamento', rot: string, ph?: string) =>
@@ -592,10 +616,11 @@ function Orcamento({ linhas, ativos, pl, regras, setRegras, nome }: { linhas: Re
         {num('orcParede', 'Paredes — valor por m² (R$)')}{num('orcLaje', 'Lajes — valor por m² (R$)')}
         {num('orcValor1', 'Ou valor global (R$)', reais(tp + tl))}
       </div>
-      <h3>Opção 2 — obra cinza (paredes, lajes e parte cinza)</h3>
+      <h3>Opção 2 — obra cinza (paredes e lajes da opção 1 + parte cinza)</h3>
+      <p className="dica">Área construída pelo projeto: {areaPav.map(a => `${ativos.find(p => p.id === a.pav)?.nome ?? ''} ${br(a.area)} m²`).join(' + ')} = <b>{br(acCalc)} m²</b> (pela face de fora das paredes, sem os vazios). Se o quadro de áreas do projeto der outro valor, digite abaixo.</p>
       <div className="grade">
-        {num('orcCinza', 'Valor por m² de área construída (R$)')}{num('orcAreaCinza', 'Área construída (m²)', `${br(al)} (área das lajes)`)}
-        {num('orcValor2', 'Ou valor global (R$)', reais(ac * vc))}
+        {num('orcCinza', 'Parte cinza — valor por m² de área construída (R$)')}{num('orcAreaCinza', 'Área construída (m²)', br(acCalc || al))}
+        {num('orcValor2', 'Ou valor global (R$)', reais(op1 + ac * vc))}
       </div>
       <div className="botoes">
         <button onClick={() => baixar('proposta-paredes-lajes', op1)}>Baixar proposta paredes e lajes (Word)</button>
@@ -616,7 +641,8 @@ function Orcamento({ linhas, ativos, pl, regras, setRegras, nome }: { linhas: Re
           <tr><td>Lajes</td><td>{br(al)} m²</td><td>{moeda(vl)}</td><td>{moeda(tl)}</td></tr>
           <tr className="tot"><td colSpan={3}>Valor global{regras.orcValor1 ? ' (informado)' : ''}</td><td>{moeda(op1)}</td></tr></tbody></table>
       <table className="tquant"><thead><tr><th colSpan={4}>OPÇÃO 2 — OBRA CINZA</th></tr><tr><th>Item</th><th>Quantidade</th><th>Valor unitário</th><th>Total</th></tr></thead>
-        <tbody><tr><td>Área construída</td><td>{br(ac)} m²</td><td>{moeda(vc)}</td><td>{moeda(ac * vc)}</td></tr>
+        <tbody><tr><td>Paredes e lajes (opção 1)</td><td>{br(ap + al)} m²</td><td></td><td>{moeda(op1)}</td></tr>
+          <tr><td>Parte cinza (área construída)</td><td>{br(ac)} m²</td><td>{moeda(vc)}</td><td>{moeda(ac * vc)}</td></tr>
           <tr className="tot"><td colSpan={3}>Valor global{regras.orcValor2 ? ' (informado)' : ''}</td><td>{moeda(op2)}</td></tr></tbody></table>
       <div className="rod"><span>Paredes pela área cheia (comprimento × pé-direito), sem descontar portas e janelas · lajes pela área dos painéis</span><span>{nome}</span></div>
     </div></div>
@@ -662,6 +688,10 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
     <div className="planta">
       <ZoomSvg vb={q.vb}>
         <g dangerouslySetInnerHTML={{ __html: base }} />
+        {calc.guardas.filter(m => m.pav === pav.id).map(m => {
+          const [x1, y1, x2, y2] = m.o === 'H' ? [m.s, m.c, m.e, m.c] : [m.c, m.s, m.c, m.e];
+          return <line key={'g' + m.id} x1={q.X(x1)} y1={q.Y(y1)} x2={q.X(x2)} y2={q.Y(y2)} stroke="rgba(230,120,0,.5)" strokeWidth={14} strokeDasharray="4 6"><title>Guarda-corpo — feito na obra, não modulado</title></line>;
+        })}
         {calc.muros.filter(m => m.pav === pav.id).map(m => {
           const [x1, y1, x2, y2] = m.o === 'H' ? [m.s, m.c, m.e, m.c] : [m.c, m.s, m.c, m.e];
           return <line key={m.id} x1={q.X(x1)} y1={q.Y(y1)} x2={q.X(x2)} y2={q.Y(y2)} stroke="rgba(120,120,120,.45)" strokeWidth={14} strokeDasharray="10 6"><title>Muro — não modulado</title></line>;
@@ -758,7 +788,12 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
       <ul className="dica">{calc.muros.filter(m => m.pav === pav.id).map(m => <li key={m.id}>{m.o === 'H' ? 'horizontal' : 'vertical'} de {br(m.e - m.s)} m{' '}
         <button onClick={() => setAj({ ...aj, naoMuro: [...(aj.naoMuro || []), m.id] })}>é parede</button></li>)}</ul>
     </>}
-    {(aj.naoMuro || []).length > 0 && <button onClick={() => setAj({ ...aj, naoMuro: [] })}>Voltar a separar os muros automaticamente</button>}
+    {calc.guardas.some(m => m.pav === pav.id) && <>
+      <p className="dica">Guarda-corpo (feito na obra) — não é modulado:</p>
+      <ul className="dica">{calc.guardas.filter(m => m.pav === pav.id).map(m => <li key={m.id}>{m.o === 'H' ? 'horizontal' : 'vertical'} de {br(m.e - m.s)} m{' '}
+        <button onClick={() => setAj({ ...aj, naoMuro: [...(aj.naoMuro || []), m.id] })}>é parede</button></li>)}</ul>
+    </>}
+    {(aj.naoMuro || []).length > 0 && <button onClick={() => setAj({ ...aj, naoMuro: [] })}>Voltar a separar os muros e guarda-corpos automaticamente</button>}
     {calc.vigasParede.some(m => m.pav === pav.id) && <>
       <p className="dica">Vigas no lugar de parede (a laje apoia nelas):</p>
       <ul className="dica">{calc.vigasParede.filter(m => m.pav === pav.id).map(m => <li key={m.id}>{m.o === 'H' ? 'horizontal' : 'vertical'} de {br(m.e - m.s)} m{' '}

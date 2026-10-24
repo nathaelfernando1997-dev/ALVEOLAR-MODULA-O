@@ -383,3 +383,55 @@ export function vaziosDeCima(cima: Pavimento, tc: Trecho[], textos: { text: stri
   const dentro = (a: Ambiente, re: RegExp) => tx.some(t => re.test(t.text.toUpperCase()) && t.x > a.x0 && t.x < a.x1 && t.y > a.y0 && t.y < a.y1);
   return ambientes(cima, tc).filter(a => dentro(a, /\bVAZIO\b/) && !dentro(a, /LAJE/)).map(a => ({ x0: a.x0 + dx, x1: a.x1 + dx, y0: a.y0 + dy, y1: a.y1 + dy }));
 }
+
+// guarda-corpo (feito na obra, não é fabricado): parede com o texto GUARDA-CORPO junto dela; e, nos pavimentos
+// de cima, os lados de sacada/varanda/terraço que dão para fora (o Revit desenha o guarda-corpo como parede)
+// devolve o pedaço de cada parede que é guarda-corpo (a parede lateral da sacada continua parede no resto)
+export function guardaCorpos(acima: boolean, ts: Trecho[], ambs: Ambiente[], textos: { text: string; x: number; y: number }[]): { t: Trecho; a: number; b: number }[] {
+  const out: { t: Trecho; a: number; b: number }[] = [];
+  const add = (t: Trecho, a: number, b: number) => { if (!out.some(o => o.t === t && o.a <= a + 0.05 && o.b >= b - 0.05)) out.push({ t, a, b }); };
+  const pd = (t: Trecho, x: number, y: number) => Math.abs(t.o === 'H' ? y - t.c : x - t.c);
+  const ao = (t: Trecho, x: number, y: number) => { const al = t.o === 'H' ? x : y; return al >= t.s - 0.3 && al <= t.e + 0.3; };
+  for (const tx of textos.filter(x => /GUARDA[\s.-]*CORPO/i.test(x.text))) {
+    const t = ts.filter(q => ao(q, tx.x, tx.y) && pd(q, tx.x, tx.y) <= 0.6).sort((p, q) => pd(p, tx.x, tx.y) - pd(q, tx.x, tx.y))[0];
+    if (t) add(t, t.s, t.e);
+  }
+  if (acima) {
+    const dentro = (a: Ambiente, x: number, y: number) => x > a.x0 && x < a.x1 && y > a.y0 && y < a.y1;
+    for (const a of ambs) {
+      if (!textos.some(x => /SACADA|VARANDA|TERRA[ÇC]O|BALC[ÃA]O/i.test(x.text) && dentro(a, x.x, x.y))) continue;
+      for (const t of ts) {
+        const [c0, c1, l0, l1] = t.o === 'H' ? [a.y0, a.y1, a.x0, a.x1] : [a.x0, a.x1, a.y0, a.y1];
+        const lado = Math.abs(t.c - c0) < 0.1 ? -1 : Math.abs(t.c - c1) < 0.1 ? 1 : 0;
+        const m0 = Math.max(t.s, l0), m1 = Math.min(t.e, l1);
+        if (!lado || m1 - m0 < 0.3) continue;
+        // do outro lado da parede não tem ambiente: dá para fora
+        const m = (m0 + m1) / 2, c = t.c + lado * 0.3, [x, y] = t.o === 'H' ? [m, c] : [c, m];
+        if (!ambs.some(b => dentro(b, x, y))) add(t, m0 - t.s < 0.3 ? t.s : m0, t.e - m1 < 0.3 ? t.e : m1);
+      }
+    }
+  }
+  return out;
+}
+
+// área construída de um pavimento: ambientes (pelos eixos) + meia parede em todo o contorno externo
+// (o projeto mede pela face de fora das paredes); sem os vazios
+export function areaConstruida(ambs: { x0: number; x1: number; y0: number; y1: number }[], esp: number): number {
+  let area = 0, borda = 0;
+  for (const a of ambs) {
+    area += (a.x1 - a.x0) * (a.y1 - a.y0);
+    // lados que não encostam em outro ambiente
+    const lados: ['H' | 'V', number, number, number, number][] = [['H', a.y0, a.x0, a.x1, -1], ['H', a.y1, a.x0, a.x1, 1], ['V', a.x0, a.y0, a.y1, -1], ['V', a.x1, a.y0, a.y1, 1]];
+    for (const [o, c, s, e, dir] of lados) {
+      let livre = e - s;
+      for (const b of ambs) {
+        if (b === a) continue;
+        const [bc, bs, be] = o === 'H' ? [dir > 0 ? b.y0 : b.y1, b.x0, b.x1] : [dir > 0 ? b.x0 : b.x1, b.y0, b.y1];
+        if (Math.abs(bc - c) < 0.05) livre -= Math.max(0, Math.min(e, be) - Math.max(s, bs));
+      }
+      borda += Math.max(0, livre);
+    }
+  }
+  // meia parede no contorno + os quatro cantos de fora
+  return area + borda * esp / 2 + (ambs.length ? 4 * (esp / 2) ** 2 : 0);
+}
