@@ -416,7 +416,8 @@ export default function App() {
           <section className="card">
             <h2>O que é cada desenho</h2>
             <p>Para cada desenho com paredes, diga se é uma <b>planta baixa</b> (vai ser modulada), um <b>corte</b> (usado para conferir alturas) ou se não deve ser usado. Nas plantas, informe o nome e o pé-direito. A ordem da lista é a ordem da numeração.</p>
-            {pesLidos.length > 0 ? <p className="ok-box">Pés-direitos lidos dos cortes, de baixo para cima: <b>{pesLidos.map(v => br(v)).join(' · ')}</b>.
+            {pavs.length === 0 && <p className="erro">Não encontrei nenhum desenho com paredes neste arquivo, por isso não há planta para marcar nem pé-direito para aplicar. Na aba <b>1. Arquivo</b>, troque a <b>"Camada das paredes"</b> para a camada onde estão as paredes do projeto (ex.: PAREDE, ALVENARIA, A-WALL).</p>}
+            {pavs.length === 0 ? null : pesLidos.length > 0 ? <p className="ok-box">Pés-direitos lidos dos cortes, de baixo para cima: <b>{pesLidos.map(v => br(v)).join(' · ')}</b>.
               {' '}<button onClick={() => { let k = 0; setPavs(pavs.map(q => q.ativo ? { ...q, altura: pesLidos[k++] ?? pesLidos[pesLidos.length - 1] } : q)); }}>Aplicar às plantas na ordem</button></p>
               : <div className="aviso-local">Não encontrei o pé-direito nas cotas dos cortes. <PeRapido pavs={pavs} setPavs={setPavs} /> Ou escolha em cada planta abaixo.</div>}
             <div className="regioes">
