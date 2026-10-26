@@ -87,6 +87,21 @@ export function ler(d: Dxf, camadaParede: string): Leitura {
   const regioes = agrupar(paredes);
   const dentro = (x: number, y: number) => regioes.some(b => x > b.x0 - 0.3 && x < b.x1 + 0.3 && y > b.y0 - 0.3 && y < b.y1 + 0.3);
   for (const t of textos) if (TAG_RE.test(t.text) && dentro(t.x, t.y)) tags.push({ text: normTag(t.text), x: t.x, y: t.y });
+  // planta partida em pedaços (vão de porta sem linha de parede): pedaços encostados que têm etiquetas de porta/janela
+  // são a mesma planta — junta (pedaço sem etiqueta só se a caixa encosta; cortes e fachadas encostados não têm etiquetas e ficam separados)
+  const comTag = (b: Box) => tags.some(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3);
+  for (let mudou = true; mudou;) {
+    mudou = false;
+    for (let i = 0; i < regioes.length && !mudou; i++) for (let j = i + 1; j < regioes.length; j++) {
+      const A = regioes[i], B = regioes[j];
+      const dx = Math.max(0, Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1)), dy = Math.max(0, Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1));
+      const d = Math.hypot(dx, dy), ta = comTag(A), tb = comTag(B);
+      if ((d <= 1.6 && ta && tb) || (d === 0 && (ta || tb))) {
+        regioes[i] = { x0: Math.min(A.x0, B.x0), x1: Math.max(A.x1, B.x1), y0: Math.min(A.y0, B.y0), y1: Math.max(A.y1, B.y1) };
+        regioes.splice(j, 1); mudou = true; break;
+      }
+    }
+  }
   const quadro = lerQuadro(textos, regioes);
   const Q = new Map(quadro.map(q => [q.tag, q]));
   // blocos de porta dinâmicos trazem várias folhas (arcos); fica só a do tamanho da porta
@@ -183,7 +198,8 @@ function agrupar(ps: Prim[]): Box[] {
     if (!g) grupos.set(r, { ...b, comp: len });
     else { g.x0 = Math.min(g.x0, b.x0); g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1); g.comp += len; }
   });
-  return [...grupos.values()].filter(g => g.comp > 15 && (g.x1 - g.x0) > 3 && (g.y1 - g.y0) > 3)
+  const gs = [...grupos.values()];
+  return gs.filter(g => g.comp > 15 && (g.x1 - g.x0) > 3 && (g.y1 - g.y0) > 3)
     .sort((a, b) => a.x0 - b.x0).map(({ x0, x1, y0, y1 }) => ({ x0, x1, y0, y1 }));
 }
 

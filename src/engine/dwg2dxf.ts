@@ -27,19 +27,21 @@ function comBulge(vs: (P & { bulge?: number })[], fechada: boolean): P[] {
   return out;
 }
 
-// escala para metros pelas cotas do desenho (mediana: metros ~1–10, centímetros ~100–1000, milímetros ~1000+)
-function escalaPelasCotas(ents: any[]): number {
-  const v = ents.filter(e => e.type === 'DIMENSION' && e.measurement > 0).map(e => e.measurement as number).sort((a, b) => a - b);
-  if (!v.length) return 1;
-  const med = v[Math.floor(v.length / 2)];
-  return med < 50 ? 1 : med < 1000 ? 0.01 : 0.001;
+// escala para metros pelas linhas das paredes (as cotas e o INSUNITS do arquivo nem sempre batem com o desenho):
+// 20% das linhas de parede mais curtas ficam na espessura da parede — metros ~0,15, centímetros ~15, milímetros ~150
+function escalaPelasParedes(ents: any[]): number {
+  const L = ents.filter(e => e.type === 'LINE' && /parede|wall|alven/i.test(e.layer || ''))
+    .map(e => Math.hypot(e.endPoint.x - e.startPoint.x, e.endPoint.y - e.startPoint.y)).filter(v => v > 1e-6).sort((a, b) => a - b);
+  if (L.length < 10) return 1;
+  const p20 = L[Math.floor(L.length * 0.2)];
+  return p20 < 3 ? 1 : p20 < 60 ? 0.01 : 0.001;
 }
 
 export function bancoParaDxf(db: any): { dxf: string; escala: number } {
   const blocos = (db.tables?.BLOCK_RECORD?.entries || []) as any[];
   const modelo = blocos.find(b => /^\*model_space$/i.test(b.name));
   const ents: any[] = modelo?.entities?.length ? modelo.entities : (db.entities || []).filter((e: any) => !e.ownerBlockRecordSoftId || e.ownerBlockRecordSoftId === modelo?.handle);
-  const k = escalaPelasCotas(ents);
+  const k = escalaPelasParedes(ents);
   const f = (v: number) => (v * k).toFixed(4);
   const out: string[] = [];
   const txt = (s: string) => String(s ?? '').replace(/\r?\n/g, '\\P');
