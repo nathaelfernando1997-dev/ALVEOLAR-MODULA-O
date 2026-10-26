@@ -312,6 +312,7 @@ export interface Ajustes {
   lajeEspPainel?: Record<string, number>;  // espessura de um painel de laje só (chave = ambiente@canto), vale mais que a do ambiente
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
+  peAmb?: Record<string, number>;          // pé-direito próprio de um ambiente (sala de 4 m, pé-direito duplo): as paredes em volta sobem até ele
 }
 export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, colunas: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
 

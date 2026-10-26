@@ -28,7 +28,7 @@ const baixar = (nome: string, conteudo: string, tipo: string) => {
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
-interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; areaPav: { pav: string; area: number }[] }
+interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[] }
 
 export default function App() {
   const [aba, setAbaEstado] = useState<Aba>('arquivo');
@@ -104,7 +104,7 @@ export default function App() {
     const lista = (v?: string[]) => (v || []).map(troca).filter((x): x is string => !!x);
     const reg = <T,>(v?: Record<string, T>) => Object.fromEntries(Object.entries(v || {}).map(([k, x]) => [troca(k), x] as const).filter(([k]) => !!k)) as Record<string, T>;
     const a = { ...AJUSTES_VAZIOS, ...salvo.ajustes };
-    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro), laje16: lista(a.laje16), lajeEspAmb: reg(a.lajeEspAmb),
+    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro), laje16: lista(a.laje16), lajeEspAmb: reg(a.lajeEspAmb), peAmb: reg(a.peAmb),
       cortes: reg(a.cortes), colunas: reg(a.colunas), altura: reg(a.altura), vaoTipo: reg(a.vaoTipo) } };
   };
   const carregarTexto = (txt: string, arquivo: string, cfg: Config | null, deOutraVersao = false) => {
@@ -213,7 +213,7 @@ export default function App() {
   const ativos = pavs.filter(p => p.ativo);
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
-    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], areaPav: [] };
+    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], orcExtra: [], areaPav: [] };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
     // linhas do desenho desta planta (a projeção do beiral pode ficar até 2,5 m para fora das paredes)
@@ -315,6 +315,19 @@ export default function App() {
     // paredes que passam pela altura da laje (não tem laje dos dois lados):
     // - em cima do vazio (pé-direito duplo): a parede de cima desce até a parede de baixo (+ espessura da laje)
     // - em volta de área descoberta (laje impermeável sem cobertura): a parede sobe até o topo da platibanda
+    // pé-direito próprio de ambiente (ex.: sala de 4,00): os painéis em volta dele sobem; no orçamento entra a área a mais
+    const peEsp = Object.entries(aj.peAmb || {}).map(([id, H]) => ({ L: vazio.lajes.find(a => a.id === id), H })).filter((x): x is { L: LajeAmb; H: number } => !!x.L && x.H > 0);
+    for (const P of vazio.ps) {
+      const m = (P.a + P.b) / 2, d = 0.3;
+      const lados: [number, number][] = P.o === 'H' ? [[m, P.c - d], [m, P.c + d]] : [[P.c - d, m], [P.c + d, m]];
+      const alvo = Math.max(0, ...peEsp.filter(({ L }) => L.pav === P.pav && lados.some(([x, y]) => x > L.x0 && x < L.x1 && y > L.y0 && y < L.y1)).map(x => x.H));
+      if (alvo > P.H) { P.H = alvo; P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(alvo)} m: pé-direito do ambiente`; }
+    }
+    for (const { L, H } of peEsp) for (const t of vazio.ts.filter(t => t.pav === L.pav && H > t.H)) {
+      const lim = t.o === 'H' ? [L.y0, L.y1] : [L.x0, L.x1], [s0, s1] = t.o === 'H' ? [L.x0, L.x1] : [L.y0, L.y1];
+      const ov = Math.min(t.e, s1) - Math.max(t.s, s0);
+      if (ov > 0 && lim.some(v => Math.abs(v - t.c) < 0.15)) vazio.orcExtra.push({ pav: t.pav, area: ov * (H - t.H) });
+    }
     const desceu = new Set<Painel>(), espLaje = regras.lajeEsp ?? 0.15;
     if ((regras.motor ?? 1) >= 2) {
       const esp = espLaje, plat = regras.platibanda ?? 0.4;
@@ -574,7 +587,7 @@ export default function App() {
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos e informe o pé-direito.</p></section> :
           <>
           {!pesLidos.length && <div className="card noprint aviso-local">A planta não tem o pé-direito. <PeRapido pavs={pavs} setPavs={setPavs} /></div>}
-          <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl)} ativos={ativos} pl={calc.pl} areaPav={calc.areaPav} regras={regras} setRegras={setRegras} nome={projNome || nome} />
+          <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl).map((l, i) => ({ ...l, paredes: l.paredes + calc.orcExtra.filter(x => x.pav === ativos[i].id).reduce((s, x) => s + x.area, 0) }))} ativos={ativos} pl={calc.pl} areaPav={calc.areaPav} regras={regras} setRegras={setRegras} nome={projNome || nome} />
           </>
         )}
         {aba === 'impressao' && leitura && (
@@ -952,6 +965,12 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: Laj
       {P.filter(p => p.amb === amb.id).map(p => <div key={p.num} className="dica">L{p.num}: {br(p.comp)} × {br(p.larg)}{p.dente ? ` · dente ${br(p.dente.x1 - p.dente.x0)} × ${br(p.dente.y1 - p.dente.y0)}` : ''}</div>)}
       <button onClick={() => tog('lajeFora', amb.id)}>{(aj.lajeFora || []).includes(amb.id) ? 'Colocar laje neste ambiente' : 'Sem laje aqui (vazio, área externa)'}</button>
       <button onClick={() => tog('lajeGiro', amb.id)}>Girar o sentido dos painéis</button>
+      <label>Pé-direito deste ambiente (m) — vazio = {br(pav.altura)} do pavimento
+        <input type="number" step="0.01" key={'pe' + amb.id} defaultValue={aj.peAmb?.[amb.id] ?? ''} onBlur={e => {
+          const v = parseFloat(e.target.value.replace(',', '.')); const m = { ...(aj.peAmb || {}) };
+          if (isFinite(v) && v > 0 && Math.abs(v - pav.altura) > 1e-6) m[amb.id] = v; else delete m[amb.id];
+          setAj({ ...aj, peAmb: m }); }} />
+      </label>
       <label>Espessura da laje em todo o ambiente (cm)
         <input type="number" step="1" key={amb.id + (lajeSel || '')} defaultValue={Math.round((espDoAmb(aj)(amb.id) ?? espPadrao) * 100)} onBlur={e => {
           const v = parseFloat(e.target.value.replace(',', '.')); const m = { ...(aj.lajeEspAmb || {}) };
