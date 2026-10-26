@@ -10,6 +10,7 @@
     "test:ricardo": "node --experimental-strip-types scripts/teste.ts"
   },
   "dependencies": {
+    "@mlightcad/libredwg-web": "0.7.17",
     "@supabase/supabase-js": "^2.45.4",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^4.10.38",

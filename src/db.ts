@@ -1,7 +1,11 @@
 // Projetos salvos no navegador (IndexedDB): o DXF e todos os ajustes.
 import type { Ajustes, Esquadria, Pavimento, Regras } from './engine/model.ts';
 
-export interface Config { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
+export type Pasta = 'modulacao' | 'orcamento';   // desmembramento (modulação) ou orçamento: cada um na sua pasta
+export interface Config { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes; pasta?: Pasta }
+export const pastaDe = (p: { config: Partial<Config> | null }): Pasta => p.config?.pasta ?? 'modulacao';
+// projeto recém-criado na pasta de orçamento ainda sem os desenhos marcados: só a pasta
+export const configValida = (c: Partial<Config> | null | undefined): Config | null => c && Array.isArray(c.pavs) ? c as Config : null;
 export interface Projeto { id: string; nome: string; arquivo: string; criado: number; atualizado: number; config: Config | null }
 export interface ProjetoCompleto extends Projeto { dxf: Blob }
 

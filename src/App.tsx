@@ -14,10 +14,11 @@ import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
+import { pastaDe, configValida } from './db.ts';
 import * as cloud from './cloud.ts';
 import type { Session } from '@supabase/supabase-js';
 import { Login } from './Login.tsx';
-import type { Projeto, Config } from './db.ts';
+import type { Projeto, Config, Pasta } from './db.ts';
 
 type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'orcamento';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
@@ -52,6 +53,8 @@ export default function App() {
   const [cortando, setCortando] = useState<{ trecho: string; coluna: boolean } | null>(null);
   const [vigaSel, setVigaSel] = useState<string | null>(null);
   const [projId, setProjId] = useState<string | null>(null);
+  const [pasta, setPasta] = useState<Pasta>('modulacao');            // pasta mostrada na aba Arquivo
+  const [projPasta, setProjPasta] = useState<Pasta>('modulacao');    // pasta do projeto aberto
   const [projNome, setProjNome] = useState('');
   const [projetos, setProjetos] = useState<Projeto[]>([]);
   const [pronto, setPronto] = useState(false);
@@ -168,14 +171,19 @@ export default function App() {
         const r = await conv.pdfParaDxf(lib as unknown as Parameters<typeof conv.pdfParaDxf>[0], new Uint8Array(await f.arrayBuffer()));
         txt = r.dxf;
         setAvisoPdf([`Projeto lido do PDF na escala 1:${Math.round(r.escala / (0.0254 / 72))}.`, ...r.avisos, 'Confira as medidas das paredes com as cotas do projeto: o PDF não separa parede de mobília e hachura como o DXF.']);
+      } else if (/\.dwg$/i.test(f.name)) {
+        const conv = await import('./engine/dwg2dxf.ts');
+        const r = await conv.dwgParaDxf(await f.arrayBuffer());
+        txt = r.dxf; setAvisoPdf(r.avisos);
       } else { txt = await f.text(); setAvisoPdf([]); }
       // aproveita ajustes da versão antiga (salvos pelo nome do arquivo)
       const antigo = (() => { try { return JSON.parse(localStorage.getItem(chave(f.name)) || 'null') as Salvo | null; } catch { return null; } })();
       const de = abaRef.current;
       carregarTexto(txt, f.name, antigo, true);
       irSeParado(de, antigo ? 'modulacao' : 'pavimentos');
-      const p = await repo.criar(f.name.replace(/\.(dxf|pdf)$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), antigo);
-      setProjId(p.id); setProjNome(p.nome); atualizarLista();
+      const cfg0 = (antigo ? { ...antigo, pasta } : pasta === 'orcamento' ? { pasta } : null) as Config | null;
+      const p = await repo.criar(f.name.replace(/\.(dxf|dwg|pdf)$/i, ''), f.name, new Blob([txt], { type: 'application/dxf' }), cfg0);
+      setProjId(p.id); setProjNome(p.nome); setProjPasta(pasta); atualizarLista();
     } catch (e) { setErro((e as Error).message); }
     setLendo(false);
   };
@@ -184,9 +192,10 @@ export default function App() {
     try {
       const de = abaRef.current;
       const p = await repo.carregar(id); if (!p) throw new Error('Projeto não encontrado.');
-      carregarTexto(await p.dxf.text(), p.arquivo, p.config);
-      setProjId(p.id); setProjNome(p.nome);
-      irSeParado(de, p.config && p.config.pavs.some(x => x.ativo) ? 'modulacao' : 'pavimentos');
+      const cfg = configValida(p.config);
+      carregarTexto(await p.dxf.text(), p.arquivo, cfg);
+      setProjId(p.id); setProjNome(p.nome); setProjPasta(pastaDe(p));
+      irSeParado(de, cfg && cfg.pavs.some(x => x.ativo) ? (pastaDe(p) === 'orcamento' ? 'orcamento' : 'modulacao') : 'pavimentos');
     } catch (e) { setErro((e as Error).message); }
     setLendo(false);
   };
@@ -194,13 +203,13 @@ export default function App() {
   useEffect(() => {
     if (!projId || !pronto) return;
     const t = setTimeout(() => {
-      const cfg = { camada, pavs, quadro, regras, ajustes: aj };
+      const cfg: Config = { camada, pavs, quadro, regras, ajustes: aj, ...(projPasta === 'orcamento' ? { pasta: projPasta } : {}) };
       // cópia de segurança pelo nome do arquivo: se o projeto sumir, ao mandar o mesmo DXF os ajustes voltam
       try { localStorage.setItem(chave(nome), JSON.stringify(cfg)); } catch { /* sem espaço */ }
       repo.salvarConfig(projId, cfg).then(atualizarLista).catch(() => setErro('Não foi possível salvar o projeto. Verifique a internet.'));
     }, 500);
     return () => clearTimeout(t);
-  }, [projId, pronto, camada, pavs, quadro, regras, aj, nome]);
+  }, [projId, pronto, camada, pavs, quadro, regras, aj, nome, projPasta]);
   const ativos = pavs.filter(p => p.ativo);
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
@@ -366,10 +375,14 @@ export default function App() {
       <main>
         {aba === 'arquivo' && (
           <>
+          <div className="pastas">
+            {([['modulacao', 'Projetos para desmembramento'], ['orcamento', 'Orçamentos']] as [Pasta, string][]).map(([k, t]) =>
+              <button key={k} className={pasta === k ? 'on' : ''} onClick={() => setPasta(k)}>📁 {t} ({projetos.filter(p => pastaDe(p) === k).length})</button>)}
+          </div>
           <section className="card">
-            <h2>Novo projeto</h2>
-            <p>Envie o projeto em <b>DXF</b> (no AutoCAD: <i>Salvar como → DXF</i>) ou em <b>PDF</b> exportado do programa de projeto (PDF vetorial, não escaneado). O DXF é mais preciso. {sess ? 'O arquivo e todos os ajustes ficam salvos na sua conta, na nuvem.' : 'O arquivo e todos os ajustes ficam salvos neste navegador.'}</p>
-            <input type="file" accept=".dxf,.pdf" onChange={e => { const f = e.target.files?.[0]; if (f) novo(f); e.target.value = ''; }} />
+            <h2>{pasta === 'orcamento' ? 'Novo orçamento' : 'Novo projeto para desmembramento'}</h2>
+            <p>Envie o projeto em <b>DWG</b>, <b>DXF</b> ou <b>PDF</b> exportado do programa de projeto (PDF vetorial, não escaneado). DWG e DXF são mais precisos. {pasta === 'orcamento' ? 'Fica na pasta Orçamentos, separado dos projetos de desmembramento.' : ''} {sess ? 'O arquivo e todos os ajustes ficam salvos na sua conta, na nuvem.' : 'O arquivo e todos os ajustes ficam salvos neste navegador.'}</p>
+            <input type="file" accept=".dxf,.dwg,.pdf" onChange={e => { const f = e.target.files?.[0]; if (f) novo(f); e.target.value = ''; }} />
             {lendo && <p>Lendo o arquivo…</p>}
             {avisoPdf.length > 0 && <ul className="dica">{avisoPdf.map((a, i) => <li key={i}>{a}</li>)}</ul>}
             {erro && <p className="erro">{erro}</p>}
@@ -378,16 +391,17 @@ export default function App() {
               <small>{leitura?.paredes.length} linhas nessa camada · {leitura?.regioes.length} desenhos encontrados</small></div>}
           </section>
           <section className="card">
-            <h2>Meus projetos</h2>
-            {projetos.length === 0 ? <p className="dica">Nenhum projeto salvo ainda.</p> :
+            <h2>{pasta === 'orcamento' ? 'Meus orçamentos' : 'Meus projetos'}</h2>
+            {projetos.filter(p => pastaDe(p) === pasta).length === 0 ? <p className="dica">{pasta === 'orcamento' ? 'Nenhum orçamento salvo ainda.' : 'Nenhum projeto salvo ainda.'}</p> :
             <table className="tab projetos"><thead><tr><th>Projeto</th><th>Arquivo</th><th>Atualizado</th><th></th></tr></thead><tbody>
-              {projetos.map(p => <tr key={p.id} className={p.id === projId ? 'atual' : ''}>
+              {projetos.filter(p => pastaDe(p) === pasta).map(p => <tr key={p.id} className={p.id === projId ? 'atual' : ''}>
                 <td><input defaultValue={p.nome} onBlur={e => { const v = e.target.value.trim(); if (v && v !== p.nome) { repo.renomear(p.id, v).then(atualizarLista); if (p.id === projId) setProjNome(v); } }} /></td>
                 <td className="dica">{p.arquivo}</td>
                 <td className="dica">{new Date(p.atualizado).toLocaleString('pt-BR')}</td>
                 <td className="botoes">
                   <button onClick={() => abrirProjeto(p.id)}>{p.id === projId ? 'Aberto' : 'Abrir'}</button>
                   <button onClick={async () => { const c = await repo.carregar(p.id); const bl = c ? new Blob([JSON.stringify({ formato: 'alveolar-modulacao', versao: 1, nome: c.nome, arquivo: c.arquivo, config: c.config, dxf: await c.dxf.text() })], { type: 'application/json' }) : null; if (bl) { const a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = p.nome + '.modulacao.json'; a.click(); } }}>Baixar cópia</button>
+                  <button onClick={async () => { const nova: Pasta = pastaDe(p) === 'orcamento' ? 'modulacao' : 'orcamento'; await repo.salvarConfig(p.id, { ...(p.config || {}), pasta: nova } as Config); if (p.id === projId) setProjPasta(nova); atualizarLista(); }}>{pastaDe(p) === 'orcamento' ? 'Mover para desmembramento' : 'Mover para orçamentos'}</button>
                   <button onClick={async () => { if (confirm(`Apagar o projeto "${p.nome}"? Isso não pode ser desfeito.`)) { await repo.apagar(p.id); if (p.id === projId) { setProjId(null); setDxf(null); setNome(''); } atualizarLista(); } }}>Apagar</button>
                 </td></tr>)}
             </tbody></table>}
