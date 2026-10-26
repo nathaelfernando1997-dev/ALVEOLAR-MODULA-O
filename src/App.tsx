@@ -418,7 +418,7 @@ export default function App() {
             <p>Para cada desenho com paredes, diga se é uma <b>planta baixa</b> (vai ser modulada), um <b>corte</b> (usado para conferir alturas) ou se não deve ser usado. Nas plantas, informe o nome e o pé-direito. A ordem da lista é a ordem da numeração.</p>
             {pesLidos.length > 0 ? <p className="ok-box">Pés-direitos lidos dos cortes, de baixo para cima: <b>{pesLidos.map(v => br(v)).join(' · ')}</b>.
               {' '}<button onClick={() => { let k = 0; setPavs(pavs.map(q => q.ativo ? { ...q, altura: pesLidos[k++] ?? pesLidos[pesLidos.length - 1] } : q)); }}>Aplicar às plantas na ordem</button></p>
-              : <p className="dica">Não encontrei pés-direitos nas cotas dos cortes. Informe a altura de cada planta.</p>}
+              : <div className="aviso-local">Não encontrei o pé-direito nas cotas dos cortes. <PeRapido pavs={pavs} setPavs={setPavs} /> Ou escolha em cada planta abaixo.</div>}
             <div className="regioes">
               {pavs.map((p, i) => (
                 <div key={p.id} className={'regiao' + (p.ativo ? ' on' : p.corte ? ' corte' : '')}>
@@ -431,7 +431,9 @@ export default function App() {
                     <option value="nao">Não usar</option><option value="planta">Planta baixa (modular)</option><option value="corte">Corte (conferir alturas)</option>
                   </select>
                   <input value={p.nome} onChange={e => setPavs(pavs.map(q => q.id === p.id ? { ...q, nome: e.target.value } : q))} />
-                  {p.ativo && <label>Pé-direito (m) <input type="number" step="0.01" value={p.altura} onChange={e => setPavs(pavs.map(q => q.id === p.id ? { ...q, altura: parseFloat(e.target.value) || 0 } : q))} /></label>}
+                  {p.ativo && <label>Pé-direito (m) <input type="number" step="0.01" value={p.altura} onChange={e => setPavs(pavs.map(q => q.id === p.id ? { ...q, altura: parseFloat(e.target.value) || 0 } : q))} />
+                    {!pesLidos.length && <select value={PES.some(v => Math.abs(v - p.altura) < 1e-6) ? p.altura.toFixed(2) : ''} onChange={e => e.target.value && setPavs(pavs.map(q => q.id === p.id ? { ...q, altura: parseFloat(e.target.value) } : q))}>
+                      <option value="">escolher…</option>{PES.map(v => <option key={v} value={v.toFixed(2)}>{br(v)}</option>)}</select>}</label>}
                   <div className="ordem">
                     <button disabled={i === 0} onClick={() => { const a = [...pavs];[a[i - 1], a[i]] = [a[i], a[i - 1]]; setPavs(a); }}>↑</button>
                     <button disabled={i === pavs.length - 1} onClick={() => { const a = [...pavs];[a[i + 1], a[i]] = [a[i], a[i + 1]]; setPavs(a); }}>↓</button>
@@ -569,7 +571,10 @@ export default function App() {
 
         {aba === 'orcamento' && leitura && (
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos e informe o pé-direito.</p></section> :
+          <>
+          {!pesLidos.length && <div className="card noprint aviso-local">A planta não tem o pé-direito. <PeRapido pavs={pavs} setPavs={setPavs} /></div>}
           <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl)} ativos={ativos} pl={calc.pl} areaPav={calc.areaPav} regras={regras} setRegras={setRegras} nome={projNome || nome} />
+          </>
         )}
         {aba === 'impressao' && leitura && (
           <section>
@@ -639,6 +644,15 @@ function TabelaQuantTrelicas({ pavs, calc, aj, perda }: { pavs: Pavimento[]; cal
 // orçamento: paredes (área cheia) e lajes; opção 1 só paredes e lajes, opção 2 a obra cinza (por m² de área construída)
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const reais = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// pé-direito quando a planta/os cortes não trazem a altura: de 2,80 a 3,20 (de 5 em 5 cm), aplicado a todas as plantas
+const PES = [2.8, 2.85, 2.9, 2.95, 3.0, 3.05, 3.1, 3.15, 3.2];
+function PeRapido({ pavs, setPavs }: { pavs: Pavimento[]; setPavs: (p: Pavimento[]) => void }) {
+  const at = pavs.filter(p => p.ativo), igual = at.length > 0 && at.every(p => Math.abs(p.altura - at[0].altura) < 1e-6) ? at[0].altura : null;
+  return <span className="pes">Pé-direito de todas as plantas:{' '}
+    {PES.map(v => <button key={v} className={igual !== null && Math.abs(igual - v) < 1e-6 ? 'on' : ''} onClick={() => setPavs(pavs.map(q => q.ativo ? { ...q, altura: v } : q))}>{br(v)}</button>)}
+  </span>;
+}
+
 function Orcamento({ linhas, ativos, pl, areaPav, regras, setRegras, nome }: { linhas: ReturnType<typeof orcamentoAreas>; ativos: Pavimento[]; pl: PainelLaje[]; areaPav: { pav: string; area: number }[]; regras: Regras; setRegras: (r: Regras) => void; nome: string }) {
   const [erro, setErro] = useState('');
   const ap = linhas.reduce((s, l) => s + l.paredes, 0), al = linhas.reduce((s, l) => s + l.lajes, 0);

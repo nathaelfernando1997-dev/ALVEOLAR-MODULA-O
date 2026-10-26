@@ -119,3 +119,5 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .pastas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .pastas button { padding: 8px 14px; border: 1px solid #1f4e79; background: #fff; color: #1f4e79; border-radius: 6px; font-size: 15px; cursor: pointer; }
 .pastas button.on { background: #1f4e79; color: #fff; }
+.pes button { margin: 2px; padding: 3px 8px; }
+.pes button.on { background: #1f4e79; color: #fff; }
