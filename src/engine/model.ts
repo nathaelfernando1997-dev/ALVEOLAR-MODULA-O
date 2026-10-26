@@ -77,6 +77,35 @@ export interface LinhaProjeto { tipo: 'piso' | 'proj'; o: 'H' | 'V'; c: number; 
 const TAG_RE = /^(?:[PJ][A-Z]{0,2}\s?-?\d{1,2}[A-Z]?|PP)$/i;
 const normTag = (t: string) => t.toUpperCase().replace(/[\s-]/g, '');
 
+// camada das paredes: pelo nome (PAREDE, ALVENARIA, WALL, ALV); entre várias, a com mais linhas em pares paralelos
+// com distância de parede (8 a 35 cm). Sem nenhuma com nome, a com mais pares (tirando cotas, móveis, esquadrias…)
+export function camadaDasParedes(d: Dxf): string {
+  const nomeado = (l: string) => /parede|wall|alven|(^|[^a-z])alv([^a-z]|$)/i.test(l);
+  const por = new Map<string, { o: 'H' | 'V'; c: number; a: number; b: number }[]>();
+  for (const e of d.ents) {
+    if (e.type !== 'LINE' && e.type !== 'LWPOLYLINE') continue;
+    const L = por.get(e.layer) || []; if (L.length > 6000) continue;
+    for (const p of entPrims(e)) for (let i = 0; i < p.pts.length - 1; i++) {
+      const [x1, y1] = p.pts[i], [x2, y2] = p.pts[i + 1];
+      if (Math.abs(y1 - y2) < 0.005 && Math.abs(x1 - x2) > 0.3) L.push({ o: 'H', c: y1, a: Math.min(x1, x2), b: Math.max(x1, x2) });
+      else if (Math.abs(x1 - x2) < 0.005 && Math.abs(y1 - y2) > 0.3) L.push({ o: 'V', c: x1, a: Math.min(y1, y2), b: Math.max(y1, y2) });
+    }
+    por.set(e.layer, L);
+  }
+  // camada com nome de parede: a de nome com mais pares (o nome manda; os pares só escolhem entre várias com nome)
+  const comNome = d.layers.filter(nomeado);
+  let melhor = '', nota = 0;
+  for (const [lay, L] of por) {
+    if (comNome.length ? !nomeado(lay) : /^(0|defpoints)$|mob|esquad|cota|dim|text|hach|hatch|layout|porta|janela|piso|forro|eletr|hidr|pdf|lote|rua|quadra/i.test(lay)) continue;
+    const ord = [...L].sort((p, q) => p.o.localeCompare(q.o) || p.c - q.c);
+    let n = 0;
+    for (let i = 0; i < ord.length; i++) for (let j = i + 1; j < ord.length && ord[j].o === ord[i].o && ord[j].c - ord[i].c <= 0.35; j++)
+      if (ord[j].c - ord[i].c >= 0.08 && Math.min(ord[i].b, ord[j].b) - Math.max(ord[i].a, ord[j].a) > 0.3) { n++; break; }
+    if (n > nota) { nota = n; melhor = lay; }
+  }
+  return melhor || comNome[0] || 'PAREDE';
+}
+
 export function ler(d: Dxf, camadaParede: string): Leitura {
   const prims: Prim[] = [];
   for (const e of d.ents) prims.push(...entPrims(e));

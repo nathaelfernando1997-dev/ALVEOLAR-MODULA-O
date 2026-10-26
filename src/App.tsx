@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { ler, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
@@ -29,6 +29,48 @@ interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
 interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[] }
+
+// desenhos do arquivo (plantas, cortes) e seus papéis, pela camada das paredes escolhida
+function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
+  const L = ler(d, cam);
+  // papéis e pés-direitos automáticos: plantas da esquerda para a direita / de cima para baixo recebem os pés-direitos dos cortes em ordem
+  const papeis = adivinharPapeis(d, L.regioes, L.tags);
+  // planta repetida no arquivo (cópia do mesmo desenho em outra prancha, às vezes com as etiquetas um pouco deslocadas):
+  // mesmas etiquetas na mesma arrumação (tolerância de 1 m) e tamanho parecido = mesma planta
+  const etq = (b: Box) => {
+    const tg = L.tags.filter(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3);
+    const mx = Math.min(...tg.map(t => t.x)), my = Math.min(...tg.map(t => t.y));
+    return tg.map(t => ({ s: t.text, x: t.x - mx, y: t.y - my })).sort((p, q) => p.s.localeCompare(q.s) || p.y - q.y || p.x - q.x);
+  };
+  const mesma = (i: number, j: number) => {
+    const A = L.regioes[i], B = L.regioes[j];
+    if (Math.abs((A.x1 - A.x0) - (B.x1 - B.x0)) > 1.5 || Math.abs((A.y1 - A.y0) - (B.y1 - B.y0)) > 4) return false;
+    const a = etq(A), b = etq(B);
+    return a.length >= 2 && a.length === b.length && a.every((t, k) => t.s === b[k].s && Math.abs(t.x - b[k].x) < 1 && Math.abs(t.y - b[k].y) < 1);
+  };
+  // entre as cópias fica a que está junto dos cortes (o jogo original de desenhos)
+  const cortesC = L.regioes.filter((_, i) => papeis[i] === 'corte').map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]);
+  const distC = (b: Box) => cortesC.length ? Math.min(...cortesC.map(([x, y]) => Math.hypot((b.x0 + b.x1) / 2 - x, (b.y0 + b.y1) / 2 - y))) : 0;
+  const plantasI = L.regioes.map((_, i) => i).filter(i => papeis[i] === 'planta');
+  const visto = new Set<number>();
+  for (const i of plantasI) {
+    if (visto.has(i)) continue;
+    const ids = plantasI.filter(j => j === i || (!visto.has(j) && mesma(i, j)));
+    ids.forEach(j => visto.add(j));
+    if (ids.length < 2) continue;
+    const fica = ids.reduce((m, k) => distC(L.regioes[k]) < distC(L.regioes[m]) ? k : m, ids[0]);
+    for (const k of ids) if (k !== fica) papeis[k] = 'nao';
+  }
+  const pes = detectarPes(d, L.regioes.filter((_, i) => papeis[i] !== 'planta'));
+  const nomes = ['Térreo', 'Pavimento superior', '2º pavimento', '3º pavimento'];
+  let k = 0;
+  const auto: Pavimento[] = L.regioes.map((b, i) => {
+    const planta = papeis[i] === 'planta', corte = papeis[i] === 'corte';
+    const n = planta ? k++ : -1;
+    return { id: `R${i + 1}`, nome: planta ? (nomes[n] ?? `Pavimento ${n + 1}`) : corte ? `Corte ${i + 1}` : `Desenho ${i + 1}`, box: b, altura: planta ? (pes[n] ?? pes[pes.length - 1] ?? 2.8) : 2.8, ativo: planta, corte };
+  });
+  return { auto, L };
+}
 
 export default function App() {
   const [aba, setAbaEstado] = useState<Aba>('arquivo');
@@ -112,47 +154,11 @@ export default function App() {
     const d = parseDxf(txt);
     setPronto(false);
     setDxf(d); setNome(arquivo); setSel(null); setVaoSel(null); setAmbSel(null); setCortando(null); setPavSel('');
-    const cam = cfg?.camada ?? (d.layers.find(l => /parede|wall|alven/i.test(l)) || 'PAREDE');
+    const cam = cfg?.camada ?? camadaDasParedes(d);
     setCamada(cam);
     if (cfg && !deOutraVersao) { setPavs(cfg.pavs); setQuadro(cfg.quadro); setRegras(regrasDoSalvo(cfg.regras)); setAj({ ...AJUSTES_VAZIOS, ...cfg.ajustes }); }
     else {
-      const L = ler(d, cam);
-      // papéis e pés-direitos automáticos: plantas da esquerda para a direita / de cima para baixo recebem os pés-direitos dos cortes em ordem
-      const papeis = adivinharPapeis(d, L.regioes, L.tags);
-      // planta repetida no arquivo (cópia do mesmo desenho em outra prancha, às vezes com as etiquetas um pouco deslocadas):
-      // mesmas etiquetas na mesma arrumação (tolerância de 1 m) e tamanho parecido = mesma planta
-      const etq = (b: Box) => {
-        const tg = L.tags.filter(t => t.x > b.x0 - 0.3 && t.x < b.x1 + 0.3 && t.y > b.y0 - 0.3 && t.y < b.y1 + 0.3);
-        const mx = Math.min(...tg.map(t => t.x)), my = Math.min(...tg.map(t => t.y));
-        return tg.map(t => ({ s: t.text, x: t.x - mx, y: t.y - my })).sort((p, q) => p.s.localeCompare(q.s) || p.y - q.y || p.x - q.x);
-      };
-      const mesma = (i: number, j: number) => {
-        const A = L.regioes[i], B = L.regioes[j];
-        if (Math.abs((A.x1 - A.x0) - (B.x1 - B.x0)) > 1.5 || Math.abs((A.y1 - A.y0) - (B.y1 - B.y0)) > 4) return false;
-        const a = etq(A), b = etq(B);
-        return a.length >= 2 && a.length === b.length && a.every((t, k) => t.s === b[k].s && Math.abs(t.x - b[k].x) < 1 && Math.abs(t.y - b[k].y) < 1);
-      };
-      // entre as cópias fica a que está junto dos cortes (o jogo original de desenhos)
-      const cortesC = L.regioes.filter((_, i) => papeis[i] === 'corte').map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]);
-      const distC = (b: Box) => cortesC.length ? Math.min(...cortesC.map(([x, y]) => Math.hypot((b.x0 + b.x1) / 2 - x, (b.y0 + b.y1) / 2 - y))) : 0;
-      const plantasI = L.regioes.map((_, i) => i).filter(i => papeis[i] === 'planta');
-      const visto = new Set<number>();
-      for (const i of plantasI) {
-        if (visto.has(i)) continue;
-        const ids = plantasI.filter(j => j === i || (!visto.has(j) && mesma(i, j)));
-        ids.forEach(j => visto.add(j));
-        if (ids.length < 2) continue;
-        const fica = ids.reduce((m, k) => distC(L.regioes[k]) < distC(L.regioes[m]) ? k : m, ids[0]);
-        for (const k of ids) if (k !== fica) papeis[k] = 'nao';
-      }
-      const pes = detectarPes(d, L.regioes.filter((_, i) => papeis[i] !== 'planta'));
-      const nomes = ['Térreo', 'Pavimento superior', '2º pavimento', '3º pavimento'];
-      let k = 0;
-      const auto: Pavimento[] = L.regioes.map((b, i) => {
-        const planta = papeis[i] === 'planta', corte = papeis[i] === 'corte';
-        const n = planta ? k++ : -1;
-        return { id: `R${i + 1}`, nome: planta ? (nomes[n] ?? `Pavimento ${n + 1}`) : corte ? `Corte ${i + 1}` : `Desenho ${i + 1}`, box: b, altura: planta ? (pes[n] ?? pes[pes.length - 1] ?? 2.8) : 2.8, ativo: planta, corte };
-      });
+      const { auto, L } = desenhosAuto(d, cam);
       if (cfg) {
         const m = mesclar(auto, cfg);
         setPavs(m.pavs); setQuadro(cfg.quadro?.length ? cfg.quadro : L.quadro); setRegras(regrasDoSalvo(cfg.regras)); setAj(m.aj);
@@ -400,7 +406,7 @@ export default function App() {
             {avisoPdf.length > 0 && <ul className="dica">{avisoPdf.map((a, i) => <li key={i}>{a}</li>)}</ul>}
             {erro && <p className="erro">{erro}</p>}
             {dxf && <div className="campo"><label>Camada das paredes do projeto aberto</label>
-              <select value={camada} onChange={e => setCamada(e.target.value)}>{dxf.layers.map(l => <option key={l}>{l}</option>)}</select>
+              <select value={camada} onChange={e => { const v = e.target.value; const { auto, L } = desenhosAuto(dxf, v); setCamada(v); setPavs(auto); if (!quadro.length) setQuadro(L.quadro); }}>{dxf.layers.map(l => <option key={l}>{l}</option>)}</select>
               <small>{leitura?.paredes.length} linhas nessa camada · {leitura?.regioes.length} desenhos encontrados</small></div>}
           </section>
           <section className="card">

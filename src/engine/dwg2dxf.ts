@@ -30,7 +30,7 @@ function comBulge(vs: (P & { bulge?: number })[], fechada: boolean): P[] {
 // escala para metros pelas linhas das paredes (as cotas e o INSUNITS do arquivo nem sempre batem com o desenho):
 // 20% das linhas de parede mais curtas ficam na espessura da parede — metros ~0,15, centímetros ~15, milímetros ~150
 function escalaPelasParedes(ents: any[]): number {
-  const L = ents.filter(e => e.type === 'LINE' && /parede|wall|alven/i.test(e.layer || ''))
+  const L = ents.filter(e => e.type === 'LINE' && /parede|wall|alven|(^|[^a-z])alv([^a-z]|$)/i.test(e.layer || ''))
     .map(e => Math.hypot(e.endPoint.x - e.startPoint.x, e.endPoint.y - e.startPoint.y)).filter(v => v > 1e-6).sort((a, b) => a - b);
   if (L.length < 10) return 1;
   const p20 = L[Math.floor(L.length * 0.2)];
