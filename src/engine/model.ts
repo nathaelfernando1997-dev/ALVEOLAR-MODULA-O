@@ -47,13 +47,16 @@ export interface Regras {
 export function regrasDoSalvo(s?: Partial<Regras>): Regras {
   const r = { ...REGRAS_PADRAO, ...s };
   if (s?.isoporComp === 3) r.isoporComp = REGRAS_PADRAO.isoporComp;   // 3 m era o padrão antigo (antes da medida informada)
+  // painel de laje: o padrão antigo era 3,00 x 5,00; a regra da Alveolar é no máximo 2,50 x 4,00
+  if (s?.lajeComp === 5) r.lajeComp = REGRAS_PADRAO.lajeComp;
+  if (s?.lajeLarg === 3) r.lajeLarg = REGRAS_PADRAO.lajeLarg;
   return { ...r, motor: s?.motorFixo ? (s.motor ?? 1) : REGRAS_PADRAO.motor };
 }
 
 export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
-  pinarAuto: false, lajeComp: 5.0, lajeLarg: 3.0, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15, platibanda: 0.40,
+  pinarAuto: false, lajeComp: 4.0, lajeLarg: 2.5, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15, platibanda: 0.40,
   vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, perda: 10, vaoViga: 5.0, beiral: 1.0,
 };
 
