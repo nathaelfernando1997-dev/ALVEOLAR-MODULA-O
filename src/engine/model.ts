@@ -116,7 +116,8 @@ export function ler(d: Dxf, camadaParede: string): Leitura {
   const textos = d.ents.map(entText).filter((t): t is NonNullable<typeof t> => !!t && !!t.text);
   const tags: Leitura['tags'] = [];
   for (const ins of d.inserts) for (const a of ins.attribs) if (TAG_RE.test(a.text.trim())) tags.push({ text: normTag(a.text.trim()), x: ins.x, y: ins.y });
-  const regioes = agrupar(paredes);
+  // pedaços de parede agrupados; os pequenos (sobra entre portas largas, pé-direito duplo, planta aberta) ainda podem juntar numa planta
+  const regioes = agrupar(paredes).filter(g => g.comp >= 2);
   const dentro = (x: number, y: number) => regioes.some(b => x > b.x0 - 0.3 && x < b.x1 + 0.3 && y > b.y0 - 0.3 && y < b.y1 + 0.3);
   for (const t of textos) if (TAG_RE.test(t.text) && dentro(t.x, t.y)) tags.push({ text: normTag(t.text), x: t.x, y: t.y });
   // planta partida em pedaços (vão de porta sem linha de parede): pedaços encostados que têm etiquetas de porta/janela
@@ -128,12 +129,19 @@ export function ler(d: Dxf, camadaParede: string): Leitura {
       const A = regioes[i], B = regioes[j];
       const dx = Math.max(0, Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1)), dy = Math.max(0, Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1));
       const d = Math.hypot(dx, dy), ta = comTag(A), tb = comTag(B);
-      if ((d <= 1.6 && ta && tb) || (d === 0 && (ta || tb))) {
-        regioes[i] = { x0: Math.min(A.x0, B.x0), x1: Math.max(A.x1, B.x1), y0: Math.min(A.y0, B.y0), y1: Math.max(A.y1, B.y1) };
+      // pedaço pequeno (não é desenho sozinho) alinhado com outro a até 3 m: é parte da mesma planta (vão grande, sala integrada)
+      const ox = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0), oy = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0);
+      const alinhado = ox >= 0.6 * Math.min(A.x1 - A.x0, B.x1 - B.x0) || oy >= 0.6 * Math.min(A.y1 - A.y0, B.y1 - B.y0);
+      const pedaco = (!grande(A) || !grande(B)) && d <= 3 && alinhado && (ta || tb);
+      if ((d <= 1.6 && ta && tb) || (d === 0 && (ta || tb)) || pedaco) {
+        regioes[i] = { x0: Math.min(A.x0, B.x0), x1: Math.max(A.x1, B.x1), y0: Math.min(A.y0, B.y0), y1: Math.max(A.y1, B.y1), comp: A.comp + B.comp };
         regioes.splice(j, 1); mudou = true; break;
       }
     }
   }
+  for (let i = regioes.length - 1; i >= 0; i--) if (!grande(regioes[i])) regioes.splice(i, 1);
+  // etiquetas de novo, agora com a planta inteira (a de uma janela no vão entre dois pedaços fica dentro)
+  for (const t of textos) if (TAG_RE.test(t.text) && dentro(t.x, t.y) && !tags.some(g => g.x === t.x && g.y === t.y)) tags.push({ text: normTag(t.text), x: t.x, y: t.y });
   const quadro = lerQuadro(textos, regioes);
   const Q = new Map(quadro.map(q => [q.tag, q]));
   // blocos de porta dinâmicos trazem várias folhas (arcos); fica só a do tamanho da porta
@@ -208,8 +216,10 @@ function linhasDoProjeto(d: Dxf, camadaParede: string, textos: Leitura['textos']
   return out;
 }
 
-// agrupa as linhas de parede em regiões (cada planta/corte vira uma região)
-function agrupar(ps: Prim[]): Box[] {
+// região que é um desenho sozinho (planta/corte): bastante parede e mais de 3 m nos dois sentidos
+const grande = (g: Box & { comp: number }) => g.comp > 15 && g.x1 - g.x0 > 3 && g.y1 - g.y0 > 3;
+// agrupa as linhas de parede em regiões (cada planta/corte vira uma região), com o comprimento de parede de cada uma
+function agrupar(ps: Prim[]): (Box & { comp: number })[] {
   const bx = ps.map(p => { const xs = p.pts.map(q => q[0]), ys = p.pts.map(q => q[1]); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; });
   const par = bx.map((_, i) => i);
   const f = (i: number): number => (par[i] === i ? i : (par[i] = f(par[i])));
@@ -231,8 +241,7 @@ function agrupar(ps: Prim[]): Box[] {
     else { g.x0 = Math.min(g.x0, b.x0); g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1); g.comp += len; }
   });
   const gs = [...grupos.values()];
-  return gs.filter(g => g.comp > 15 && (g.x1 - g.x0) > 3 && (g.y1 - g.y0) > 3)
-    .sort((a, b) => a.x0 - b.x0).map(({ x0, x1, y0, y1 }) => ({ x0, x1, y0, y1 }));
+  return gs.sort((a, b) => a.x0 - b.x0);
 }
 
 // quadro de aberturas: "P01 … 150 CM … 365 CM" / "J01 … 80 CM 70 CM 160 CM"
