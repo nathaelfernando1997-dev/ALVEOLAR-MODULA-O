@@ -19,16 +19,41 @@ const br = (v: number) => v.toFixed(2).replace('.', ',');
 
 // deslocamento entre a planta de baixo e a de cima (as plantas costumam estar lado a lado no DXF)
 export function alinhar(baixo: Trecho[], cima: Trecho[]): { dx: number; dy: number } {
-  const melhor = (o: 'H' | 'V') => {
+  const cands = (o: 'H' | 'V') => {
     const A = baixo.filter(t => t.o === o).map(t => t.c), B = cima.filter(t => t.o === o).map(t => t.c);
     const votos = new Map<number, number>();
     for (const a of A) for (const b of B) { const d = Math.round((a - b) * 50) / 50; votos.set(d, (votos.get(d) || 0) + 1); }
-    let best = 0, n = -1; for (const [d, v] of votos) if (v > n) { n = v; best = d; }
-    // refina: média dos pares que batem com o melhor
-    const ds: number[] = []; for (const a of A) for (const b of B) if (Math.abs(a - b - best) < 0.05) ds.push(a - b);
-    return ds.length ? ds.reduce((s, v) => s + v, 0) / ds.length : best;
+    // refina: média dos pares que batem com cada candidato
+    return [...votos].sort((p, q) => q[1] - p[1]).slice(0, 30).map(([best]) => {
+      const ds: number[] = []; for (const a of A) for (const b of B) if (Math.abs(a - b - best) < 0.05) ds.push(a - b);
+      return ds.length ? ds.reduce((s, v) => s + v, 0) / ds.length : best;
+    });
   };
-  return { dx: melhor('V'), dy: melhor('H') };
+  const cx = cands('V'), cy = cands('H');
+  if (!cx.length || !cy.length) return { dx: cx[0] ?? 0, dy: cy[0] ?? 0 };
+  // entre os deslocamentos mais votados, fica o que põe mais metros de parede de cima em cima de parede de baixo
+  // (casa em que quase nenhuma parede de cima cai numa de baixo: as fachadas compridas decidem, não a contagem)
+  const nota = (dx: number, dy: number) => {
+    let n = 0;
+    for (const t of cima) {
+      const c = t.c + (t.o === 'V' ? dx : dy), s = t.s + (t.o === 'H' ? dx : dy), e = t.e + (t.o === 'H' ? dx : dy);
+      for (const b of baixo) if (b.o === t.o && Math.abs(b.c - c) < 0.08) n += Math.max(0, Math.min(e, b.e) - Math.max(s, b.s));
+    }
+    return n;
+  };
+  const ops = cx.flatMap(dx => cy.map(dy => ({ dx, dy, n: nota(dx, dy) })));
+  const max = Math.max(...ops.map(o => o.n));
+  // empate técnico (parede de cima a poucos centímetros de outra de baixo puxa a planta para o lado):
+  // fica o que alinha o contorno — pelo menos uma fachada de cada sentido costuma coincidir
+  const caixa = (ts: Trecho[]) => ({ x0: Math.min(...ts.map(t => t.o === 'V' ? t.c : t.s)), x1: Math.max(...ts.map(t => t.o === 'V' ? t.c : t.e)),
+    y0: Math.min(...ts.map(t => t.o === 'H' ? t.c : t.s)), y1: Math.max(...ts.map(t => t.o === 'H' ? t.c : t.e)) });
+  const B = caixa(baixo), C = caixa(cima);
+  const fora = (o: { dx: number; dy: number }) => Math.min(Math.abs(B.x0 - C.x0 - o.dx), Math.abs(B.x1 - C.x1 - o.dx)) + Math.min(Math.abs(B.y0 - C.y0 - o.dy), Math.abs(B.y1 - C.y1 - o.dy));
+  const perto = ops.filter(o => o.n >= 0.85 * max);
+  const ref = ops[0];   // os mais votados (como sempre foi), se estiverem entre os melhores
+  if (perto.includes(ref) && fora(ref) <= Math.min(...perto.map(fora)) + 0.05) return { dx: ref.dx, dy: ref.dy };
+  const m = perto.reduce((a, b) => fora(b) < fora(a) - 0.05 || (Math.abs(fora(b) - fora(a)) <= 0.05 && b.n > a.n) ? b : a);
+  return { dx: m.dx, dy: m.dy };
 }
 
 // trechos das paredes do pavimento de cima (já nas coordenadas da planta de baixo) que não têm parede embaixo,
