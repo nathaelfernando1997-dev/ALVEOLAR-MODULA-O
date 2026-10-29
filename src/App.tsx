@@ -311,7 +311,7 @@ export default function App() {
       const am = ambientes(p, t, pp, vz, { fechar: novo, cobertas: cob, vigasBorda: bv });
       for (const b of bv) b.esp = regras.vigaLargura;
       pisos.push(...bv);
-      const m = modularLajes(am, regras, aj, [...t, ...pp, ...bv], cargasDeCima([...t, ...pp, ...bv], tc, man), bordas);
+      const m = modularLajes(am, regras, aj, [...t, ...pp, ...bv], cargasDeCima([...t, ...pp, ...bv], tc, man, regras.trelicaSobreVao), bordas);
       vazio.lajes.push(...m.ambs); vazio.pl.push(...m.paineis);
       // laje apoiada na linha do guarda-corpo (sacada coberta): ali não tem parede, vai viga na borda
       for (const g of gp) {
@@ -542,6 +542,7 @@ export default function App() {
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
+            <label className="chk"><input type="checkbox" checked={!!regras.trelicaSobreVao} onChange={e => setRegras({ ...regras, trelicaSobreVao: e.target.checked })} /> Parede de cima sobre vão livre (sala integrada, passagem, sem parede embaixo): reforçar a laje com treliça em vez de viga. A viga continua só onde a laje apoia nessa linha</label>
             <ul className="dica">
               <li>Paredes acima da largura máxima são divididas em partes iguais, com coluna entre elas. No T, a coluna fica só na parede que segue alinhada (ou nenhuma, se a parede for pinada).</li>
               <li>Porta: boneca embaixo + altura do quadro (0,10 + 2,10 = 2,20). Janela: o peitoril baixa e o topo sobe pelo valor acima. Largura sempre maior pelo acréscimo.</li>

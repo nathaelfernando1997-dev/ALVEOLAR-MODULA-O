@@ -66,13 +66,26 @@ export function alinhar(baixo: Trecho[], cima: Trecho[], manual?: { dx: number; 
 // trechos das paredes do pavimento de cima (já nas coordenadas da planta de baixo) que não têm parede embaixo,
 // cortados em cada parede de baixo que atravessa a linha: cada pedaço fica dentro de um só ambiente
 export interface Carga { t: Trecho; o: 'H' | 'V'; c: number; a: number; b: number }
-export function cargasDeCima(tb: Trecho[], tc: Trecho[], manual?: { dx: number; dy: number }): Carga[] {
+export function cargasDeCima(tb: Trecho[], tc: Trecho[], manual?: { dx: number; dy: number }, abrirVaos = false): Carga[] {
   if (!tb.length || !tc.length) return [];
   const { dx, dy } = alinhar(tb, tc, manual);
   const out: Carga[] = [];
   for (const t of tc) {
-    const c = t.c + (t.o === 'V' ? dx : dy), s = t.s + (t.o === 'H' ? dx : dy), e = t.e + (t.o === 'H' ? dx : dy);
-    const apoios = tb.filter(x => x.o === t.o && Math.abs(x.c - c) < 0.15 && x.s < e && x.e > s).map(x => [Math.max(s, x.s), Math.min(e, x.e)] as [number, number]).sort((p, q) => p[0] - q[0]);
+    const c = t.c + (t.o === 'V' ? dx : dy), off = t.o === 'H' ? dx : dy;
+    // vão livre de altura inteira na parede de cima (sala integrada, passagem): ali não tem parede pesando na laje
+    const abertos = t.vaos.filter(v => !v.tag && v.inteiro).map(v => [v.a + off, v.b + off] as [number, number]).sort((p, q) => p[0] - q[0]);
+    const pedacos: [number, number][] = []; let ini = t.s + off;
+    for (const [a, b] of abertos) { if (a - ini > 0.3) pedacos.push([ini, a]); ini = Math.max(ini, b); }
+    if (t.e + off - ini > 0.3) pedacos.push([ini, t.e + off]);
+    for (const [s, e] of pedacos) {
+    // abrirVaos: vão livre de altura inteira na parede de baixo não segura a parede de cima (vai para a laje, com treliça)
+    const apoios = tb.filter(x => x.o === t.o && Math.abs(x.c - c) < 0.15 && x.s < e && x.e > s).flatMap(x => {
+      const ab = abrirVaos ? x.vaos.filter(v => !v.tag && v.inteiro).sort((p, q) => p.a - q.a) : [];
+      const ps: [number, number][] = []; let i0 = x.s;
+      for (const v of ab) { if (v.a > i0) ps.push([i0, v.a]); i0 = Math.max(i0, v.b); }
+      if (x.e > i0) ps.push([i0, x.e]);
+      return ps.map(([p, q]) => [Math.max(s, p), Math.min(e, q)] as [number, number]).filter(([p, q]) => q > p);
+    }).sort((p, q) => p[0] - q[0]);
     let pos = s; const livres: [number, number][] = [];
     for (const [a, b] of apoios) { if (a - pos > 0.3) livres.push([pos, a]); pos = Math.max(pos, b); }
     if (e - pos > 0.3) livres.push([pos, e]);
@@ -81,6 +94,7 @@ export function cargasDeCima(tb: Trecho[], tc: Trecho[], manual?: { dx: number; 
       const cortes = tb.filter(x => x.o !== t.o && x.c > a + 0.1 && x.c < b - 0.1 && x.s <= c + 0.1 && x.e >= c - 0.1).map(x => x.c).sort((p, q) => p - q);
       const pts = [a, ...cortes, b];
       for (let i = 0; i < pts.length - 1; i++) if (pts[i + 1] - pts[i] > 0.3) out.push({ t, o: t.o, c, a: pts[i], b: pts[i + 1] });
+    }
     }
   }
   return out;
@@ -115,7 +129,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
     // Altura de 10% do vão: uma parte fica abaixo da laje, passa pela laje e o resto sobe; a parede de cima
     // apoia em cima da viga e fica mais baixa
     for (const t of pp) {
-      const sobre = cima ? cargasDeCima(tb, tc, man).filter(k => k.o === t.o && Math.abs(k.c - t.c) < 0.2 && k.a < t.e && k.b > t.s) : [];
+      const sobre = cima ? cargasDeCima(tb, tc, man, r.trelicaSobreVao).filter(k => k.o === t.o && Math.abs(k.c - t.c) < 0.2 && k.a < t.e && k.b > t.s) : [];
       const nums = [...new Set(ps.filter(p => sobre.some(k => k.t.id === p.trecho)).map(p => p.num))];
       const w = t.e - t.s, a = t.s - r.vigaApoio, b = t.e + r.vigaApoio;
       const hV = Math.max(r.vigaAltura, Math.ceil(w * 0.10 / 0.05 - 1e-9) * 0.05);
@@ -136,14 +150,21 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
         rebaixos: [],
       });
     }
-    const cimaNaLinha = (o: 'H' | 'V', c: number, a: number, b: number) => tc.filter(t => t.o === o && Math.abs(t.c + (o === 'V' ? al.dx : al.dy) - c) < 0.15 &&
-      t.s + (o === 'H' ? al.dx : al.dy) < b && t.e + (o === 'H' ? al.dx : al.dy) > a);
+    // parede de cima na linha do vão; o trecho dela que é vão livre de altura inteira não conta (não pesa)
+    const cimaNaLinha = (o: 'H' | 'V', c: number, a: number, b: number) => tc.filter(t => {
+      if (t.o !== o || Math.abs(t.c + (o === 'V' ? al.dx : al.dy) - c) >= 0.15) return false;
+      const off = o === 'H' ? al.dx : al.dy, s = Math.max(a, t.s + off), e = Math.min(b, t.e + off);
+      if (e <= s) return false;
+      const aberto = t.vaos.filter(v => !v.tag && v.inteiro).reduce((n, v) => n + Math.max(0, Math.min(e, v.b + off) - Math.max(s, v.a + off)), 0);
+      return e - s - aberto > 0.05;
+    });
 
     // 1) vão sem parede: só precisa de viga se a laje apoia nessa parede ou se tem parede em cima
     for (const v of vaos.filter(x => x.pav === pav.id && !x.sobe)) {   // porta que sobe: a verga fica no painel de cima
       const w = v.b - v.a, a = v.a - r.vigaApoio, b = v.b + r.vigaApoio;
       const apoia = apoioDeLaje(pav.id, v.o, v.c, v.a, v.b);
-      const sobre = cimaNaLinha(v.o, v.c, v.a, v.b);
+      // regra do projeto: parede de cima sobre vão livre vai para a laje (treliça); viga só se a laje apoiar nessa linha
+      const sobre = r.trelicaSobreVao && v.tipo === 'vão livre' ? [] : cimaNaLinha(v.o, v.c, v.a, v.b);
       if (!apoia && !sobre.length) continue;
       const nums = ps.filter(p => sobre.some(t => t.id === p.trecho)).map(p => p.num);
       const obrig = w > r.vaoViga || sobre.length > 0;
@@ -173,7 +194,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       for (const pos of L.vigas) {
         const o: 'H' | 'V' = L.sentido === 'H' ? 'V' : 'H';
         const [a, b] = o === 'V' ? [L.y0, L.y1] : [L.x0, L.x1];
-        const sobre = cima ? cargasDeCima([...tb, ...pp], tc, man).filter(k => k.o === o && Math.abs(k.c - pos) < 0.15 && k.a < b && k.b > a) : [];
+        const sobre = cima ? cargasDeCima([...tb, ...pp], tc, man, r.trelicaSobreVao).filter(k => k.o === o && Math.abs(k.c - pos) < 0.15 && k.a < b && k.b > a) : [];
         const perto = ts.filter(t => t.pav === pav.id && t.o === o && Math.abs(t.c - pos) < 1.0 && t.s < b && t.e > a).sort((x, y) => Math.abs(x.c - pos) - Math.abs(y.c - pos))[0];
         V.push({
           id: `${pav.id}-laje-${pos.toFixed(2)}`, pav: pav.id, o, c: pos, a, b, tipo: 'laje', obrigatoria: true, apoio: o === 'V' ? (L.esp.s + L.esp.n) / 4 : (L.esp.o + L.esp.l) / 4,
@@ -186,7 +207,7 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
     }
     // 3) paredes do pavimento de cima sem parede embaixo (um pedaço por ambiente de baixo)
     if (!cima || !tb.length || !tc.length) return;
-    for (const { t, c, a, b } of cargasDeCima([...tb, ...pp], tc, man)) {
+    for (const { t, c, a, b } of cargasDeCima([...tb, ...pp], tc, man, r.trelicaSobreVao)) {
       const nums = ps.filter(p => p.trecho === t.id).map(p => p.num);
       {
         if (vaos.some(v => v.pav === pav.id && v.o === t.o && Math.abs(v.c - c) < 0.15 && v.a <= a + 0.3 && v.b >= b - 0.3)) continue; // já tem viga do vão

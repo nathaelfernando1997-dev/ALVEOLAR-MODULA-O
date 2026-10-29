@@ -41,6 +41,7 @@ export interface Regras {
   vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
   vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
   beiral: number;          // balanço de laje permitido sem viga
+  trelicaSobreVao?: boolean; // parede de cima sobre vão livre (sem parede embaixo): reforço com treliça na laje, não viga
 }
 // regras de um projeto salvo: completa com as atuais e abre sempre no cálculo atual,
 // a não ser que o usuário tenha desligado o cálculo novo nele
