@@ -167,7 +167,8 @@ export function sugerirVigas(pavs: Pavimento[], ts: Trecho[], ps: Painel[], vaos
       const sobre = r.trelicaSobreVao && v.tipo === 'vão livre' ? [] : cimaNaLinha(v.o, v.c, v.a, v.b);
       if (!apoia && !sobre.length) continue;
       const nums = ps.filter(p => sobre.some(t => t.id === p.trecho)).map(p => p.num);
-      const obrig = w > r.vaoViga || sobre.length > 0;
+      // laje apoiada num vão de altura inteira (sem parede nem verga embaixo) é laje no vazio: viga obrigatória
+      const obrig = w > r.vaoViga || sobre.length > 0 || apoia;
       // altura da viga: 10% do vão (de 5 em 5 cm), no mínimo a da regra. Ela ocupa o espaço da parede acima da porta,
       // entra na laje e o que sobrar sobe: a parede de cima apoia em cima da viga e fica mais baixa
       const hV = Math.max(r.vigaAltura, Math.ceil(w * 0.10 / 0.05 - 1e-9) * 0.05);
