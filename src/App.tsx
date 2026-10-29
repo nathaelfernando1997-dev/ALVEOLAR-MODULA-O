@@ -7,7 +7,7 @@ import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, 
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
-import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar } from './engine/vigas.ts';
+import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar, encaixeManual } from './engine/vigas.ts';
 import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
@@ -28,7 +28,7 @@ const baixar = (nome: string, conteudo: string, tipo: string) => {
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
-interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[] }
+interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[]; encaixes: Record<string, { x: number; y: number }> }
 
 // desenhos do arquivo (plantas, cortes) e seus papéis, pela camada das paredes escolhida
 function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
@@ -219,14 +219,14 @@ export default function App() {
   const ativos = pavs.filter(p => p.ativo);
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
-    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], orcExtra: [], areaPav: [] };
+    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], orcExtra: [], areaPav: [], encaixes: {} };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
     // linhas do desenho desta planta (a projeção do beiral pode ficar até 2,5 m para fora das paredes)
     const naCaixa = (b: Box, l: { a: number; b: number; c: number; o: 'H' | 'V' }) => { const [x, y] = l.o === 'H' ? [(l.a + l.b) / 2, l.c] : [l.c, (l.a + l.b) / 2]; return x > b.x0 - 2.5 && x < b.x1 + 2.5 && y > b.y0 - 2.5 && y < b.y1 + 2.5; };
     // porta mais alta que o pavimento: o vão continua no pé da parede de cima
     for (let i = 0; i < ativos.length - 1; i++) if (porPav[i].length && porPav[i + 1].length) {
-      const al = alinhar(porPav[i], porPav[i + 1]);
+      const al = alinhar(porPav[i], porPav[i + 1], encaixeManual(ativos[i], ativos[i + 1]));
       continuarVaos(porPav[i], porPav[i + 1], quadro, regras, al.dx, al.dy);
     }
     const pisos: Trecho[] = [];
@@ -243,7 +243,8 @@ export default function App() {
       pp.push(...vp.map(x => ({ ...x, id: `${p.id}|vparede|${x.id}`, vaos: [], esp: regras.vigaLargura })));
       const semVp = porPav[i].filter(x => !vp.includes(x));
       pisos.push(...pp);
-      const al = cima && tc.length && porPav[i].length ? alinhar(porPav[i], tc) : null;
+      const man = encaixeManual(p, cima);
+      const al = cima && tc.length && porPav[i].length ? alinhar(porPav[i], tc, man) : null;
       // cálculo novo (motor 2); projetos salvos antes continuam com o cálculo de quando foram feitos
       const novo = (regras.motor ?? 1) >= 2;
       // área coberta pelo pavimento de cima (nesta planta): embaixo dela leva laje mesmo sem paredes (garagem)
@@ -303,13 +304,14 @@ export default function App() {
       vz.push(...descobertas);
       descob.set(p.id, descobertas);
       if (cima && al) desloc.set(cima.id, { baixo: p.id, dx: al.dx, dy: al.dy });
+      if (cima && al) vazio.encaixes[cima.id] = { x: cima.box.x0 + al.dx - p.box.x0, y: cima.box.y0 + al.dy - p.box.y0 };
       // o sentido da laje leva em conta as paredes do pavimento de cima
       // sem parede embaixo da borda da área coberta: viga apoiada em pilares
       const bv: Trecho[] = [];
       const am = ambientes(p, t, pp, vz, { fechar: novo, cobertas: cob, vigasBorda: bv });
       for (const b of bv) b.esp = regras.vigaLargura;
       pisos.push(...bv);
-      const m = modularLajes(am, regras, aj, [...t, ...pp, ...bv], cargasDeCima([...t, ...pp, ...bv], tc), bordas);
+      const m = modularLajes(am, regras, aj, [...t, ...pp, ...bv], cargasDeCima([...t, ...pp, ...bv], tc, man), bordas);
       vazio.lajes.push(...m.ambs); vazio.pl.push(...m.paineis);
       // laje apoiada na linha do guarda-corpo (sacada coberta): ali não tem parede, vai viga na borda
       for (const g of gp) {
@@ -454,6 +456,16 @@ export default function App() {
                   {p.ativo && <label>Pé-direito (m) <input type="number" step="0.01" value={p.altura} onChange={e => setPavs(pavs.map(q => q.id === p.id ? { ...q, altura: parseFloat(e.target.value) || 0 } : q))} />
                     {!pesLidos.length && <select value={PES.some(v => Math.abs(v - p.altura) < 1e-6) ? p.altura.toFixed(2) : ''} onChange={e => e.target.value && setPavs(pavs.map(q => q.id === p.id ? { ...q, altura: parseFloat(e.target.value) } : q))}>
                       <option value="">escolher…</option>{PES.map(v => <option key={v} value={v.toFixed(2)}>{br(v)}</option>)}</select>}</label>}
+                  {p.ativo && calc.encaixes[p.id] && (() => {
+                    const e = p.encaixe ?? calc.encaixes[p.id];
+                    const muda = (v: { x: number; y: number } | undefined) => setPavs(pavs.map(q => q.id === p.id ? { ...q, encaixe: v } : q));
+                    return <div className="encaixe">
+                      <label><input type="checkbox" checked={!!p.encaixe} onChange={ev => muda(ev.target.checked ? { x: +e.x.toFixed(2), y: +e.y.toFixed(2) } : undefined)} /> Encaixe manual sobre a planta de baixo</label>
+                      {p.encaixe ? <span>canto esquerdo-inferior a <input type="number" step="0.01" value={p.encaixe.x} onChange={ev => muda({ ...p.encaixe!, x: parseFloat(ev.target.value) || 0 })} /> m para a direita e
+                        {' '}<input type="number" step="0.01" value={p.encaixe.y} onChange={ev => muda({ ...p.encaixe!, y: parseFloat(ev.target.value) || 0 })} /> m para cima do canto da planta de baixo</span>
+                        : <small>automático: {br(e.x)} m para a direita, {br(e.y)} m para cima</small>}
+                    </div>;
+                  })()}
                   <div className="ordem">
                     <button disabled={i === 0} onClick={() => { const a = [...pavs];[a[i - 1], a[i]] = [a[i], a[i - 1]]; setPavs(a); }}>↑</button>
                     <button disabled={i === pavs.length - 1} onClick={() => { const a = [...pavs];[a[i + 1], a[i]] = [a[i], a[i + 1]]; setPavs(a); }}>↓</button>

@@ -62,7 +62,12 @@ export const REGRAS_PADRAO: Regras = {
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
 export interface Box { x0: number; x1: number; y0: number; y1: number }
-export interface Pavimento { id: string; nome: string; box: Box; altura: number; ativo: boolean; corte?: boolean }
+export interface Pavimento {
+  id: string; nome: string; box: Box; altura: number; ativo: boolean; corte?: boolean;
+  // encaixe manual sobre a planta de baixo: canto esquerdo-inferior desta planta a (x, y) m do canto da de baixo
+  // (planta de cima menor que a de baixo, recuada: o encaixe automático encosta numa fachada)
+  encaixe?: { x: number; y: number };
+}
 
 // ---------------- leitura da planta ----------------
 export interface Leitura {
