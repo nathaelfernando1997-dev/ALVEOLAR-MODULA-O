@@ -350,6 +350,7 @@ export interface Ajustes {
   cortes: Record<string, number[]>;        // cortes manuais (distância a partir do início, sem coluna)
   colunas?: Record<string, number[]>;      // cortes manuais com coluna (distância a partir do início)
   altura: Record<string, number>;          // altura manual do trecho
+  alturaPainel?: Record<string, number>;   // altura manual de um painel só (chave = trecho@início do painel), ex.: parede que baixa para a viga da sacada
   vaoTipo: Record<string, string>;         // `${trecho}@${posição}` -> tag (ex.: P04) ou "livre"
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
@@ -630,7 +631,7 @@ export function continuarVaos(baixo: Trecho[], cima: Trecho[], quadro: Esquadria
 
 // ---------------- painéis ----------------
 export interface Recorte { tipo: string; dl: number; w: number; base: number; h: number }
-export interface Painel { num: number; trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; H: number; comp: number; recortes: Recorte[]; aviso?: string }
+export interface Painel { num: number; trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; H: number; comp: number; recortes: Recorte[]; aviso?: string; chave?: string }
 export interface VaoInteiro { trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; tipo: string; sobe?: boolean; topo?: number; H?: number }
 
 export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel[]; vaos: VaoInteiro[] } {
@@ -690,7 +691,9 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           rec.push({ tipo: o.tipo, dl, w, base, h });
         }
         if (larg < r.naoFabricar) aviso = 'n fabricar';
-        P.push({ num: 0, trecho: t.id, pav: t.pav, o: t.o, c: t.c, a: pa, b: pb, larg, H: t.H, comp: pb - pa, recortes: rec, aviso });
+        const chave = `${t.id}@${pa.toFixed(2)}`, Hp = aj.alturaPainel?.[chave];
+        if (Hp !== undefined) aviso = (aviso ? aviso + ' · ' : '') + `altura de ${Hp.toFixed(2).replace('.', ',')} m definida à mão`;
+        P.push({ num: 0, trecho: t.id, pav: t.pav, o: t.o, c: t.c, a: pa, b: pb, larg, H: Hp ?? t.H, comp: pb - pa, recortes: rec, aviso, chave });
       }
     }
   }

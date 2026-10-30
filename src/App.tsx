@@ -947,6 +947,10 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
     <label>Altura desta parede (m)
       <input type="number" step="0.01" defaultValue={aj.altura[t.id] ?? t.H} key={t.id} onBlur={e => { const v = parseFloat(e.target.value); const a = { ...aj.altura }; if (isFinite(v) && v > 0) a[t.id] = v; else delete a[t.id]; setAj({ ...aj, altura: a }); }} />
     </label>
+    {calc.ps.filter(p => p.trecho === t.id && p.chave).map(p =>
+      <label key={p.chave}>Altura só do painel {p.num} (m)
+        <input type="number" step="0.01" defaultValue={p.H} key={`${p.chave}${p.H}`} onBlur={e => { const v = parseFloat(e.target.value); const a = { ...(aj.alturaPainel || {}) }; if (isFinite(v) && v > 0 && Math.abs(v - t.H) > 1e-6) a[p.chave!] = v; else delete a[p.chave!]; setAj({ ...aj, alturaPainel: a }); }} />
+      </label>)}
     <button onClick={limpar}>Fechar</button>
   </div>;
 }
