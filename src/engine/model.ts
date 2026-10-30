@@ -707,9 +707,10 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
       for (let i = 0; i < ps.length - 1; i++) {
         const p = ps[i], q = ps[i + 1], fim = p.a + p.larg, gap = q.a - fim;
         if (gap <= max + 1e-6 || gap > 0.6 || Math.abs(p.c - q.c) > 0.05) continue;
-        // vão entre eles, ou parede que atravessa (o painel dela ocupa o espaço): não é emenda
+        // vão entre eles, ou parede que chega no encontro (atravessa, T ou L — o painel dela ocupa o espaço): não é emenda,
+        // a junta de no máximo 17 cm é só para dois painéis seguindo alinhados sem outra parede ali
         if (VI.some(v => v.pav === p.pav && v.o === p.o && Math.abs(v.c - p.c) < 0.05 && v.a < q.a && v.b > fim)) continue;
-        if (P.some(x => x.pav === p.pav && x.o !== p.o && x.c > fim - 0.02 && x.c < q.a + 0.02 && x.a < p.c - 0.02 && x.a + x.larg > p.c + 0.02)) continue;
+        if (P.some(x => x.pav === p.pav && x.o !== p.o && x.c > fim - 0.02 && x.c < q.a + 0.02 && x.a < p.c + 0.3 && x.a + x.larg > p.c - 0.3)) continue;
         const e = gap - max;
         let ep = e / 2, eq = e / 2;
         if (p.larg + ep > r.larguraMax) { eq += ep - Math.max(0, r.larguraMax - p.larg); ep = Math.max(0, r.larguraMax - p.larg); }
