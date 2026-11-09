@@ -264,9 +264,15 @@ export function trelicasNasLajes(T: (Viga & { n: number })[], P: PainelLaje[]): 
       const d0 = t.c - c0, d1 = c1 - t.c;
       const ini = Math.max(t.a, l0) - l0;   // onde começa, a partir da ponta esquerda/de baixo do painel
       const onde = `a ${br(Math.min(d0, d1))} m da borda ${d0 <= d1 ? lado[0] : lado[1]}` + (ini > 0.1 ? `, começando a ${br(ini)} m da ponta ${t.o === 'H' ? 'esquerda' : 'de baixo'}` : '');
-      out.push({ t: t.n, painel: p.num, onde, comp, ao: t.o === p.sentido ? 'ao longo' : 'atravessando' });
+      out.push({ t: t.n, painel: p.num, onde, comp, ao: t.o === p.sentido ? 'ao longo' : 'atravessando', _o: t.o, _c: t.c, _a: Math.max(t.a, l0), _b: Math.min(t.b, l1) } as TrelicaPainel);
     }
     if (out.length === n0) out.push({ t: t.n, painel: 0, onde: 'sem painel de laje modulado embaixo (área sem ambiente fechado no pavimento de baixo) — conferir o apoio da laje', comp: t.b - t.a, ao: 'ao longo' });
   }
-  return out.sort((a, b) => (a.painel || 1e9) - (b.painel || 1e9) || a.t - b.t);
+  // duas treliças paralelas a até 6 cm uma da outra no mesmo painel: fica só a mais comprida (ela cobre a outra)
+  type X = TrelicaPainel & { _o?: string; _c?: number; _a?: number; _b?: number };
+  const X = out as X[];
+  const fica = X.filter(q => !X.some(r => r !== q && r.painel === q.painel && q.painel && r._o === q._o && Math.abs((r._c ?? 0) - (q._c ?? 0)) <= TRELICA_JUNTA
+    && (r._a ?? 0) <= (q._a ?? 0) + 0.02 && (r._b ?? 0) >= (q._b ?? 0) - 0.02 && (r.comp > q.comp + 1e-6 || (Math.abs(r.comp - q.comp) <= 1e-6 && r.t < q.t))));
+  return fica.map(({ _o, _c, _a, _b, ...q }) => (void _o, void _c, void _a, void _b, q)).sort((a, b) => (a.painel || 1e9) - (b.painel || 1e9) || a.t - b.t);
 }
+export const TRELICA_JUNTA = 0.06;

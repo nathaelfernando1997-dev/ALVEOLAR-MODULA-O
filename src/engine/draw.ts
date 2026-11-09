@@ -150,7 +150,9 @@ export function trelicasNoPainel(p: PainelLaje, T: TrelicaLinha[]) {
     // em pé: comprimento na vertical → treliça ao longo fica vertical (x = pos), atravessando fica horizontal (y = pos)
     out.push({ n: t.n, vert: aoLongo, pos, i0, i1, tipo: t.tipo });
   }
-  return out;
+  // duas treliças paralelas a até 6 cm uma da outra: fica só a mais comprida (ela cobre a outra)
+  return out.filter(q => !out.some(r => r !== q && r.vert === q.vert && Math.abs(r.pos - q.pos) <= 0.06 && r.i0 <= q.i0 + 0.02 && r.i1 >= q.i1 - 0.02
+    && (r.i1 - r.i0 > q.i1 - q.i0 + 1e-6 || (Math.abs((r.i1 - r.i0) - (q.i1 - q.i0)) <= 1e-6 && r.n < q.n))));
 }
 
 // vista de produção de um painel de laje (unidades: 1 m = 100), como a vista das paredes:
