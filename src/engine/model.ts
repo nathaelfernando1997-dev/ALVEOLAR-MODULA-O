@@ -361,7 +361,8 @@ export interface Ajustes {
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
   trelicasPainel?: Record<string, { compMin: number; borda: number; qtd?: number }>;   // por pavimento: painéis de laje a partir de compMin levam treliças ao longo (uma em cada lateral, a borda da beira, e as outras distribuídas)
-  telhado?: Record<string, Telhado>;       // por pavimento: telhado em caimento (paredes no sentido do caimento saem chanfradas)
+  telhado?: Record<string, Telhado>;
+  bonecaLateral?: Record<string, number>;  // boneca lateral própria do trecho (m), ex.: porta/vidro na parede toda — o painel sai inteiro e as bonecas saem depois da montagem       // por pavimento: telhado em caimento (paredes no sentido do caimento saem chanfradas)
   peAmb?: Record<string, number>;          // pé-direito próprio de um ambiente (sala de 4 m, pé-direito duplo): as paredes em volta sobem até ele
 }
 export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, colunas: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
@@ -692,11 +693,14 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           if (!(pa - 1e-6 <= mo && mo < pb + 1e-6)) continue;
           if (o.x0 < pa - 0.08 || o.x1 > pb + 0.08) aviso = `${o.tipo}: cortada pela divisão da parede — mova o corte`;
           const toda = o.x0 <= t.s + 0.06 && o.x1 >= t.e - 0.06;   // janela ocupando a parede toda
-          let w = Math.min(o.w, larg - 2 * r.boneca);
-          if (toda) aviso = `${o.tipo} na parede toda: bonecas de ${r.boneca * 100} cm nas laterais (retirar após concretar)`;
+          // boneca lateral própria da parede (porta/vidro na parede toda): o painel sai inteiro e as bonecas são retiradas depois de montar
+          const bm = aj.bonecaLateral?.[t.id], bl = bm ?? r.boneca;
+          let w = Math.min(o.w, larg - 2 * bl);
+          if (bm !== undefined) aviso = `${o.tipo}: bonecas laterais de ${Math.round(bm * 100)} cm — retirar após a montagem`;
+          else if (toda) aviso = `${o.tipo} na parede toda: bonecas de ${r.boneca * 100} cm nas laterais (retirar após concretar)`;
           else if (w < o.w - 1e-6) aviso = `${o.tipo}: recorte reduzido para caber as bonecas`;
-          let dl = Math.min(Math.max(o.x0 - pa, r.boneca), larg - w - r.boneca);
-          if (dl < r.boneca - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${r.boneca * 100} cm`; }
+          let dl = Math.min(Math.max(o.x0 - pa, bl), larg - w - bl);
+          if (dl < bl - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${bl * 100} cm`; }
           let base = o.base, h = o.h;
           if (base < r.boneca && !o.continua) { h -= r.boneca - base; base = r.boneca; }
           // cálculo novo: recorte que vai até o topo ou sai do pé do painel (continua no pavimento de cima)
