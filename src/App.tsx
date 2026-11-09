@@ -3,7 +3,7 @@ import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
 import { ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
-import { plantaSvg, vistaSvg, vistaLajeSvg, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
+import { plantaSvg, vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
@@ -1068,10 +1068,11 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
       </div>);
       // produção: uma vista por painel de laje, como as paredes
       if (novo) {
-        const pgs = paginarVistas(P, p => p.larg, p => p.comp + 0.95);
+        const trDe = (p: PainelLaje) => TRf.map(t => ({ ...t, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) }));
+        const pgs = paginarVistas(P, p => p.larg + extraVistaLaje(p, TRf).larg, p => p.comp + 0.95 + extraVistaLaje(p, TRf).alt);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas lajes">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) }))) }} />)}</div>)}</div>
+          <div className="vistas lajes">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], trDe(p)) }} />)}</div>)}</div>
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
