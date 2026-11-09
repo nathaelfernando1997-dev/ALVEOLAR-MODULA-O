@@ -155,14 +155,23 @@ export function trelicasNoPainel(p: PainelLaje, T: TrelicaLinha[]) {
 
 // vista de produção de um painel de laje (unidades: 1 m = 100), como a vista das paredes:
 // em pé — comprimento (alvéolos) na vertical, largura na horizontal
-export const extraVistaLaje = (p: PainelLaje, TR: TrelicaLinha[]) => { const t = trelicasNoPainel(p, TR), nh = t.filter(x => !x.vert).length, nv = t.length - nh; return { larg: nh ? 0.08 + nh * 0.17 : 0, alt: nv ? 0.1 + nv * 0.17 : 0 }; };
+type TrelPainel = ReturnType<typeof trelicasNoPainel>[number];
+function trelicasResumo(TT: TrelPainel[], w: number, h: number) {
+  const uniq = (v: number[]) => [...v].sort((a, b) => a - b).filter((x, i, a) => !i || x - a[i - 1] > 0.005);
+  const PH = uniq(TT.filter(t => !t.vert).map(t => t.pos)), PV = uniq(TT.filter(t => t.vert).map(t => t.pos));
+  const NT = TT.filter(t => t.i0 > 0.02 || t.i1 < (t.vert ? h : w) - 0.02)
+    .map(t => `T${t.n}: de ${br(t.i0)} a ${br(t.i1)} ${t.vert ? 'de baixo' : 'da esquerda'} (${br(t.i1 - t.i0)} m)`);
+  return { PH, PV, NT };
+}
+export const extraVistaLaje = (p: PainelLaje, TR: TrelicaLinha[]) => { const loc = lajeLocal(p), r = trelicasResumo(trelicasNoPainel(p, TR), loc.W, loc.L);
+  return { larg: Math.max(r.PH.length ? 0.08 + r.PH.length * 0.17 : 0, Math.max(0, ...r.NT.map(n => n.length * 0.05)) - loc.W - 0.6), alt: (r.PV.length ? 0.1 + r.PV.length * 0.17 : 0) + r.NT.length * 0.13 }; };
 export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLinha[] = []): string {
   const k = 100, loc = lajeLocal(p), w = loc.W, h = loc.L, mx = 0.5, my = 0.45;
   const d = loc.d && { u0: loc.d.v0, u1: loc.d.v1, v0: loc.d.u0, v1: loc.d.u1 };
   const TT = trelicasNoPainel(p, TR), TH = TT.filter(t => !t.vert).sort((a, b) => a.pos - b.pos), TV = TT.filter(t => t.vert).sort((a, b) => a.pos - b.pos);
   // cotas das treliças fora do painel: horizontais à direita, verticais embaixo (uma fileira por treliça, sem sobrepor)
-  const DT = 0.17, extD = TH.length ? 0.08 + TH.length * DT : 0, extB = TV.length ? 0.1 + TV.length * DT : 0;
-  const Hh = (h + my + 0.35 + extB + notas.length * 0.13 + 0.15) * k, Wd = (w + 2 * mx + extD) * k;
+  const { PH, PV, NT } = trelicasResumo(TT, w, h), DT = 0.17, extD = PH.length ? 0.08 + PH.length * DT : 0, extB = PV.length ? 0.1 + PV.length * DT : 0;
+  const Hh = (h + my + 0.35 + extB + (NT.length + notas.length) * 0.13 + 0.15) * k, Wd = Math.max(w + 2 * mx + extD, Math.max(0, ...NT.map(n => n.length * 0.05 + 0.2))) * k;
   const X = (x: number) => (x + mx) * k, Y = (y: number) => (h + my - y) * k;
   const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(Wd / 100 * 18).toFixed(1)}mm">`];
   const Ln = (x1: number, y1: number, x2: number, y2: number, c = '#000', sw = 1.2, da = '') => s.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${c}" stroke-width="${sw}"${da ? ` stroke-dasharray="${da}"` : ''}/>`);
@@ -180,26 +189,17 @@ export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLin
   } else { Ln(0, 0, w, 0); Ln(w, 0, w, h); Ln(w, h, 0, h); Ln(0, h, 0, 0); }
   // sentido do vão (alvéolos ao longo do comprimento, em pé)
   Ln(w / 2, 0.15, w / 2, h - 0.15, '#888', 0.8, '6 4'); Ln(w / 2 - 0.08, h - 0.3, w / 2, h - 0.15, '#888', 0.8); Ln(w / 2 + 0.08, h - 0.3, w / 2, h - 0.15, '#888', 0.8);
-  const RX = '#7a2bbf', parcial = (i0: number, i1: number, L: number) => i0 > 0.02 || i1 < L - 0.02;
-  // cota de trecho curto: o texto sai para fora da linha de cota para não encavalar no vizinho
-  const cH = (a: number, b: number, y: number, t: string) => { if (b - a >= 0.3) return dimH(a, b, y, t); Ln(a, y, b, y, AZUL, 0.8); Ln(a, y - 0.04, a, y + 0.04, AZUL, 0.8); Ln(b, y - 0.04, b, y + 0.04, AZUL, 0.8); T((a + b) / 2, y + 0.16, t, 9); };
-  const cV = (x: number, a: number, b: number, t: string) => { if (b - a >= 0.3) return dimV(x, a, b, t); Ln(x, a, x, b, AZUL, 0.8); Ln(x - 0.04, a, x + 0.04, a, AZUL, 0.8); Ln(x - 0.04, b, x + 0.04, b, AZUL, 0.8); T(x - 0.15, (a + b) / 2, t, 9, VERM, true); };
-  TH.forEach((t, i) => {
-    Ln(t.i0, t.pos, t.i1, t.pos, RX, 1.6, '8 4');
-    const xd = w + 0.08 + (i + 1) * DT; Ln(w, t.pos, xd + 0.04, t.pos, AZUL, 0.5, '2 2'); dimV(xd, 0, t.pos, br(t.pos));
-    T((t.i0 + t.i1) / 2, t.pos - 0.11, `T${t.n}${t.tipo ? ' ' + t.tipo : ''}`, 10, RX);
-    // treliça que não pega a largura toda: onde começa e quanto mede
-    if (parcial(t.i0, t.i1, w)) { const y = t.pos + 0.1; if (t.i0 > 0.02) cH(0, t.i0, y, br(t.i0)); cH(t.i0, t.i1, y, br(t.i1 - t.i0)); if (t.i1 < w - 0.02) cH(t.i1, w, y, br(w - t.i1)); }
-  });
-  TV.forEach((t, i) => {
-    Ln(t.pos, t.i0, t.pos, t.i1, RX, 1.6, '8 4');
-    const yd = -0.1 - (i + 1) * DT; Ln(t.pos, 0, t.pos, yd - 0.04, AZUL, 0.5, '2 2'); dimH(0, t.pos, yd, br(t.pos));
-    T(t.pos > w - 0.25 ? t.pos - 0.3 : t.pos + 0.12, (t.i0 + t.i1) / 2 + 0.45, `T${t.n}${t.tipo ? ' ' + t.tipo : ''}`, 10, RX, true);
-    if (parcial(t.i0, t.i1, h)) { const x = t.pos - 0.1; if (t.i0 > 0.02) cV(x, 0, t.i0, br(t.i0)); cV(x, t.i0, t.i1, br(t.i1 - t.i0)); if (t.i1 < h - 0.02) cV(x, t.i1, h, br(h - t.i1)); }
-  });
+  const RX = '#7a2bbf', nome = (t: { n: number; tipo?: string }) => `T${t.n}${t.tipo ? ' ' + t.tipo : ''}`;
+  // posição: uma cota por posição diferente, fora do painel (deitadas à direita, medidas de baixo; em pé embaixo, medidas da esquerda)
+  PH.forEach((pos, i) => { const xd = w + 0.08 + (i + 1) * DT; Ln(w + 0.03, pos, xd + 0.04, pos, '#aab', 0.5, '2 2'); dimV(xd, 0, pos, br(pos)); });
+  PV.forEach((pos, i) => { const yd = -0.1 - (i + 1) * DT; Ln(pos, -0.03, pos, yd - 0.04, '#aab', 0.5, '2 2'); dimH(0, pos, yd, br(pos)); });
+  for (const t of TH) { Ln(t.i0, t.pos, t.i1, t.pos, RX, 1.6, '8 4'); T((t.i0 + t.i1) / 2, t.pos + 0.06, nome(t), 10, RX); }
+  for (const t of TV) { Ln(t.pos, t.i0, t.pos, t.i1, RX, 1.6, '8 4'); T(t.pos > w - 0.25 ? t.pos - 0.08 : t.pos + 0.12, (t.i0 + t.i1) / 2, nome(t), 10, RX, true); }
+  // treliça que não pega o painel inteiro: em texto embaixo (sem encher o desenho de cotas)
+  NT.forEach((n, i) => T(Wd / k / 2 - mx, -0.25 - extB - i * 0.13, n, 9.5, RX));
   s.push(`<text x="${X(0.06)}" y="${Y(h - 0.2)}" font-size="16" fill="${VERM}" font-weight="bold">L${p.num}</text>`);
   dimH(0, w, h + 0.2, br(w)); dimV(-0.22, 0, h, br(h));
-  notas.forEach((n, i) => T(w / 2, -0.22 - extB - i * 0.13, esc(n), 10, '#b00'));
+  notas.forEach((n, i) => T(w / 2, -0.25 - extB - (NT.length + i) * 0.13, esc(n), 10, '#b00'));
   s.push('</svg>');
   return s.join('');
 }
