@@ -838,7 +838,7 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
                 const v = pt.matrixTransform(svg.getScreenCTM()!.inverse());
                 onCorte(p.trecho, p.o === 'H' ? q.iX(v.x) : q.iY(v.y));
               } else onPainel(p.trecho);
-            }}><title>Painel {p.num} · {br(p.larg)} × {br(p.H)}</title></line>;
+            }}><title>Painel {p.num} · {br(p.larg)} × {p.chanfro ? `${br(p.chanfro.ha)} → ${br(p.chanfro.hb)} (chanfro)` : br(p.H)}</title></line>;
         })}
         {ts.flatMap(t => t.vaos.map(v => {
           const key = `${t.id}@${((v.a + v.b) / 2).toFixed(2)}`;
@@ -959,7 +959,7 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
   const tog = (k: 'excluir' | 'juntar' | 'naoDividir' | 'naoPinar') => setAj({ ...aj, [k]: (aj[k] || []).includes(t.id) ? (aj[k] || []).filter(x => x !== t.id) : [...(aj[k] || []), t.id] });
   return <div className="card acoes">
     <h3>Parede {P.map(p => p.num).join(', ')}</h3>
-    <p>Comprimento {br(t.e - t.s)} m · espessura {br(t.esp)} m{t.pinado ? ' · pinada (sem emenda)' : ''}<br />{P.map(p => `${p.num}: ${br(p.larg)} × ${br(p.H)}`).join(' · ')}</p>
+    <p>Comprimento {br(t.e - t.s)} m · espessura {br(t.esp)} m{t.pinado ? ' · pinada (sem emenda)' : ''}<br />{P.map(p => `${p.num}: ${br(p.larg)} × ${p.chanfro ? `${br(p.chanfro.ha)} → ${br(p.chanfro.hb)} (topo chanfrado)` : br(p.H)}`).join(' · ')}</p>
     {P.some(p => p.aviso) && <p className="erro">{P.filter(p => p.aviso).map(p => `${p.num}: ${p.aviso}`).join(' · ')}</p>}
     <button onClick={() => tog('excluir')}>Não modular esta parede (shaft, platibanda, torre…)</button>
     <button onClick={() => setAj({ ...aj, viga: [...(aj.viga || []), t.id] })}>É viga, não parede (muxarabi, vidro, esquadria) — a laje apoia nela</button>
@@ -980,8 +980,8 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
       <input type="number" step="0.01" defaultValue={aj.altura[t.id] ?? t.H} key={t.id} onBlur={e => { const v = parseFloat(e.target.value); const a = { ...aj.altura }; if (isFinite(v) && v > 0) a[t.id] = v; else delete a[t.id]; setAj({ ...aj, altura: a }); }} />
     </label>
     {calc.ps.filter(p => p.trecho === t.id && p.chave).map(p =>
-      <label key={p.chave}>Altura só do painel {p.num} (m)
-        <input type="number" step="0.01" defaultValue={p.H} key={`${p.chave}${p.H}`} onBlur={e => { const v = parseFloat(e.target.value); const a = { ...(aj.alturaPainel || {}) }; if (isFinite(v) && v > 0 && Math.abs(v - t.H) > 1e-6) a[p.chave!] = v; else delete a[p.chave!]; setAj({ ...aj, alturaPainel: a }); }} />
+      <label key={p.chave}>Altura só do painel {p.num} (m){p.chanfro ? ` — topo chanfrado ${br(p.chanfro.ha)} → ${br(p.chanfro.hb)} (telhado em caimento; digitar uma altura aqui tira o chanfro)` : ''}
+        <input type="number" step="0.01" defaultValue={p.H} key={`${p.chave}${p.H}`} onBlur={e => { const v = parseFloat(e.target.value); if (isFinite(v) && Math.abs(v - p.H) < 1e-6) return; const a = { ...(aj.alturaPainel || {}) }; if (isFinite(v) && v > 0 && Math.abs(v - t.H) > 1e-6) a[p.chave!] = v; else delete a[p.chave!]; setAj({ ...aj, alturaPainel: a }); }} />
       </label>)}
     <button onClick={limpar}>Fechar</button>
   </div>;
