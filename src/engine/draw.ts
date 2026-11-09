@@ -165,13 +165,13 @@ function trelicasResumo(TT: TrelPainel[], w: number, h: number) {
 }
 export const extraVistaLaje = (p: PainelLaje, TR: TrelicaLinha[]) => { const loc = lajeLocal(p), r = trelicasResumo(trelicasNoPainel(p, TR), loc.W, loc.L);
   return { larg: Math.max(r.PH.length ? 0.08 + r.PH.length * 0.17 : 0, Math.max(0, ...r.NT.map(n => n.length * 0.05)) - loc.W - 0.6), alt: (r.PV.length ? 0.1 + r.PV.length * 0.17 : 0) + r.NT.length * 0.13 }; };
-export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLinha[] = []): string {
+export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLinha[] = [], baixoMin = 0): string {
   const k = 100, loc = lajeLocal(p), w = loc.W, h = loc.L, mx = 0.5, my = 0.45;
   const d = loc.d && { u0: loc.d.v0, u1: loc.d.v1, v0: loc.d.u0, v1: loc.d.u1 };
   const TT = trelicasNoPainel(p, TR), TH = TT.filter(t => !t.vert).sort((a, b) => a.pos - b.pos), TV = TT.filter(t => t.vert).sort((a, b) => a.pos - b.pos);
   // cotas das treliças fora do painel: horizontais à direita, verticais embaixo (uma fileira por treliça, sem sobrepor)
   const { PH, PV, NT } = trelicasResumo(TT, w, h), DT = 0.17, extD = PH.length ? 0.08 + PH.length * DT : 0, extB = PV.length ? 0.1 + PV.length * DT : 0;
-  const Hh = (h + my + 0.35 + extB + (NT.length + notas.length) * 0.13 + 0.15) * k, Wd = Math.max(w + 2 * mx + extD, Math.max(0, ...NT.map(n => n.length * 0.05 + 0.2))) * k;
+  const Hh = (h + my + 0.35 + Math.max(baixoMin, extB + (NT.length + notas.length) * 0.13) + 0.15) * k, Wd = Math.max(w + 2 * mx + extD, Math.max(0, ...NT.map(n => n.length * 0.05 + 0.2))) * k;
   const X = (x: number) => (x + mx) * k, Y = (y: number) => (h + my - y) * k;
   const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(Wd / 100 * 18).toFixed(1)}mm">`];
   const Ln = (x1: number, y1: number, x2: number, y2: number, c = '#000', sw = 1.2, da = '') => s.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${c}" stroke-width="${sw}"${da ? ` stroke-dasharray="${da}"` : ''}/>`);

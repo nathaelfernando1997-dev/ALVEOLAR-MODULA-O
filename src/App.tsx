@@ -1072,7 +1072,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
         const pgs = paginarVistas(P, p => p.larg + extraVistaLaje(p, TRf).larg, p => p.comp + 0.95 + extraVistaLaje(p, TRf).alt);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas lajes">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], trDe(p)) }} />)}</div>)}</div>
+          <div className="vistas lajes">{pgx.map((linha, j) => { const bx = Math.max(...linha.map(p => extraVistaLaje(p, TRf).alt)); return <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], trDe(p), bx) }} />)}</div>; })}</div>
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
