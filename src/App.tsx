@@ -342,8 +342,9 @@ export default function App() {
       const temLaje = (pav: string, x: number, y: number) => vazio.pl.some(L => L.pav === pav && x > L.x0 && x < L.x1 && y > L.y0 && y < L.y1);
       const dentro = (bs: Box[], x: number, y: number) => bs.some(b => x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1);
       for (const P of vazio.ps) {
-        const m = (P.a + P.b) / 2, d = 0.3;
-        const lados: [number, number][] = P.o === 'H' ? [[m, P.c - d], [m, P.c + d]] : [[P.c - d, m], [P.c + d, m]];
+        // pontos dos dois lados do painel (no meio e a 1/4 das pontas: o meio pode cair na folga entre dois painéis de laje)
+        const d = 0.3, ms = [0.25, 0.5, 0.75].map(t => P.a + (P.b - P.a) * t), m = ms[1];
+        const lados: [number, number][] = ms.flatMap((mm): [number, number][] => P.o === 'H' ? [[mm, P.c - d], [mm, P.c + d]] : [[P.c - d, mm], [P.c + d, mm]]);
         const ds = desloc.get(P.pav);
         if (ds && P.H >= (ativos.find(a => a.id === P.pav)?.altura ?? 0) - 0.01) {
           const emBaixo = lados.map(([x, y]) => [x + ds.dx, y + ds.dy] as [number, number]);
