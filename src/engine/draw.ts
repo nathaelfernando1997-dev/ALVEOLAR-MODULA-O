@@ -40,12 +40,19 @@ export function plantaSvg(L: Leitura, pav: Pavimento, ps: Painel[], vaos: VaoInt
   const q = quadro(pav);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${q.vb}">${plantaConteudo(L, pav, ps, vaos, arq, q)}</svg>`;
 }
+const AMBIENTE_RE = /^(SALA|COZINHA|QUARTO|SU[IÍ]TE|BANHO|BANHEIRO|WC|LAVABO|GARAGEM|VARANDA|SACADA|[AÁ]REA|SERVI[CÇ]O|LAVANDERIA|DESPENSA|DEP[OÓ]SITO|CLOSET|CIRCULA[CÇ][AÃ]O|CORREDOR|HALL|ESCRIT[OÓ]RIO|OFFICE|GOURMET|ESTAR|JANTAR|COPA|KIT|APTO|APARTAMENTO|LOJA|ESCADA)\b[^0-9]*\d?$/i;
 export function plantaConteudo(L: Leitura, pav: Pavimento, ps: Painel[], vaos: VaoInteiro[], arq: Prim[], q: Quadro): string {
   const b = pav.box, { X, Y, k } = q;
   const g: string[] = [arqSvg(q, arq)];
   const tags = L.tags.filter(t => t.x > b.x0 - 0.5 && t.x < b.x1 + 0.5 && t.y > b.y0 - 0.5 && t.y < b.y1 + 0.5);
   const occ: Caixa[] = [];
   for (const t of tags) { occ.push([t.x - 0.25, t.y - 0.13, t.x + 0.25, t.y + 0.13]); g.push(`<text x="${X(t.x)}" y="${Y(t.y) + 7}" font-size="20" fill="${ROSA}" text-anchor="middle">${esc(t.text)}</text>`); }
+  // nome dos ambientes do projeto (ajuda a achar a parede na obra), em cinza
+  for (const t of L.textos) {
+    if (!(t.x > b.x0 && t.x < b.x1 && t.y > b.y0 && t.y < b.y1) || !AMBIENTE_RE.test(t.text.trim()) || t.text.length > 28) continue;
+    const w = 0.09 * t.text.length; occ.push([t.x - w / 2, t.y - 0.1, t.x + w / 2, t.y + 0.1]);
+    g.push(`<text x="${X(t.x)}" y="${Y(t.y) + 5}" font-size="14" fill="#8a8a8a" text-anchor="middle">${esc(t.text.trim())}</text>`);
+  }
   const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
   // agrupa painéis no mesmo lugar (ex.: peças sobrepostas)
   const grupos = new Map<string, Painel[]>();
