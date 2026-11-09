@@ -361,7 +361,18 @@ export default function App() {
     }
     numerar(vazio.ps, ativos.map(p => p.id));
     numerarLajes(vazio.pl, ativos.map(p => p.id));
-    { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv })); }
+    { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv }));
+      // treliças pedidas nos painéis compridos: ao longo do painel, uma em cada lateral e as outras distribuídas (numeradas depois das de parede)
+      for (const P of vazio.pl) {
+        const tp = aj.trelicasPainel?.[P.pav]; if (!tp || P.comp < tp.compMin - 0.005) continue;
+        const q = Math.max(2, tp.qtd ?? 3), H = P.sentido === 'H', c0 = (H ? P.y0 : P.x0) + tp.borda, c1 = (H ? P.y1 : P.x1) - tp.borda;
+        for (let k = 0; k < q; k++) {
+          const c = c0 + (c1 - c0) * k / (q - 1);
+          vazio.vigas.push({ id: `${P.pav}-trp-L${P.num}-${k}`, pav: P.pav, o: P.sentido, c, a: H ? P.x0 : P.y0, b: H ? P.x1 : P.y1, tipo: 'trelica', obrigatoria: false,
+            motivo: `Treliça ${k === 0 || k === q - 1 ? 'da lateral' : 'do meio'} do painel L${P.num} (${br(P.comp)} m), pedida para todos os painéis a partir de ${br(tp.compMin)} m.`, ideia: '', rebaixos: [], n: ++nt });
+        }
+      }
+    }
     // parede de cima que apoia em cima da viga fica mais baixa
     // (no vazio a viga ocupa a altura da laje: a parede não desce até a parede de baixo)
     for (const v of vazio.vigas) for (const d of v.desconto || []) {
