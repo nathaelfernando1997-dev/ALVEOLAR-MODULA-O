@@ -841,6 +841,21 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
 
 // tabelas longas na impressão: divididas em blocos (colunas lado a lado / folhas seguintes) para não cortar no fim da folha A4
 const LINHAS_TLAJE = 40, LINHAS_TREL = 24, LINHAS_TREL_CONT = 30;
+// vistas de produção: 18 mm por metro; linhas por largura (13,8 m) e folhas pela altura útil da folha A4 deitada
+const ESC_VISTA = 18, LARG_FOLHA = 13.8, ALT_FOLHA_MM = 172;
+function paginarVistas<T>(itens: T[], larg: (p: T) => number, alt: (p: T) => number, maxLinhas = 99): T[][][] {
+  const linhas: T[][] = []; let lin: T[] = [], w = 0;
+  for (const p of itens) { if (lin.length && w + larg(p) + 1.1 > LARG_FOLHA) { linhas.push(lin); lin = []; w = 0; } lin.push(p); w += larg(p) + 1.1; }
+  if (lin.length) linhas.push(lin);
+  const pgs: T[][][] = []; let pg: T[][] = [], h = 0;
+  for (const l of linhas) {
+    const hl = Math.max(...l.map(alt)) * ESC_VISTA + 4;
+    if (pg.length && (h + hl > ALT_FOLHA_MM || pg.length >= maxLinhas)) { pgs.push(pg); pg = []; h = 0; }
+    pg.push(l); h += hl;
+  }
+  if (pg.length) pgs.push(pg);
+  return pgs.length ? pgs : [[[]]];
+}
 function emBlocos<T>(a: T[], n: number): T[][] { const out: T[][] = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out.length ? out : [[]]; }
 
 function TabelaTrelicas({ TP, TR, curta }: { TP: TrelicaPainel[]; TR: VigaN[]; curta?: boolean }) {
@@ -1022,13 +1037,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
       <div className="desenho" dangerouslySetInnerHTML={{ __html: plantaSvg(leitura, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arqDe(pav.box)) }} />
       {rod('■ vermelho: número do painel · azul: cota da parede (painel = cota − desconto) · rosa: porta / janela')}
     </div>);
-    let pg: Painel[][] = [[]], w = 0, linhas = 1;
-    const paginas: Painel[][][] = [];
-    for (const p of ps) {
-      if (w + p.larg + 1.1 > 13.8) { if (linhas === 2) { paginas.push(pg); pg = [[]]; linhas = 1; } else { pg.push([]); linhas++; } w = 0; }
-      pg[pg.length - 1].push(p); w += p.larg + 1.1;
-    }
-    paginas.push(pg);
+    const paginas = paginarVistas(ps, p => p.larg, p => p.H + 0.8 + Math.ceil((p.aviso || '').length / 40) * 0.13, 2);
     paginas.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'v' + i}>
       <div className="cab">MODULAÇÃO DAS PAREDES — {pav.nome.toUpperCase()} — folha {i + 1}/{paginas.length}</div>
       <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaSvg(p) }} />)}</div>)}</div>
@@ -1059,15 +1068,10 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
       </div>);
       // produção: uma vista por painel de laje, como as paredes
       if (novo) {
-        const pgs: PainelLaje[][][] = []; let pg: PainelLaje[][] = [[]], w = 0, nl = 1;
-        for (const p of P) {
-          if (w + p.larg + 1.1 > 13.8) { if (nl === 2) { pgs.push(pg); pg = [[]]; nl = 1; } else { pg.push([]); nl++; } w = 0; }
-          pg[pg.length - 1].push(p); w += p.larg + 1.1;
-        }
-        pgs.push(pg);
+        const pgs = paginarVistas(P, p => p.larg, p => p.comp + 0.95);
         pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
           <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) }))) }} />)}</div>)}</div>
+          <div className="vistas lajes">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], TRf.map(t => ({ ...t, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) }))) }} />)}</div>)}</div>
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
