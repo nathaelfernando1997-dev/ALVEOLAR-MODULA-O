@@ -839,6 +839,10 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
   );
 }
 
+// tabelas longas na impressão: divididas em blocos (colunas lado a lado / folhas seguintes) para não cortar no fim da folha A4
+const LINHAS_TLAJE = 40, LINHAS_TREL = 24, LINHAS_TREL_CONT = 30;
+function emBlocos<T>(a: T[], n: number): T[][] { const out: T[][] = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out.length ? out : [[]]; }
+
 function TabelaTrelicas({ TP, TR, curta }: { TP: TrelicaPainel[]; TR: VigaN[]; curta?: boolean }) {
   return <div className="card trelicas">
     <h3>Treliças na laje ({TR.length})</h3>
@@ -1047,10 +1051,10 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
       folhas.push(<div className="folha" key={pav.id + 'l'}>
         <div className="cab">MODULAÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()}</div>
         <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf) }} />
-          <table className="tlaje"><thead><tr><th>Painel</th><th>Comp.</th><th>Larg.</th><th>m²</th></tr></thead><tbody>
-            {P.map(p => <tr key={p.num}><td>L{p.num}{p.dente ? '*' : ''}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(areaLaje(p))}</td></tr>)}
-            <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + areaLaje(p), 0))}</td></tr>
-          </tbody></table></div>
+          <div className="tlajes">{emBlocos(P, LINHAS_TLAJE).map((B, bi, BB) => <table className="tlaje" key={bi}><thead><tr><th>Painel</th><th>Comp.</th><th>Larg.</th><th>m²</th></tr></thead><tbody>
+            {B.map(p => <tr key={p.num}><td>L{p.num}{p.dente ? '*' : ''}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(areaLaje(p))}</td></tr>)}
+            {bi === BB.length - 1 && <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + areaLaje(p), 0))}</td></tr>}
+          </tbody></table>)}</div></div>
         {rod('Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · * = painel com dente (recorte no canto) · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
       </div>);
       // produção: uma vista por painel de laje, como as paredes
@@ -1067,12 +1071,22 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
           {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
         </div>));
       }
-      if (TPf.length) folhas.push(<div className="folha" key={pav.id + 't'}>
-        <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()}</div>
-        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf) }} />
-          <TabelaTrelicas TP={TPf} TR={TRf} curta /></div>
-        {rod('Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel')}
-      </div>);
+      if (TPf.length) {
+        // a tabela não cabe inteira ao lado do desenho: o resto continua em folhas só de tabela (sem cortar linhas)
+        const T0 = TPf.slice(0, LINHAS_TREL), resto = TPf.length > LINHAS_TREL ? emBlocos(TPf.slice(LINHAS_TREL), LINHAS_TREL_CONT) : [];
+        const nf = 1 + Math.ceil(resto.length / 2);
+        folhas.push(<div className="folha" key={pav.id + 't'}>
+          <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()}{nf > 1 ? ` — folha 1/${nf}` : ''}</div>
+          <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf) }} />
+            <TabelaTrelicas TP={T0} TR={TRf} curta /></div>
+          {rod('Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel')}
+        </div>);
+        for (let f = 0; f * 2 < resto.length; f++) folhas.push(<div className="folha" key={pav.id + 't' + (f + 1)}>
+          <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {f + 2}/{nf} (continuação da tabela)</div>
+          <div className="desenho lajes cont">{resto.slice(f * 2, f * 2 + 2).map((B, i) => <TabelaTrelicas key={i} TP={B} TR={TRf} curta />)}</div>
+          {rod('Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel')}
+        </div>);
+      }
     }
   }
   if (novo) folhas.push(<div className="folha" key="quant">

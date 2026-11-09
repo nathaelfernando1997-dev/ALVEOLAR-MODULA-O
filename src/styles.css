@@ -74,6 +74,9 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .folha .desenho.lajes { gap: 6mm; align-items: flex-start; }
 .folha .desenho.lajes svg { flex: 1; height: 100%; }
 .tlaje { font-size: 7.5pt; border-collapse: collapse; }
+.tlajes { display: flex; gap: 3mm; align-items: flex-start; }
+.folha .desenho.lajes.cont { justify-content: flex-start; }
+.folha .desenho.lajes.cont .trelicas { width: 135mm; }
 .tlaje td, .tlaje th { border: 1px solid #ccc; padding: 1px 4px; text-align: right; }
 .tlaje .tot td { font-weight: bold; background: #fff2cc; }
 .acoes button.on { background: #d11; color: #fff; border-color: #d11; }
