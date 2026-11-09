@@ -107,10 +107,13 @@ export function vistaSvg(p: Painel): string {
   const T = (x: number, y: number, t: string, fs = 12, c = VERM, anc = 'middle', rot = false) => s.push(`<text x="${X(x).toFixed(1)}" y="${Y(y).toFixed(1)}" font-size="${fs}" fill="${c}" text-anchor="${anc}" paint-order="stroke" stroke="#fff" stroke-width="3"${rot ? ` transform="rotate(-90 ${X(x).toFixed(1)} ${Y(y).toFixed(1)})"` : ''}>${t}</text>`);
   const dimH = (a: number, b: number, y: number, t: string) => { L(a, y, b, y, AZUL, 0.8); L(a, y - 0.04, a, y + 0.04, AZUL, 0.8); L(b, y - 0.04, b, y + 0.04, AZUL, 0.8); T((a + b) / 2, y + 0.03, t, 11); };
   const dimV = (x: number, a: number, b: number, t: string) => { L(x, a, x, b, AZUL, 0.8); L(x - 0.04, a, x + 0.04, a, AZUL, 0.8); L(x - 0.04, b, x + 0.04, b, AZUL, 0.8); T(x - 0.03, (a + b) / 2, t, 11, VERM, 'middle', true); };
-  L(0, 0, w, 0); L(w, 0, w, h); L(w, h, 0, h); L(0, h, 0, 0); L(-0.3, 0, w + 0.1, 0);
-  for (let i = 1; i < 5; i++) { const z = h * i / 5; L(-0.08, z, 0, z, '#000', 0.8); L(w, z, w + 0.08, z, '#000', 0.8); }
-  s.push(`<text x="${X(0.06)}" y="${Y(h - 0.2)}" font-size="16" fill="${VERM}" font-weight="bold">${p.num}</text>`);
-  dimH(0, w, h + 0.2, br(w)); dimV(-0.22, 0, h, br(h));
+  // topo inclinado (chanfro): altura ha na esquerda e hb na direita
+  const ha = p.chanfro?.ha ?? h, hb = p.chanfro?.hb ?? h, hEm = (x: number) => ha + (hb - ha) * x / w;
+  L(0, 0, w, 0); L(w, 0, w, hb); L(w, hb, 0, ha); L(0, ha, 0, 0); L(-0.3, 0, w + 0.1, 0);
+  for (let i = 1; i < 5; i++) { const z = Math.min(ha, hb) * i / 5; L(-0.08, z, 0, z, '#000', 0.8); L(w, z, w + 0.08, z, '#000', 0.8); }
+  s.push(`<text x="${X(0.06)}" y="${Y(Math.min(ha, hb) - 0.2)}" font-size="16" fill="${VERM}" font-weight="bold">${p.num}</text>`);
+  dimH(0, w, h + 0.2, br(w)); dimV(-0.22, 0, ha, br(ha));
+  if (p.chanfro) { dimV(w + 0.25, 0, hb, br(hb)); T(w / 2, h + 0.36, `topo chanfrado ${br(ha)} → ${br(hb)}`, 10, '#b00'); }
   for (const r of p.recortes) {
     const ox = r.dl, ob = r.base, ow = r.w, oh = r.h;
     s.push(`<rect x="${X(ox).toFixed(1)}" y="${Y(ob + oh).toFixed(1)}" width="${(ow * k).toFixed(1)}" height="${(oh * k).toFixed(1)}" fill="none" stroke="#000" stroke-width="1"/>`);
@@ -120,7 +123,7 @@ export function vistaSvg(p: Painel): string {
     if (ox > 0.02) dimH(0, ox, ob + oh * 0.35, br(ox));
     const dr = w - ox - ow; if (dr > 0.02) dimH(ox + ow, w, ob + oh * 0.6, br(dr));
     if (ob > 0.005) dimV(ox + ow * 0.5, 0, ob, br(ob));
-    const top = h - ob - oh; if (top > 0.005) dimV(ox + ow * 0.5, ob + oh, h, br(top));
+    const hl = hEm(ox + ow * 0.5), top = hl - ob - oh; if (top > 0.005) dimV(ox + ow * 0.5, ob + oh, hl, br(top));
   }
   // aviso quebrado em linhas da largura do painel (não invade o painel do lado)
   if (p.aviso) {

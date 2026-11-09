@@ -361,6 +361,7 @@ export interface Ajustes {
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
   trelicasPainel?: Record<string, { compMin: number; borda: number; qtd?: number }>;   // por pavimento: painéis de laje a partir de compMin levam treliças ao longo (uma em cada lateral, a borda da beira, e as outras distribuídas)
+  telhado?: Record<string, Telhado>;       // por pavimento: telhado em caimento (paredes no sentido do caimento saem chanfradas)
   peAmb?: Record<string, number>;          // pé-direito próprio de um ambiente (sala de 4 m, pé-direito duplo): as paredes em volta sobem até ele
 }
 export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, colunas: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
@@ -632,7 +633,24 @@ export function continuarVaos(baixo: Trecho[], cima: Trecho[], quadro: Esquadria
 
 // ---------------- painéis ----------------
 export interface Recorte { tipo: string; dl: number; w: number; base: number; h: number }
-export interface Painel { num: number; trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; H: number; comp: number; recortes: Recorte[]; aviso?: string; chave?: string }
+export interface Painel { num: number; trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; H: number; comp: number; recortes: Recorte[]; aviso?: string; chave?: string;
+  chanfro?: { ha: number; hb: number } }   // topo inclinado (telhado em caimento): altura na ponta a e na ponta b; H = a maior
+// área de um painel (com topo inclinado: trapézio)
+export const areaPainel = (p: Pick<Painel, 'larg' | 'H' | 'chanfro'>) => p.larg * (p.chanfro ? (p.chanfro.ha + p.chanfro.hb) / 2 : p.H);
+// muda a altura do painel (soma d), levando junto as duas pontas do chanfro
+export function somaAltura(p: Painel, d: number) { p.H += d; if (p.chanfro) p.chanfro = { ha: p.chanfro.ha + d, hb: p.chanfro.hb + d }; }
+// telhado em caimento no pavimento: altura das paredes varia em linha reta ao longo de x ou de y
+export interface Telhado { eixo: 'x' | 'y'; p0: number; h0: number; p1: number; h1: number }
+export function aplicarTelhado(ps: Painel[], t: Telhado, manuais: Record<string, number> = {}) {
+  const h = (v: number) => Math.round((t.h0 + (t.h1 - t.h0) * (v - t.p0) / (t.p1 - t.p0)) * 100) / 100;
+  for (const p of ps) {
+    if (p.chave && manuais[p.chave] != null) continue;
+    const ao = (t.eixo === 'y') === (p.o === 'V');   // a parede corre no sentido do caimento: topo inclinado
+    if (!ao) { p.H = h(p.c); delete p.chanfro; continue; }
+    const ha = h(p.a), hb = h(p.b);
+    if (Math.abs(ha - hb) < 0.005) { p.H = ha; delete p.chanfro; } else { p.H = Math.max(ha, hb); p.chanfro = { ha, hb }; }
+  }
+}
 export interface VaoInteiro { trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; tipo: string; sobe?: boolean; topo?: number; H?: number }
 
 export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel[]; vaos: VaoInteiro[] } {
@@ -761,7 +779,7 @@ export function quantitativos(pavs: Pavimento[], P: Painel[], PL: { pav: string;
   };
   for (const pav of pavs) {
     const ps = P.filter(p => p.pav === pav.id);
-    if (ps.length) linha(pav.nome, 'Paredes', ps.map(p => ({ larg: p.larg, comp: p.H, area: p.larg * p.H, furos: p.recortes.map(rc => ({ w: rc.w, h: rc.h })) })));
+    if (ps.length) linha(pav.nome, 'Paredes', ps.map(p => ({ larg: p.larg, comp: areaPainel(p) / p.larg, area: areaPainel(p), furos: p.recortes.map(rc => ({ w: rc.w, h: rc.h })) })));
     const ls = PL.filter(p => p.pav === pav.id);
     // uma linha por espessura de laje (ambiente alterado para 16 cm, por exemplo)
     const porEsp = new Map<number, typeof ls>();
@@ -790,7 +808,7 @@ export function orcamentoAreas(pavs: Pavimento[], ts: Trecho[], PL: { pav: strin
 }
 
 export function resumo(P: Painel[]) {
-  const bruta = P.reduce((s, p) => s + p.larg * p.H, 0);
+  const bruta = P.reduce((s, p) => s + areaPainel(p), 0);
   const rec = P.reduce((s, p) => s + p.recortes.reduce((t, r) => t + r.w * r.h, 0), 0);
   return { qtd: P.length, bruta, recortes: rec, liquida: bruta - rec };
 }

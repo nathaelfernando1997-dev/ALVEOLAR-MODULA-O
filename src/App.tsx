@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
@@ -293,6 +293,7 @@ export default function App() {
         vazio.areaPav.push({ pav: p.id, area: areaConstruida(amb0.filter(a => !ehVazio(a) && !descoberto(a)), esps[Math.floor(esps.length / 2)] ?? 0.15) });
       }
       const r = paineis(tp, regras, aj);
+      if (aj.telhado?.[p.id]) aplicarTelhado(r.paineis, aj.telhado[p.id], aj.alturaPainel);
       vazio.ts.push(...tp); vazio.ps.push(...r.paineis); vazio.vaos.push(...r.vaos);
       // projeções de laje/beiral desta planta e áreas marcadas VAZIO no pavimento de cima
       const bordas = leitura.linhas.filter(l => l.tipo === 'proj' && naCaixa(p.box, l));
@@ -351,12 +352,12 @@ export default function App() {
           const cb = P.o === 'H' ? P.c + ds.dy : P.c + ds.dx, ab = P.o === 'H' ? P.a + ds.dx : P.a + ds.dy, bb = P.o === 'H' ? P.b + ds.dx : P.b + ds.dy;
           const paredeEmbaixo = vazio.ts.some(t => t.pav === ds.baixo && t.o === P.o && Math.abs(t.c - cb) < 0.15 && Math.min(t.e, bb) - Math.max(t.s, ab) > 0.3);
           if (paredeEmbaixo && !emBaixo.some(([x, y]) => temLaje(ds.baixo, x, y))) {
-            P.H += esp; desceu.add(P); P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: sem laje embaixo (vazio), a parede desce até a parede de baixo`;
+            somaAltura(P, esp); desceu.add(P); P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: sem laje embaixo (vazio), a parede desce até a parede de baixo`;
           }
         }
         const dsc = descob.get(P.pav) || [];
         if (dsc.length && lados.some(([x, y]) => dentro(dsc, x, y)) && !lados.some(([x, y]) => temLaje(P.pav, x, y))) {
-          P.H += esp + plat; P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: área descoberta, a parede sobe até o topo da platibanda`;
+          somaAltura(P, esp + plat); P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: área descoberta, a parede sobe até o topo da platibanda`;
         }
       }
     }
@@ -381,7 +382,7 @@ export default function App() {
       const para = desceu.has(p) ? d.para - espLaje : d.para;
       if (p.H <= para) continue;
       if (desceu.has(p)) { desceu.delete(p); p.aviso = p.aviso?.split(' · ').filter(x => !x.includes('(vazio)')).join(' · ') || undefined; }
-      p.H = para; p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(para)} m: apoia em cima da viga V${v.n}`;
+      somaAltura(p, para - p.H); p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(para)} m: apoia em cima da viga V${v.n}`;
     }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);

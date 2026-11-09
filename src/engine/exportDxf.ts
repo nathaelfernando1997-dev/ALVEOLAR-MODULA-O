@@ -4,6 +4,7 @@ import type { Prim } from './dxf.ts';
 import type { PainelLaje } from './lajes.ts';
 import { areaLaje } from './lajes.ts';
 import { lajeLocal, trelicasNoPainel } from './draw.ts';
+import { areaPainel } from './model.ts';
 
 class W {
   out: string[] = [];
@@ -56,9 +57,16 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
     for (const p of P) {
       if (vx + p.larg > lx + 24) { vx = lx; vy -= 4.4; }
       const y = vy - p.H;
-      w.rect('PAINEL', vx, y, p.larg, p.H);
-      w.text('NUMERO', vx + .06, y + p.H - .22, .14, String(p.num));
-      w.dimH(vx, vx + p.larg, y + p.H + .2, br(p.larg)); w.dimV(vx - .22, y, y + p.H, br(p.H));
+      if (p.chanfro) {   // topo inclinado
+        const { ha, hb } = p.chanfro;
+        w.line('PAINEL', vx, y, vx + p.larg, y); w.line('PAINEL', vx + p.larg, y, vx + p.larg, y + hb); w.line('PAINEL', vx + p.larg, y + hb, vx, y + ha); w.line('PAINEL', vx, y + ha, vx, y);
+        w.text('NUMERO', vx + .06, y + Math.min(ha, hb) - .22, .14, String(p.num));
+        w.dimH(vx, vx + p.larg, y + p.H + .2, br(p.larg)); w.dimV(vx - .22, y, y + ha, br(ha)); w.dimV(vx + p.larg + .25, y, y + hb, br(hb));
+      } else {
+        w.rect('PAINEL', vx, y, p.larg, p.H);
+        w.text('NUMERO', vx + .06, y + p.H - .22, .14, String(p.num));
+        w.dimH(vx, vx + p.larg, y + p.H + .2, br(p.larg)); w.dimV(vx - .22, y, y + p.H, br(p.H));
+      }
       // pontos de solda nas laterais (4 de cada lado), como na vista do sistema
       if (cotas) for (let i = 1; i < 5; i++) { const z = y + p.H * i / 5; w.line('SOLDA', vx - .08, z, vx, z, 3); w.line('SOLDA', vx + p.larg, z, vx + p.larg + .08, z, 3); }
       for (const r of p.recortes) {
@@ -131,7 +139,7 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
 export function exportarCsv(ps: Painel[], pavs: Pavimento[], pl: PainelLaje[] = [], quant: LinhaQuant[] & { barras?: number; barrasPerda?: number } = []): string {
   const nome = new Map(pavs.map(p => [p.id, p.nome]));
   const linhas = ['Painel;Pavimento;Largura (m);Altura (m);Área (m²);Recortes;Observação'];
-  for (const p of ps) linhas.push([p.num, nome.get(p.pav), br(p.larg), br(p.H), br(p.larg * p.H), p.recortes.map(r => `${r.tipo} ${br(r.w)}x${br(r.h)} (base ${br(r.base)}, lateral ${br(r.dl)})`).join(' | '), p.aviso || ''].join(';'));
+  for (const p of ps) linhas.push([p.num, nome.get(p.pav), br(p.larg), p.chanfro ? `${br(p.chanfro.ha)} / ${br(p.chanfro.hb)} (chanfro)` : br(p.H), br(areaPainel(p)), p.recortes.map(r => `${r.tipo} ${br(r.w)}x${br(r.h)} (base ${br(r.base)}, lateral ${br(r.dl)})`).join(' | '), p.aviso || ''].join(';'));
   linhas.push('', 'Laje;Sobre o pavimento;Comprimento (m);Largura (m);Área (m²)');
   for (const p of pl) linhas.push([`L${p.num}`, nome.get(p.pav), br(p.comp), br(p.larg), br(areaLaje(p)), p.dente ? `dente ${br(p.dente.x1 - p.dente.x0)} x ${br(p.dente.y1 - p.dente.y0)}` : ''].join(';'));
   if (quant.length) {
