@@ -5,7 +5,7 @@ import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos,
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
-import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais } from './engine/producao.ts';
+import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
@@ -20,6 +20,7 @@ import { pastaDe, configValida } from './db.ts';
 import * as cloud from './cloud.ts';
 import type { Session } from '@supabase/supabase-js';
 import { Login } from './Login.tsx';
+import qrcode from 'qrcode-generator';
 import type { Projeto, Config, Pasta } from './db.ts';
 
 type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'orcamento';
@@ -390,6 +391,13 @@ export default function App() {
   }, [leitura, pavs, quadro, regras, aj]);
   const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
   const [modoImp, setModoImp] = useState<'folhas' | 'etiquetas'>('folhas');
+  // QR da etiqueta: ?obra=<projeto>&peca=<código> abre a peça no celular para marcar a montagem
+  const qr = useMemo(() => { const u = new URLSearchParams(location.search); const o = u.get('obra'), pc = u.get('peca'); return o && pc ? { obra: o, peca: pc } : null; }, []);
+  const [qrAtivo, setQrAtivo] = useState(!!qr);
+  const [montagem, setMontagem] = useState<Record<string, cloud.Marca>>({});
+  useEffect(() => { if (qr && qrAtivo && (sess || !cloud.nuvemConfigurada) && projId !== qr.obra) abrirProjeto(qr.obra); }, [sess?.user.id]);
+  useEffect(() => { if (projId && sess && cloud.nuvemConfigurada) cloud.lerMontagem(projId).then(setMontagem).catch(() => setMontagem({})); }, [projId, sess?.user.id]);
+  const qrBase = cloud.nuvemConfigurada && sess && projId ? `${location.origin}/?obra=${projId}&peca=` : '';
 
   const cortes = useMemo(() => dxf ? lerCortes(dxf, pavs.filter(p => p.corte)) : [], [dxf, pavs]);
   const avisos = useMemo(() => conferir(cortes, ativos, quadro, regras, calc.ps), [cortes, pavs, quadro, regras, calc]);
@@ -398,6 +406,16 @@ export default function App() {
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
   if (cloud.nuvemConfigurada && (!checou || !sess || recuperando)) return <Login carregando={!checou} recuperando={recuperando} fimRecuperacao={() => setRecuperando(false)} />;
+  if (qr && qrAtivo) {
+    const pc = prod?.pecas.find(x => x.codigo === qr.peca);
+    let desenho = '';
+    if (pc && pc.tipo === 'Parede') { const p = calc.ps.find(x => x.num === pc.num); if (p) desenho = vistaSvg(p, prod!.infos.get(p.num), 18); }
+    if (pc && pc.tipo === 'Laje') { const p = calc.pl.find(x => x.num === pc.num); if (p) desenho = vistaLajeSvg(p, [], calc.vigas.filter(v => v.pav === p.pav && v.tipo === 'trelica').map(t => ({ ...t, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) })), 0, 18, pc.codigo); }
+    return <PecaCelular codigo={qr.peca} pc={pc} obra={projNome} pav={pc ? pavs.find(x => x.id === pc.pav)?.nome ?? '' : ''} desenho={desenho} carregando={lendo || (!prod && !erro)} erro={erro}
+      marca={montagem[qr.peca]} marcar={async m => { if (!projId || !cloud.nuvemConfigurada) throw new Error('marcar a montagem precisa do projeto na nuvem (login)'); setMontagem(await cloud.marcarMontagem(projId, qr.peca, m && { ...m, em: new Date().toISOString(), por: sess?.user.email ?? '' })); }}
+      montadas={Object.values(montagem).filter(m => m.status === 'montada').length} total={prod?.pecas.length ?? 0}
+      sair={() => { setQrAtivo(false); history.replaceState(null, '', location.pathname); }} />;
+  }
   const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['orcamento', '10. Orçamento']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
@@ -562,7 +580,7 @@ export default function App() {
             <label className="chk"><input type="checkbox" checked={!!regras.trelicaSobreVao} onChange={e => setRegras({ ...regras, trelicaSobreVao: e.target.checked })} /> Parede de cima sobre vão livre (sala integrada, passagem, sem parede embaixo): reforçar a laje com treliça em vez de viga. A viga continua só onde a laje apoia nessa linha</label>
             <h3>Produção e montagem</h3>
             <div className="grade">
-              {([['densidade', 'Peso do concreto (kg/m³) — peso das peças'], ['cargaMax', 'Carga máxima por carreta (kg)'], ['carretaComp', 'Comprimento útil da carreta (m)'], ['carretaLarg', 'Largura da carreta (m)'], ['carretaLargMax', 'Largura máxima com excesso lateral (m)'], ['pilhaAlt', 'Altura máxima da pilha de peças deitadas (m)'], ['escoraMax', 'Distância máxima entre linhas de escora da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['densidade', 'Peso do concreto (kg/m³) — peso das peças'], ['cargaMax', 'Carga máxima por carreta (kg)'], ['carretaComp', 'Comprimento útil da carreta (m)'], ['carretaLarg', 'Largura da carreta (m)'], ['carretaLargMax', 'Largura máxima com excesso lateral (m)'], ['pilhaAlt', 'Altura máxima da pilha de peças deitadas (m)'], ['escoraMax', 'Distância máxima entre linhas de escora da laje (m)'], ['trelicaBarra', 'Comprimento da barra de treliça (m)'], ['mesas', 'Mesas de produção na fábrica'], ['mesaComp', 'Comprimento útil da mesa (m)'], ['mesaLarg', 'Largura útil da mesa (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? (REGRAS_PADRAO[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
@@ -653,8 +671,14 @@ export default function App() {
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
+            {prod && qrBase && <div className="card noprint"><h3>Montagem na obra (marcada pelo QR das etiquetas)</h3>
+              <p><b>{Object.values(montagem).filter(m => m.status === 'montada').length}</b> de {prod.pecas.length} peças montadas · <b>{Object.values(montagem).filter(m => m.status === 'problema').length}</b> com problema <button onClick={() => projId && cloud.lerMontagem(projId).then(setMontagem)}>Atualizar</button></p>
+              {Object.entries(montagem).filter(([, m]) => m.status === 'problema').map(([c, m]) => <p key={c} className="erro">{c}: {m.obs || 'problema'} ({new Date(m.em).toLocaleString('pt-BR')} · {m.por})</p>)}
+              {ativos.map(pv => { const ps = prod.pecas.filter(x => x.pav === pv.id); const mt = ps.filter(x => montagem[x.codigo]?.status === 'montada').length; return ps.length ? <p key={pv.id} className="dica">{pv.nome}: {mt}/{ps.length}</p> : null; })}
+            </div>}
+            {!qrBase && prod && <p className="dica noprint">O QR das etiquetas (marcar a montagem pelo celular) aparece com o projeto salvo na nuvem e o login feito.</p>}
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
-            {modoImp === 'etiquetas' && prod ? <Etiquetas prod={prod} ativos={ativos} nome={projNome || nome} />
+            {modoImp === 'etiquetas' && prod ? <Etiquetas prod={prod} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
               : prod ? <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod} />
               : <p className="dica">As folhas de produção usam o cálculo atual (aba Regras).</p>}
           </section>
@@ -1098,7 +1122,22 @@ function dadosProducao(ativos: Pavimento[], calc: Calc, regras: Regras, aj: Ajus
   const nOutro = modo === 'montagem' ? planoCarga(pc, { ...op, modoPlano: 'auto' }).length : planoCarga(pc, { ...op, modoPlano: 'montagem' }).length;
   const porId = new Map(pecas.map(p => [p.id, p]));
   for (const c of plano) for (const pl of c.pilhas) pl.pecas.forEach((x, i) => { const q = porId.get(x.id)!; q.carreta = c.n; q.pilha = pl.n; q.pos = pl.pecas.length - i; q.nPilha = pl.pecas.length; });
-  return { sg, pecas, plano, ordens, infos, porId, modo, nOutro };
+  // plano de corte do isopor (barras) e das treliças, e produção nas mesas na ordem das carretas
+  const pedIso: { comp: number; peca: string }[] = [];
+  for (const p of calc.ps) {
+    const ha = p.chanfro?.ha ?? p.H, hb = p.chanfro?.hb ?? p.H;
+    for (const c of isoporDaPeca(p.larg, x => ha + (hb - ha) * x / p.larg, p.recortes.map(r => ({ x: r.dl, w: r.w, base: r.base, h: r.h })), regras)) pedIso.push({ comp: c, peca: codigoParede(p, sg) });
+  }
+  for (const p of calc.pl) for (const c of isoporDaPeca(p.larg, () => p.comp, [], regras)) pedIso.push({ comp: c, peca: codigoLaje(p, sg) });
+  const corteIso = planoCorte(pedIso, regras.isoporComp ?? 4);
+  const corteTrel = (Object.keys(TRELICA) as (keyof typeof TRELICA)[]).map(t => {
+    const ped: { comp: number; peca: string }[] = [];
+    for (const l of quantTrelicas(ativos, calc, aj).filter(x => x.tipo === t)) for (const [c, n] of l.cortes) for (let i = 0; i < n; i++) ped.push({ comp: parseFloat(c.replace(',', '.')), peca: l.pav });
+    return { tipo: t, ...planoCorte(ped, regras.trelicaBarra ?? 12, 0.01) };
+  }).filter(x => x.barras > 0);
+  const seqProd = [...pecas].sort((a, b) => (a.carreta ?? 0) - (b.carreta ?? 0) || a.ordem - b.ordem).map(p => ({ codigo: p.codigo, a: p.a, b: p.b, carreta: p.carreta }));
+  const mesas = planoMesas(seqProd, { qtd: Math.max(1, Math.round(regras.mesas ?? 4)), comp: regras.mesaComp ?? 12, larg: regras.mesaLarg ?? 3.2, folga: 0.1 });
+  return { sg, pecas, plano, ordens, infos, porId, modo, nOutro, corteIso, corteTrel, mesas };
 }
 type Prod = ReturnType<typeof dadosProducao>;
 const camada = (p: PecaProd) => (p.nPilha ?? 0) - (p.pos ?? 0) + 1;   // 1 = embaixo
@@ -1113,10 +1152,12 @@ function csvProducao(prod: Prod, ativos: Pavimento[]): string {
   return '﻿' + L.join('\r\n');
 }
 // etiquetas para colar nas peças: 12 por folha A4 deitada
-function Etiquetas({ prod, ativos, nome }: { prod: Prod; ativos: Pavimento[]; nome: string }) {
+const qrSvg = (t: string) => { const q = qrcode(0, 'M'); q.addData(t); q.make(); return q.createSvgTag({ cellSize: 2, margin: 0, scalable: true }); };
+function Etiquetas({ prod, ativos, nome, qrBase }: { prod: Prod; ativos: Pavimento[]; nome: string; qrBase?: string }) {
   const nomePav = new Map(ativos.map(p => [p.id, p.nome])), titulo = nome.replace(/\.(dxf|dwg|pdf|json)$/i, '');
   return <div className="folhas">{emBlocos(prod.pecas, 12).map((B, i) => <div className="folha etiquetas" key={i}>
-    {B.map(p => <div className="etq" key={p.id}>
+    {B.map(p => <div className={'etq' + (qrBase ? ' comqr' : '')} key={p.id}>
+      {qrBase && <div className="etq-qr" dangerouslySetInnerHTML={{ __html: qrSvg(qrBase + encodeURIComponent(p.codigo)) }} />}
       <div className="etq-cod">{p.codigo}<span>{p.tipo === 'Parede' ? '▲ topo' : ''}</span></div>
       <div className="etq-obra">{titulo} · {p.tipo === 'Laje' ? 'laje sobre o ' : ''}{nomePav.get(p.pav)}</div>
       <div><b>{p.tipo} {p.desc} m</b> · {Math.round(p.peso)} kg{p.aberturas ? ` · ${p.aberturas}` : ''}</div>
@@ -1240,6 +1281,44 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod }: 
       </div>,
       `Peças deitadas · camada 1 = embaixo · peça de cima no máximo 30 cm maior que a de baixo · carreta de ${br(CW)} m (até ${br(CWM)} m com excesso lateral, pilha em vermelho) · peças de etapas seguintes completam a carga · calçar com caibros entre as peças e amarrar cada pilha`);
   }
+  // plano de corte do isopor
+  {
+    const ci = prod.corteIso, bc = regras.isoporComp ?? 4;
+    const tabPad = (P: typeof ci.padroes) => <table className="tlaje rom"><thead><tr><th>Barras</th><th>Cortes de cada barra (m)</th><th>Sobra (m)</th></tr></thead><tbody>
+      {P.map((p, i) => <tr key={i}><td><b>{p.qtd}</b></td><td>{p.cortes.map(c => br(c)).join(' + ')}</td><td>{br(p.sobra)}</td></tr>)}</tbody></table>;
+    const tabMed = (M: typeof ci.medidas) => <table className="tlaje rom"><thead><tr><th>Pedaço (m)</th><th>Qtd.</th><th>Peças</th></tr></thead><tbody>
+      {M.map((m, i) => <tr key={i}><td><b>{br(m.comp)}</b></td><td>{m.n}</td><td className="pecasLista">{[...m.pecas].slice(0, 14).join(', ')}{m.pecas.size > 14 ? ` e mais ${m.pecas.size - 14}` : ''}</td></tr>)}</tbody></table>;
+    const bp = emBlocos(ci.padroes, 40), bm = emBlocos(ci.medidas, 40);
+    const nf = Math.max(bp.length, bm.length);
+    for (let f = 0; f < nf; f++) add('iso' + f, `PLANO DE CORTE DO ISOPOR — BARRAS DE ${br(bc)} m${nf > 1 ? ` — ${f + 1}/${nf}` : ''}`,
+      <div className="desenho lajes cont conf">{f === 0 && <p className="resumoConf"><b>{ci.barras} barras</b> de {br(bc)} m · {br(ci.total)} m de isopor nas peças · perda {br(ci.perda * 100)}% · {ci.emendas} emenda(s) (alvéolo maior que a barra)</p>}
+        {bp[f] && <div className="ccol"><h3>Cortes por barra (padrões)</h3>{tabPad(bp[f])}</div>}
+        {bm[f] && <div className="ccol"><h3>Pedaços por medida</h3>{tabMed(bm[f])}</div>}</div>,
+      `Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm · alvéolos na altura das paredes e no comprimento das lajes, cortados nas portas e janelas · a sobra de uma barra vira pedaço de outra peça · alvéolo maior que a barra sai emendado`);
+  }
+  // plano de corte das treliças
+  if (prod.corteTrel.length) add('trelcorte', `PLANO DE CORTE DAS TRELIÇAS — BARRAS DE ${br(regras.trelicaBarra ?? 12)} m`,
+    <div className="desenho lajes cont conf">{prod.corteTrel.map(t => <div className="ccol" key={t.tipo}><h3>{t.tipo} ({TRELICA[t.tipo]}): {t.barras} barra(s) · {br(t.total)} m · perda {br(t.perda * 100)}%</h3>
+      <table className="tlaje rom"><thead><tr><th>Barras</th><th>Cortes de cada barra (m)</th><th>Sobra (m)</th></tr></thead><tbody>
+        {t.padroes.map((p, i) => <tr key={i}><td><b>{p.qtd}</b></td><td>{p.cortes.map(c => br(c)).join(' + ')}</td><td>{br(p.sobra)}</td></tr>)}</tbody></table>
+      <p className="dica">Pedaços: {t.medidas.map(m => `${m.n} × ${br(m.comp)}`).join(' · ')}</p></div>)}</div>,
+    'Comprimentos das treliças de reforço (folhas de treliças de cada laje) · 1 cm de corte entre pedaços · sobra de uma barra vira pedaço de outra laje');
+  // produção nas mesas: um dia por linha, as mesas lado a lado
+  {
+    const MC = regras.mesaComp ?? 12, ML = regras.mesaLarg ?? 3.2, DIAS = 6;
+    const mesaSvg = (m: { n: number; pecas: { codigo: string; x: number; y: number; L: number; W: number }[]; usado: number }) => {
+      const k = 100;
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 -30 ${MC * k + 10} ${ML * k + 40}"><rect x="0" y="0" width="${MC * k}" height="${ML * k}" fill="#f4f4f4" stroke="#333" stroke-width="3"/>` +
+        m.pecas.map(p => `<rect x="${p.x * k}" y="${p.y * k}" width="${p.L * k}" height="${p.W * k}" fill="#dbe8ff" stroke="#1a3fd6" stroke-width="3"/><text x="${(p.x + p.L / 2) * k}" y="${(p.y + p.W / 2) * k + 14}" font-size="${Math.min(42, p.W * k / 2.2, p.L * k / 4.5).toFixed(0)}" text-anchor="middle" font-weight="bold">${p.codigo}</text>`).join('') +
+        `<text x="0" y="-8" font-size="26" font-weight="bold" fill="#c00">Mesa ${m.n}</text><text x="${MC * k}" y="-8" font-size="24" text-anchor="end" fill="#555">${m.pecas.length} peça(s) · ${Math.round(m.usado * 100)}% ocupada</text></svg>`;
+    };
+    const ds = prod.mesas, nf = Math.ceil(ds.length / DIAS);
+    for (let f = 0; f < nf; f++) add('mesa' + f, `PRODUÇÃO NAS MESAS — DIAS ${f * DIAS + 1} A ${Math.min(ds.length, (f + 1) * DIAS)} DE ${ds.length}`,
+      <div className="mesas">{ds.slice(f * DIAS, (f + 1) * DIAS).map(d => <div className="dia" key={d.dia}>
+        <div className="dia-tit"><b>Dia {d.dia}</b>{d.carretasProntas.length ? <span> · completa a carreta {d.carretasProntas.join(', ')}</span> : null}</div>
+        <div className="dia-mesas">{d.mesas.map(m => <div key={m.n} dangerouslySetInnerHTML={{ __html: mesaSvg(m) }} />)}</div></div>)}</div>,
+      `${Math.round(regras.mesas ?? 4)} mesa(s) de ${br(MC)} × ${br(ML)} m · uma concretagem por mesa por dia · peças na ordem das carretas (a carreta 1 fica pronta primeiro) · 10 cm entre peças · ajuste mesas e medidas na aba Regras`);
+  }
   // conferência
   const alertas = conferencia(ativos, calc.ps, calc.lajes, regras, trelSemLaje);
   const comTrel = new Set(calc.pl.filter(p => calc.vigas.some(v => v.pav === p.pav && v.tipo === 'trelica' && trelicasNasLajes([v], [p]).some(x => x.painel))).map(p => p.num));
@@ -1282,6 +1361,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod }: 
           {linhasResumo.map(l => <tr key={l.nome}><td>{l.nome}</td><td>{l.np}</td><td>{br(l.ap)}</td><td>{l.nl}</td><td>{br(l.al)}</td></tr>)}
           <tr className="tot"><td>Total</td><td>{tot.np}</td><td>{br(tot.ap)}</td><td>{tot.nl}</td><td>{br(tot.al)}</td></tr></tbody></table>
         <p>{tot.np + tot.nl} peças · {br(tot.ap + tot.al)} m² · peso total {br(pesoTot / 1000)} t · {nCargas} carreta(s) de até {br((regras.cargaMax ?? 35000) / 1000)} t {prod.modo === 'montagem' ? `sempre na ordem da montagem (com a carreta cheia seriam ${prod.nOutro})` : `com a carreta cheia (sempre na ordem da montagem seriam ${prod.nOutro})`}</p>
+        <p>Produção: {prod.mesas.length} dia(s) em {Math.round(regras.mesas ?? 4)} mesa(s) · isopor: {prod.corteIso.barras} barras de {br(regras.isoporComp ?? 4)} m{prod.corteTrel.length ? ` · treliças: ${prod.corteTrel.map(t => `${t.barras} barra(s) ${t.tipo}`).join(', ')}` : ''}</p>
         <p>{alertas.filter(a => a.nivel === 'erro').length} erro(s) e {alertas.filter(a => a.nivel !== 'erro').length} ponto(s) de atenção na conferência automática</p>
         <h3>Onde está cada peça</h3>
         {ativos.flatMap(pv => (['Paredes', 'Lajes'] as const).map(tp => { const xs = indice.filter(x => x.pav === pv.id && x.tipo === tp); if (!xs.length) return null;
@@ -1298,4 +1378,29 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod }: 
     <div className="cab">{f.tit}</div>{f.body}
     <div className="rod"><span>{f.rod}</span><span>{nome} · folha {num(i)}/{N}</span></div>
   </div>)}</div>;
+}
+
+// tela do celular aberta pelo QR da etiqueta: a peça, o desenho dela e o botão para marcar a montagem
+function PecaCelular({ codigo, pc, obra, pav, desenho, carregando, erro, marca, marcar, montadas, total, sair }: {
+  codigo: string; pc?: PecaProd; obra: string; pav: string; desenho: string; carregando: boolean; erro: string; marca?: cloud.Marca;
+  marcar: (m: { status: 'montada' | 'problema'; obs?: string } | null) => Promise<void>; montadas: number; total: number; sair: () => void }) {
+  const [obs, setObs] = useState(''); const [salvando, setSalvando] = useState(false); const [msg, setMsg] = useState('');
+  const vai = async (m: { status: 'montada' | 'problema'; obs?: string } | null) => { setSalvando(true); setMsg(''); try { await marcar(m); setMsg(m ? 'Salvo.' : 'Marcação desfeita.'); } catch (e) { setMsg('Não salvou: ' + (e as Error).message); } setSalvando(false); };
+  return <div className="celular">
+    <div className="cel-topo"><b>{codigo}</b><span>{obra}</span></div>
+    {carregando ? <p>Abrindo o projeto…</p> : erro ? <p className="erro">{erro}</p> : !pc ? <p className="erro">Peça {codigo} não encontrada neste projeto (a modulação pode ter mudado).</p> : <>
+      <p className="cel-info">{pc.tipo} {pc.desc} m · {Math.round(pc.peso)} kg · {pc.tipo === 'Laje' ? 'laje sobre o ' : ''}{pav}</p>
+      {pc.tipo === 'Parede' && <p className="cel-info">Montagem nº <b>{pc.ordemPav}</b> · lado esquerdo: <b>{pc.esq}</b> · lado direito: <b>{pc.dir}</b><br />{pc.face}</p>}
+      <p className="cel-info">Carreta {pc.carreta} · pilha {pc.pilha}</p>
+      <div className="cel-desenho" dangerouslySetInnerHTML={{ __html: desenho }} />
+      <div className={'cel-status ' + (marca?.status ?? '')}>{marca ? `${marca.status === 'montada' ? '✔ Montada' : '⚠ Problema'} em ${new Date(marca.em).toLocaleString('pt-BR')} (${marca.por})${marca.obs ? ' — ' + marca.obs : ''}` : 'Ainda não marcada'}</div>
+      <button className="cel-ok" disabled={salvando} onClick={() => vai({ status: 'montada' })}>✔ Peça montada</button>
+      <textarea placeholder="Problema? (avaria, medida errada, falta…)" value={obs} onChange={e => setObs(e.target.value)} />
+      <button className="cel-prob" disabled={salvando || !obs.trim()} onClick={() => vai({ status: 'problema', obs: obs.trim() })}>⚠ Registrar problema</button>
+      {marca && <button disabled={salvando} onClick={() => vai(null)}>Desfazer marcação</button>}
+      {msg && <p>{msg}</p>}
+      <p className="dica">Obra: {montadas} de {total} peças montadas</p>
+    </>}
+    <button onClick={sair}>Abrir o sistema completo</button>
+  </div>;
 }

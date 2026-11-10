@@ -244,3 +244,80 @@ export function planoCarga(seq: PecaCarga[], o: OpCarga & { modoPlano?: 'auto' |
   }
   return out;
 }
+
+// ---------- plano de corte (barras de isopor e de treliça) ----------
+// first-fit decreasing: cada pedaço vai na primeira barra aberta onde cabe (a sobra de uma barra é usada por outro pedaço);
+// pedaço maior que a barra sai emendado (barras inteiras + o resto). Barras com os mesmos cortes viram um "padrão".
+export interface Pedaco { comp: number; pecas: string[] }
+export interface PadraoCorte { cortes: number[]; qtd: number; sobra: number }
+export function planoCorte(pedacos: { comp: number; peca: string }[], barra: number, serra = 0.005) {
+  const itens: { comp: number; peca: string }[] = []; let emendas = 0;
+  for (const p of pedacos) {
+    let c = Math.round(p.comp * 100) / 100;
+    if (c < 0.05) continue;
+    while (c > barra + 1e-6) { itens.push({ comp: barra, peca: p.peca }); c = Math.round((c - barra) * 100) / 100; emendas++; }
+    if (c >= 0.05) itens.push({ comp: c, peca: p.peca });
+  }
+  itens.sort((a, b) => b.comp - a.comp);
+  const barras: { cortes: number[]; livre: number }[] = [];
+  for (const it of itens) {
+    let b = barras.find(x => x.livre + 1e-6 >= it.comp);
+    if (!b) { b = { cortes: [], livre: barra }; barras.push(b); }
+    b.cortes.push(it.comp); b.livre -= it.comp + serra;
+  }
+  const pad = new Map<string, PadraoCorte>();
+  for (const b of barras) { const k = b.cortes.map(c => c.toFixed(2)).join('+'); const p = pad.get(k); if (p) p.qtd++; else pad.set(k, { cortes: b.cortes, qtd: 1, sobra: Math.max(0, b.livre) }); }
+  const total = itens.reduce((s, i) => s + i.comp, 0);
+  // lista de comprimentos: quantos pedaços de cada medida e em que peças vão
+  const porComp = new Map<string, { comp: number; n: number; pecas: Set<string> }>();
+  for (const it of itens) { const k = it.comp.toFixed(2); const x = porComp.get(k) ?? { comp: it.comp, n: 0, pecas: new Set() }; x.n++; x.pecas.add(it.peca); porComp.set(k, x); }
+  return { barras: barras.length, padroes: [...pad.values()].sort((a, b) => b.qtd - a.qtd), total, perda: barras.length ? 1 - total / (barras.length * barra) : 0, emendas,
+    medidas: [...porComp.values()].sort((a, b) => b.comp - a.comp) };
+}
+// pedaços de isopor de cada peça: alvéolos ao longo da altura (parede) ou do comprimento (laje),
+// cortados onde passa porta/janela; posição dos alvéolos centralizada na largura
+export function isoporDaPeca(larg: number, comp: (x: number) => number, furos: { x: number; w: number; base: number; h: number }[], r: { isoporLarg?: number; isoporEspaco?: number }) {
+  const il = r.isoporLarg ?? 0.12, ie = r.isoporEspaco ?? 0.03, passo = il + ie, n = Math.max(0, Math.floor(larg / passo + 1e-6));
+  const m = (larg - n * passo + ie) / 2, out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const x0 = m + i * passo, x1 = x0 + il, H = comp((x0 + x1) / 2);
+    const cort = furos.filter(f => x1 > f.x + 1e-6 && x0 < f.x + f.w - 1e-6).map(f => [f.base, f.base + f.h]).sort((a, b) => a[0] - b[0]);
+    let y = 0;
+    for (const [a, b] of cort) { if (a - y > 0.05) out.push(a - y); y = Math.max(y, b); }
+    if (H - y > 0.05) out.push(H - y);
+  }
+  return out;
+}
+
+// ---------- mesas de produção ----------
+// peças deitadas nas mesas (uma camada), na ordem das carretas: cada dia enche as mesas com as próximas peças
+export interface Mesa { n: number; pecas: { codigo: string; x: number; y: number; L: number; W: number }[]; usado: number }
+export interface DiaProducao { dia: number; mesas: Mesa[]; carretasProntas: number[] }
+export function planoMesas(seq: { codigo: string; a: number; b: number; carreta?: number }[], o: { qtd: number; comp: number; larg: number; folga: number; adiantar?: number }): DiaProducao[] {
+  const dias: DiaProducao[] = [];
+  let rest = [...seq];
+  const ultimaDaCarreta = new Map<number, string>();
+  for (const p of seq) if (p.carreta) ultimaDaCarreta.set(p.carreta, p.codigo);
+  const feito = new Set<string>();
+  while (rest.length) {
+    const mesas: Mesa[] = [];
+    for (let m = 1; m <= o.qtd && rest.length; m++) {
+      // faixas ao longo da mesa; peças lado a lado na largura
+      const faixas: { x: number; L: number; y: number }[] = []; let x = 0; const ps: Mesa['pecas'] = [];
+      const usadas = new Set<typeof rest[number]>();
+      for (const p of rest.slice(0, o.adiantar ?? 60)) {
+        const L = Math.max(p.a, p.b), W = Math.min(p.a, p.b);
+        if (W > o.larg + 1e-6 || L > o.comp + 1e-6) continue;
+        let f = faixas.find(fx => fx.L + 1e-6 >= L && fx.y + W <= o.larg + 1e-6);
+        if (!f) { if (x + L > o.comp + 1e-6) continue; f = { x, L, y: 0 }; faixas.push(f); x += L + o.folga; }
+        ps.push({ codigo: p.codigo, x: f.x, y: f.y, L, W }); f.y += W + o.folga; usadas.add(p);
+      }
+      if (!ps.length) { const p = rest[0]; ps.push({ codigo: p.codigo, x: 0, y: 0, L: Math.max(p.a, p.b), W: Math.min(p.a, p.b) }); usadas.add(p); }
+      rest = rest.filter(p => !usadas.has(p)); for (const p of usadas) feito.add(p.codigo);
+      mesas.push({ n: m, pecas: ps, usado: ps.reduce((s, p) => s + p.L * p.W, 0) / (o.comp * o.larg) });
+    }
+    const prontas = [...ultimaDaCarreta].filter(([c]) => !dias.some(d => d.carretasProntas.includes(c)) && seq.filter(p => p.carreta === c).every(p => feito.has(p.codigo))).map(([c]) => c);
+    dias.push({ dia: dias.length + 1, mesas, carretasProntas: prontas });
+  }
+  return dias;
+}

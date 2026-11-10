@@ -77,3 +77,19 @@ export async function apagar(id: string) {
   await sb!.storage.from('projetos').remove([c, c + '.gz']);
   await sb!.from('projetos').delete().eq('id', id);
 }
+
+// montagem na obra: cada peça marcada pelo celular (QR da etiqueta), num arquivo ao lado do projeto
+export interface Marca { status: 'montada' | 'problema'; em: string; por: string; obs?: string }
+const caminhoMont = async (id: string) => `${(await sb!.auth.getUser()).data.user!.id}/${id}.montagem.json`;
+export async function lerMontagem(id: string): Promise<Record<string, Marca>> {
+  const { data, error } = await sb!.storage.from('projetos').download(await caminhoMont(id));
+  if (error || !data) return {};
+  try { return JSON.parse(await data.text()) as Record<string, Marca>; } catch { return {}; }
+}
+export async function marcarMontagem(id: string, codigo: string, m: Marca | null): Promise<Record<string, Marca>> {
+  const atual = await lerMontagem(id);
+  if (m) atual[codigo] = m; else delete atual[codigo];
+  const { error } = await sb!.storage.from('projetos').upload(await caminhoMont(id), new Blob([JSON.stringify(atual)], { type: 'application/json' }), { upsert: true, contentType: 'application/json' });
+  if (error) throw error;
+  return atual;
+}

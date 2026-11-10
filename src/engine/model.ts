@@ -51,6 +51,10 @@ export interface Regras {
   pilhaAlt?: number;       // altura máxima da pilha de peças deitadas (m): 1,50
   cargaModo?: 'auto' | 'montagem' | 'tamanho'; // plano de carga: auto = carreta cheia, na ordem da montagem quando dá
   escoraMax?: number;      // distância máxima entre linhas de escora da laje (m): 1,50
+  trelicaBarra?: number;   // comprimento da barra de treliça comprada (m): 12
+  mesas?: number;          // mesas de produção na fábrica: 4
+  mesaComp?: number;       // comprimento útil da mesa (m): 12
+  mesaLarg?: number;       // largura útil da mesa (m): 3,20
 }
 // regras de um projeto salvo: completa com as atuais e abre sempre no cálculo atual,
 // a não ser que o usuário tenha desligado o cálculo novo nele
@@ -70,7 +74,7 @@ export const REGRAS_PADRAO: Regras = {
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 4.0, lajeLarg: 2.5, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15, platibanda: 0.40,
   vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, perda: 10, vaoViga: 5.0, beiral: 1.0,
-  densidade: 2500, cargaMax: 35000, carretaComp: 12.4, carretaLarg: 2.8, carretaLargMax: 3.2, pilhaAlt: 1.5, escoraMax: 1.5,
+  densidade: 2500, cargaMax: 35000, carretaComp: 12.4, carretaLarg: 2.8, carretaLargMax: 3.2, pilhaAlt: 1.5, escoraMax: 1.5, trelicaBarra: 12, mesas: 4, mesaComp: 12, mesaLarg: 3.2,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros

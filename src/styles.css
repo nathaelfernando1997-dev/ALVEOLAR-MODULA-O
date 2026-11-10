@@ -158,3 +158,27 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .etq .etq-obra { color: #555; font-size: 7pt; }
 .etq .etq-face { font-weight: bold; }
 .folha .plano-aviso { font-size: 7.5pt; color: #b00; margin: 0; }
+/* plano de corte e mesas */
+.folha .pecasLista { font-size: 5.8pt; color: #444; }
+.folha .mesas { flex: 1; display: flex; flex-direction: column; gap: 1.5mm; min-height: 0; overflow: hidden; }
+.folha .mesas .dia-tit { font-size: 8pt; }
+.folha .mesas .dia-mesas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+.folha .mesas .dia-mesas svg { width: 100%; height: auto; }
+/* etiqueta com QR */
+.etq.comqr { position: relative; padding-right: 27mm; }
+.etq .etq-qr { position: absolute; right: 2.5mm; top: 2.5mm; width: 23mm; height: 23mm; }
+.etq .etq-qr svg { width: 100%; height: 100%; }
+/* tela do celular (QR) */
+.celular { max-width: 520px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 16px; }
+.celular .cel-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.celular .cel-topo b { font-size: 30px; color: #c00; }
+.celular .cel-topo span { color: #555; font-size: 13px; text-align: right; }
+.celular .cel-info { margin: 0; }
+.celular .cel-desenho svg { width: 100% !important; height: auto; background: #fff; border: 1px solid #ddd; }
+.celular .cel-status { padding: 10px; border-radius: 8px; background: #eee; font-weight: bold; }
+.celular .cel-status.montada { background: #d8f5d8; color: #0a6b0a; }
+.celular .cel-status.problema { background: #ffe1d6; color: #a32; }
+.celular button { font-size: 18px; padding: 14px; border-radius: 10px; }
+.celular .cel-ok { background: #0a8a2c; color: #fff; border: none; }
+.celular .cel-prob { background: #c4501c; color: #fff; border: none; }
+.celular textarea { font-size: 16px; min-height: 60px; }
