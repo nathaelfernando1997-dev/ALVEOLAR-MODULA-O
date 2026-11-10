@@ -333,9 +333,13 @@ export function detalhesSvg(r: { esp: number; lajeEsp: number; apoio: number; ap
   const cm = (v: number) => `${Math.round(v * 100)} cm`;
   const alv = (x: number, y: number, w: number, h: number) => { let o = ''; const n = Math.max(1, Math.floor(w / 90)); for (let i = 0; i < n; i++) { const cx = x + w * (i + 0.5) / n; o += `<rect x="${cx - 26}" y="${y + h * 0.22}" width="52" height="${h * 0.56}" fill="#fff" stroke="#999" stroke-width="1.5"/>`; } return o; };
   const e = r.esp * k, le = r.lajeEsp * k;
-  // 1. canto em L (planta)
-  caixa(0, '1 · Canto em L (planta)', R(260, 260, 760, e) + R(260, 260 + e, e, 600) + T(260 + e + 30, 700, 'painel que encosta') + T(640, 240, 'painel que passa', 30, '#222', 'middle') +
-    `<line x1="${260 + e}" y1="${260 + e}" x2="${260 + e}" y2="${260 + e + 600}" stroke="#c00" stroke-width="3" stroke-dasharray="10 8"/>` + T(260 + e + 30, 760, 'junta (vermelho)', 26, '#c00') + cV(220, 260, 260 + e, cm(r.esp)));
+  // 1. canto em L (planta): as duas paredes param quina com quina e deixam o quadrado do canto (espessura × espessura) para a coluna
+  caixa(0, '1 · Canto em L (planta)', R(260 + e, 260, 760 - e, e) + R(260, 260 + e, e, 600) + R(260, 260, e, e, '#9cc3ff', '10 6') +
+    T(260 + e / 2 + 380, 240, 'painel', 30, '#222', 'middle') + T(260 + e + 30, 700, 'painel') +
+    cH(260, 260 + e, 200, cm(r.esp)) + cV(220, 260, 260 + e, cm(r.esp)) +
+    `<line x1="${260 + e + 60}" y1="${260 + e + 60}" x2="${260 + e + 8}" y2="${260 + e + 8}" stroke="${AZUL}" stroke-width="2"/>` +
+    T(260 + e + 70, 260 + e + 80, `coluna ${cm(r.esp)} × ${cm(r.esp)} concretada na obra`, 28, AZUL) +
+    T(260 + e + 70, 260 + e + 118, 'paredes quina com quina, sem passar uma pela outra', 26, '#444'));
   // 2. encontro em T (planta)
   caixa(1, '2 · Encontro em T (planta)', R(150, 260, 900, e) + R(600 - e / 2, 260 + e, e, 600) + T(600, 240, 'painel contínuo (passa direto)', 30, '#222', 'middle') +
     T(600 + e / 2 + 30, 700, 'painel que chega (encosta)') + cH(600 - e / 2, 600 + e / 2, 920, cm(r.esp), 44) +
