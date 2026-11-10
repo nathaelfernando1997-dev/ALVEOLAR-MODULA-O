@@ -562,11 +562,15 @@ export default function App() {
             <label className="chk"><input type="checkbox" checked={!!regras.trelicaSobreVao} onChange={e => setRegras({ ...regras, trelicaSobreVao: e.target.checked })} /> Parede de cima sobre vão livre (sala integrada, passagem, sem parede embaixo): reforçar a laje com treliça em vez de viga. A viga continua só onde a laje apoia nessa linha</label>
             <h3>Produção e montagem</h3>
             <div className="grade">
-              {([['densidade', 'Peso do concreto (kg/m³) — peso das peças'], ['cargaMax', 'Carga máxima por carreta (kg)'], ['carretaComp', 'Comprimento útil da carreta (m)'], ['carretaLarg', 'Largura útil da carreta (m)'], ['pilhaAlt', 'Altura máxima da pilha de peças deitadas (m)'], ['escoraMax', 'Distância máxima entre linhas de escora da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['densidade', 'Peso do concreto (kg/m³) — peso das peças'], ['cargaMax', 'Carga máxima por carreta (kg)'], ['carretaComp', 'Comprimento útil da carreta (m)'], ['carretaLarg', 'Largura da carreta (m)'], ['carretaLargMax', 'Largura máxima com excesso lateral (m)'], ['pilhaAlt', 'Altura máxima da pilha de peças deitadas (m)'], ['escoraMax', 'Distância máxima entre linhas de escora da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? (REGRAS_PADRAO[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
-            <label className="chk"><input type="checkbox" checked={!!regras.cargaPorTamanho} onChange={e => setRegras({ ...regras, cargaPorTamanho: e.target.checked })} /> Plano de carga empilhando por tamanho (maior embaixo, menos carretas). Desmarcado: carrega ao contrário da montagem para descarregar já montando</label>
+            <label>Plano de carga<select value={regras.cargaModo ?? 'auto'} onChange={e => setRegras({ ...regras, cargaModo: e.target.value as Regras['cargaModo'] })}>
+              <option value="auto">Carreta cheia — na ordem da montagem quando dá, senão maior embaixo (padrão)</option>
+              <option value="tamanho">Carreta cheia — sempre maior embaixo</option>
+              <option value="montagem">Sempre na ordem da montagem (descarrega já montando, mais carretas)</option>
+            </select></label>
             <ul className="dica">
               <li>Paredes acima da largura máxima são divididas em partes iguais, com coluna entre elas. No T, a coluna fica só na parede que segue alinhada (ou nenhuma, se a parede for pinada).</li>
               <li>Porta: boneca embaixo + altura do quadro (0,10 + 2,10 = 2,20). Janela: o peitoril baixa e o topo sobe pelo valor acima. Largura sempre maior pelo acréscimo.</li>
@@ -1088,21 +1092,22 @@ function dadosProducao(ativos: Pavimento[], calc: Calc, regras: Regras, aj: Ajus
   }
   const esp = (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025);
   const pc = pecas.map(p => ({ id: p.id, codigo: p.codigo, ordem: p.ordem, a: p.a, b: p.b, peso: p.peso }));
-  const op = { pesoMax: regras.cargaMax ?? 35000, comp: regras.carretaComp ?? 12.4, larg: regras.carretaLarg ?? 2.6, altPilha: regras.pilhaAlt ?? 1.5, esp, tol: 0.3 };
-  const porTamanho = !!regras.cargaPorTamanho;
-  const plano = planoCarga(pc, { ...op, modo: porTamanho ? 'tamanho' : 'montagem' });
-  const nOutro = planoCarga(pc, { ...op, modo: porTamanho ? 'montagem' : 'tamanho' }).length;
+  const op = { pesoMax: regras.cargaMax ?? 35000, comp: regras.carretaComp ?? 12.4, larg: regras.carretaLarg ?? 2.8, largMax: regras.carretaLargMax ?? 3.2, altPilha: regras.pilhaAlt ?? 1.5, esp, tol: 0.3 };
+  const modo = regras.cargaModo ?? 'auto';
+  const plano = planoCarga(pc, { ...op, modoPlano: modo });
+  const nOutro = modo === 'montagem' ? planoCarga(pc, { ...op, modoPlano: 'auto' }).length : planoCarga(pc, { ...op, modoPlano: 'montagem' }).length;
   const porId = new Map(pecas.map(p => [p.id, p]));
   for (const c of plano) for (const pl of c.pilhas) pl.pecas.forEach((x, i) => { const q = porId.get(x.id)!; q.carreta = c.n; q.pilha = pl.n; q.pos = pl.pecas.length - i; q.nPilha = pl.pecas.length; });
-  return { sg, pecas, plano, ordens, infos, porId, porTamanho, nOutro };
+  return { sg, pecas, plano, ordens, infos, porId, modo, nOutro };
 }
 type Prod = ReturnType<typeof dadosProducao>;
-const posTxt = (p: PecaProd) => p.pos === 1 ? 'em cima' : `${p.pos}ª de cima`;
+const camada = (p: PecaProd) => (p.nPilha ?? 0) - (p.pos ?? 0) + 1;   // 1 = embaixo
+const posTxt = (p: PecaProd) => `camada ${camada(p)} de ${p.nPilha}${p.pos === 1 ? ' (em cima)' : camada(p) === 1 ? ' (embaixo)' : ''}`;
 // planilha de produção (CSV)
 function csvProducao(prod: Prod, ativos: Pavimento[]): string {
   const nome = new Map(ativos.map(p => [p.id, p.nome]));
-  const L = ['Ordem geral;Peça;Tipo;Pavimento;Medidas (m);Área (m²);Peso (kg);Montagem no pavimento;Carreta;Pilha;Posição na pilha;Lado esquerdo;Lado direito;Face da vista;Aberturas'];
-  for (const p of prod.pecas) L.push([p.ordem, p.codigo, p.tipo, (p.tipo === 'Laje' ? 'sobre o ' : '') + nome.get(p.pav), p.desc, br(p.area), Math.round(p.peso), p.ordemPav ?? '', p.carreta ?? '', p.pilha ?? '', p.pos ? posTxt(p) : '', p.esq ?? '', p.dir ?? '', p.face ?? '', p.aberturas ?? ''].join(';'));
+  const L = ['Ordem geral;Peça;Tipo;Pavimento;Medidas (m);Área (m²);Peso (kg);Montagem no pavimento;Carreta;Pilha;Camada (1 = embaixo);Camadas na pilha;Sai da pilha em;Lado esquerdo;Lado direito;Face da vista;Aberturas'];
+  for (const p of prod.pecas) L.push([p.ordem, p.codigo, p.tipo, (p.tipo === 'Laje' ? 'sobre o ' : '') + nome.get(p.pav), p.desc, br(p.area), Math.round(p.peso), p.ordemPav ?? '', p.carreta ?? '', p.pilha ?? '', p.pos ? camada(p) : '', p.nPilha ?? '', p.pos ? `${p.pos}º` : '', p.esq ?? '', p.dir ?? '', p.face ?? '', p.aberturas ?? ''].join(';'));
   L.push('', 'Carreta;Peças;Peso (kg);Comprimento usado (m);Da peça;Até a peça');
   for (const c of prod.plano) L.push([c.n, c.pecas.length, Math.round(c.peso), br(c.usado), c.pecas[0].codigo, c.pecas[c.pecas.length - 1].codigo].join(';'));
   return '﻿' + L.join('\r\n');
@@ -1198,26 +1203,42 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod }: 
     }
   }
   // plano de carga: uma folha por carreta, com as pilhas vistas de cima e a ordem de descarga (= ordem de montagem)
-  const CL = regras.carretaComp ?? 12.4, CW = regras.carretaLarg ?? 2.6, nCargas = prod.plano.length, pesoTot = prod.pecas.reduce((s, p) => s + p.peso, 0);
+  const CL = regras.carretaComp ?? 12.4, CW = regras.carretaLarg ?? 2.8, CWM = regras.carretaLargMax ?? 3.2, nCargas = prod.plano.length, pesoTot = prod.pecas.reduce((s, p) => s + p.peso, 0);
   for (const c of prod.plano) {
     const kk = 100, W = (CL + 0.6) * kk, H = (CW + 0.9) * kk, X = (x: number) => (x + 0.3) * kk, Y = (y: number) => (y + 0.6) * kk;
     const cores = ['#dbe8ff', '#ffe3c7', '#dff5d8', '#f4dcf5', '#fff3b0', '#d8f1f4'];
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><rect x="${X(0)}" y="${Y(0)}" width="${CL * kk}" height="${CW * kk}" fill="#f7f7f7" stroke="#333" stroke-width="3"/>` +
+    const ex = (CWM - CW) / 2;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H + 2 * ex * kk}"><rect x="${X(0)}" y="${Y(-ex)}" width="${CL * kk}" height="${CWM * kk}" fill="none" stroke="#d11" stroke-width="1.5" stroke-dasharray="10 6"/><rect x="${X(0)}" y="${Y(0)}" width="${CL * kk}" height="${CW * kk}" fill="#f7f7f7" stroke="#333" stroke-width="3"/>` +
       `<text x="${X(CL) - 4}" y="${Y(0) - 10}" font-size="22" text-anchor="end" fill="#555">frente da carreta (cavalo) →</text><text x="${X(0)}" y="${Y(0) - 10}" font-size="22" fill="#555">traseira</text>` +
-      c.pilhas.map((pl, i) => `<rect x="${X(pl.x)}" y="${Y(pl.y)}" width="${pl.comp * kk}" height="${pl.larg * kk}" fill="${cores[i % cores.length]}" stroke="${pl.larg > CW + 1e-6 ? '#d11' : '#1a3fd6'}" stroke-width="${pl.larg > CW + 1e-6 ? 5 : 2.5}"/>` +
-        `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y + pl.larg / 2) - 6}" font-size="30" font-weight="bold" text-anchor="middle" fill="#c00">Pilha ${pl.n}</text>` +
-        `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y + pl.larg / 2) + 26}" font-size="${Math.min(22, pl.comp * kk / 13).toFixed(0)}" text-anchor="middle">${pl.pecas.length} peça(s) · topo ${pl.pecas[pl.pecas.length - 1].codigo}</text>` +
-        (pl.larg > CW + 1e-6 ? `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y + pl.larg / 2) + 54}" font-size="${Math.min(20, pl.comp * kk / 13).toFixed(0)}" text-anchor="middle" fill="#d11" font-weight="bold">excesso lateral</text>` : '')).join('') +
-      `<text x="${X(0)}" y="${Y(CW) + 50}" font-size="22" fill="#333">${br(CL)} × ${br(CW)} m · usado ${br(c.usado)} m · ${Math.round(c.peso)} kg de ${Math.round(regras.cargaMax ?? 35000)} kg</text></svg>`;
+      c.pilhas.map((pl, i) => `<rect x="${X(pl.x)}" y="${Y(pl.y - ex)}" width="${pl.comp * kk}" height="${pl.larg * kk}" fill="${cores[i % cores.length]}" stroke="${pl.y - ex < -1e-3 || pl.y + pl.larg - ex > CW + 1e-3 ? '#d11' : '#1a3fd6'}" stroke-width="${pl.y - ex < -1e-3 || pl.y + pl.larg - ex > CW + 1e-3 ? 5 : 2.5}"/>` +
+        `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y - ex + pl.larg / 2) - 6}" font-size="30" font-weight="bold" text-anchor="middle" fill="#c00">Pilha ${pl.n}</text>` +
+        `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y - ex + pl.larg / 2) + 26}" font-size="${Math.min(22, pl.comp * kk / 13).toFixed(0)}" text-anchor="middle">${pl.pecas.length} peça(s) · topo ${pl.pecas[pl.pecas.length - 1].codigo}</text>` +
+        (pl.y - ex < -1e-3 || pl.y + pl.larg - ex > CW + 1e-3 ? `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y - ex + pl.larg / 2) + 54}" font-size="${Math.min(20, pl.comp * kk / 13).toFixed(0)}" text-anchor="middle" fill="#d11" font-weight="bold">excesso lateral</text>` : '')).join('') +
+      `<text x="${X(0)}" y="${Y(CW + ex) + 40}" font-size="22" fill="#333">${br(CL)} × ${br(CW)} m · usado ${br(c.usado)} m · ${Math.round(c.peso)} kg de ${Math.round(regras.cargaMax ?? 35000)} kg</text></svg>`;
     const seq = [...c.pecas].sort((a, b) => a.ordem - b.ordem);
     add('carga' + c.n, `PLANO DE CARGA — CARRETA ${c.n}/${nCargas} — ${c.pecas.length} peças · ${br(c.peso / 1000)} t`,
       <div className="plano">
         <div className="plano-desenho" dangerouslySetInnerHTML={{ __html: svg }} />
-        <div className="plano-pilhas">{c.pilhas.map(pl => <div key={pl.n} className="pilha"><b>Pilha {pl.n}</b> (de cima para baixo):<br />{[...pl.pecas].reverse().map((x, i) => <span key={x.id}>{i + 1}. {x.codigo}{i < pl.pecas.length - 1 ? ' · ' : ''}</span>)}</div>)}</div>
-        <div className="plano-desc"><b>{prod.porTamanho ? 'Montar nesta ordem' : 'Descarregar e montar nesta ordem'}</b> {prod.porTamanho ? '(pilhas por tamanho: a peça pode estar embaixo — descarregar a carreta e separar no chão)' : '(a próxima peça está sempre em cima de alguma pilha)'}: {seq.map((x, i) => <span key={x.id}>{i ? ' → ' : ''}<b>{x.codigo}</b> <small>(p{c.pilhas.find(pl => pl.pecas.includes(x))!.n})</small></span>)}</div>
+        <div className="plano-pilhas">{c.pilhas.map((pl, pi) => {
+          // vista de lado da pilha: cada peça é uma faixa no tamanho dela (comprimento deitado), a de cima sai primeiro
+          const LH = 44, top = 50, n = pl.pecas.length, Lmax = Math.max(...pl.pecas.map(x => Math.max(x.a, x.b))), esc = 600 / Math.max(Lmax, 1);
+          const saida = [...c.pecas].sort((a, b) => a.ordem - b.ordem);
+          const faixas = pl.pecas.map((x, i) => {
+            const y = top + (n - 1 - i) * LH, L = Math.max(x.a, x.b) * esc, x0 = 150 + (600 - L) / 2, q = prod.porId.get(x.id)!;
+            return `<rect x="${x0}" y="${y}" width="${L}" height="${LH - 12}" fill="${['#dbe8ff', '#ffe3c7', '#dff5d8', '#f4dcf5', '#fff3b0', '#d8f1f4'][pi % 6]}" stroke="#333" stroke-width="2"/>` +
+              `<rect x="${x0 + 12}" y="${y + LH - 12}" width="16" height="12" fill="#8b5a2b"/><rect x="${x0 + L - 28}" y="${y + LH - 12}" width="16" height="12" fill="#8b5a2b"/>` +
+              `<text x="${150 + 300}" y="${y + 23}" font-size="20" text-anchor="middle" font-weight="bold">${x.codigo}</text>` +
+              `<text x="140" y="${y + 23}" font-size="17" text-anchor="end" fill="#555">camada ${i + 1}</text>` +
+              `<text x="760" y="${y + 23}" font-size="17" fill="#1a3fd6">${q.desc} · sai em ${saida.indexOf(x) + 1}º</text>`;
+          }).join('');
+          const H = top + n * LH + 30;
+          const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 ${H}"><text x="10" y="30" font-size="26" font-weight="bold" fill="#c00">Pilha ${pl.n}</text><text x="990" y="30" font-size="18" text-anchor="end" fill="#555">▲ em cima (sai primeiro)</text>${faixas}<line x1="120" y1="${top + n * LH}" x2="880" y2="${top + n * LH}" stroke="#333" stroke-width="5"/><text x="500" y="${top + n * LH + 26}" font-size="17" text-anchor="middle" fill="#555">piso da carreta · camada 1 = embaixo · marrom = caibros</text></svg>`;
+          return <div key={pl.n} className="pilha" dangerouslySetInnerHTML={{ __html: svg }} />;
+        })}</div>
+        <div className="plano-desc"><b>{c.modo === 'tamanho' ? 'Carga por tamanho (maior embaixo)' : 'Carga na ordem da montagem'}</b> · <b>{(c.estocar || []).length ? `estocar no canteiro ${(c.estocar || []).length} peça(s) até a vez delas: ${(c.estocar || []).join(', ')}` : 'descarrega já montando, sem estocar'}</b>.<br /><b>Ordem de montagem</b>: {seq.map((x, i) => <span key={x.id}>{i ? ' → ' : ''}<b>{x.codigo}</b> <small>(p{c.pilhas.find(pl => pl.pecas.includes(x))!.n})</small></span>)}</div>
         {c.avisos.length > 0 && <p className="plano-aviso">⚠ Excesso lateral (peça deitada mais larga que a carreta): {c.avisos.map(a => a.split(':')[0]).join(', ')} — transportar em pé (cavalete) ou com autorização de carga larga</p>}
       </div>,
-      `Peças deitadas · ${prod.porTamanho ? 'pilhas com a maior peça embaixo' : 'carregar ao contrário da montagem (a última a montar vai primeiro, embaixo)'} · peça de cima no máximo 30 cm maior que a de baixo · calçar com caibros entre as peças · amarrar cada pilha`);
+      `Peças deitadas · camada 1 = embaixo · peça de cima no máximo 30 cm maior que a de baixo · carreta de ${br(CW)} m (até ${br(CWM)} m com excesso lateral, pilha em vermelho) · peças de etapas seguintes completam a carga · calçar com caibros entre as peças e amarrar cada pilha`);
   }
   // conferência
   const alertas = conferencia(ativos, calc.ps, calc.lajes, regras, trelSemLaje);
@@ -1260,7 +1281,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod }: 
         <table className="tlaje"><thead><tr><th>Pavimento</th><th>Paredes</th><th>m²</th><th>Lajes</th><th>m²</th></tr></thead><tbody>
           {linhasResumo.map(l => <tr key={l.nome}><td>{l.nome}</td><td>{l.np}</td><td>{br(l.ap)}</td><td>{l.nl}</td><td>{br(l.al)}</td></tr>)}
           <tr className="tot"><td>Total</td><td>{tot.np}</td><td>{br(tot.ap)}</td><td>{tot.nl}</td><td>{br(tot.al)}</td></tr></tbody></table>
-        <p>{tot.np + tot.nl} peças · {br(tot.ap + tot.al)} m² · peso total {br(pesoTot / 1000)} t · {nCargas} carreta(s) de até {br((regras.cargaMax ?? 35000) / 1000)} t {prod.porTamanho ? `empilhando por tamanho (descarregando já montando seriam ${prod.nOutro})` : `descarregando já montando (empilhando por tamanho seriam ${prod.nOutro})`}</p>
+        <p>{tot.np + tot.nl} peças · {br(tot.ap + tot.al)} m² · peso total {br(pesoTot / 1000)} t · {nCargas} carreta(s) de até {br((regras.cargaMax ?? 35000) / 1000)} t {prod.modo === 'montagem' ? `sempre na ordem da montagem (com a carreta cheia seriam ${prod.nOutro})` : `com a carreta cheia (sempre na ordem da montagem seriam ${prod.nOutro})`}</p>
         <p>{alertas.filter(a => a.nivel === 'erro').length} erro(s) e {alertas.filter(a => a.nivel !== 'erro').length} ponto(s) de atenção na conferência automática</p>
         <h3>Onde está cada peça</h3>
         {ativos.flatMap(pv => (['Paredes', 'Lajes'] as const).map(tp => { const xs = indice.filter(x => x.pav === pv.id && x.tipo === tp); if (!xs.length) return null;

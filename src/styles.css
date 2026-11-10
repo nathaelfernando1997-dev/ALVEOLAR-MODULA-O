@@ -145,9 +145,9 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .folha .conf .erro { color: #b00; }
 /* plano de carga */
 .folha .plano { flex: 1; display: flex; flex-direction: column; gap: 2mm; min-height: 0; overflow: hidden; }
-.folha .plano-desenho svg { width: 100%; height: auto; max-height: 75mm; }
-.folha .plano-pilhas { display: flex; flex-wrap: wrap; gap: 1.5mm 5mm; font-size: 7pt; }
-.folha .plano-pilhas .pilha { width: 86mm; }
+.folha .plano-desenho svg { width: 100%; height: auto; max-height: 48mm; }
+.folha .plano-pilhas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm 4mm; min-height: 0; }
+.folha .plano-pilhas .pilha svg { width: 100%; height: auto; max-height: 62mm; }
 .folha .plano-desc { font-size: 7pt; line-height: 1.35; }
 .folha .plano-desc small { color: #1a3fd6; }
 /* etiquetas: 3 x 4 por folha */

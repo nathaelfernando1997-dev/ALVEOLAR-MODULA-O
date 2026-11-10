@@ -46,9 +46,10 @@ export interface Regras {
   densidade?: number;      // peso do concreto (kg/m³): 2500
   cargaMax?: number;       // carga máxima por carreta (kg): 35000
   carretaComp?: number;    // comprimento útil da carroceria (m): 12,40
-  carretaLarg?: number;    // largura útil da carroceria (m): 2,60
+  carretaLarg?: number;    // largura da carroceria (m): 2,80
+  carretaLargMax?: number; // largura máxima com excesso lateral (m): 3,20
   pilhaAlt?: number;       // altura máxima da pilha de peças deitadas (m): 1,50
-  cargaPorTamanho?: boolean; // plano de carga: maior embaixo (menos carretas) em vez de descarregar já montando
+  cargaModo?: 'auto' | 'montagem' | 'tamanho'; // plano de carga: auto = carreta cheia, na ordem da montagem quando dá
   escoraMax?: number;      // distância máxima entre linhas de escora da laje (m): 1,50
 }
 // regras de um projeto salvo: completa com as atuais e abre sempre no cálculo atual,
@@ -59,7 +60,8 @@ export function regrasDoSalvo(s?: Partial<Regras>): Regras {
   // painel de laje: o padrão antigo era 3,00 x 5,00; a regra da Alveolar é no máximo 2,50 x 4,00
   if (s?.lajeComp === 5) r.lajeComp = REGRAS_PADRAO.lajeComp;
   if (s?.lajeLarg === 3) r.lajeLarg = REGRAS_PADRAO.lajeLarg;
-  if (s?.cargaMax === 12000) r.cargaMax = REGRAS_PADRAO.cargaMax;   // 12 t (caminhão) foi o padrão por pouco tempo; a carga é por carreta de 35 t
+  if (s?.cargaMax === 12000) r.cargaMax = REGRAS_PADRAO.cargaMax;
+  if (s?.carretaLarg === 2.6) r.carretaLarg = REGRAS_PADRAO.carretaLarg;   // 2,60 foi o padrão por pouco tempo   // 12 t (caminhão) foi o padrão por pouco tempo; a carga é por carreta de 35 t
   return { ...r, motor: s?.motorFixo ? (s.motor ?? 1) : REGRAS_PADRAO.motor };
 }
 
@@ -68,7 +70,7 @@ export const REGRAS_PADRAO: Regras = {
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 4.0, lajeLarg: 2.5, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15, platibanda: 0.40,
   vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, perda: 10, vaoViga: 5.0, beiral: 1.0,
-  densidade: 2500, cargaMax: 35000, carretaComp: 12.4, carretaLarg: 2.6, pilhaAlt: 1.5, escoraMax: 1.5,
+  densidade: 2500, cargaMax: 35000, carretaComp: 12.4, carretaLarg: 2.8, carretaLargMax: 3.2, pilhaAlt: 1.5, escoraMax: 1.5,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
