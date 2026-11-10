@@ -146,7 +146,10 @@ export function conferencia(pavs: Pavimento[], ps: Painel[], lj: LajeAmb[], r: R
   const out: Alerta[] = [], nomePav = new Map(pavs.map(p => [p.id, p.nome]));
   for (const p of ps) {
     const onde = `${nomePav.get(p.pav)} · painel ${p.num}`;
-    if (p.larg > r.larguraMax + 1e-6) out.push({ nivel: 'erro', onde, texto: `largura ${br(p.larg)} m acima do máximo de ${br(r.larguraMax)} m` });
+    if (p.larg > r.larguraMax + 1e-6) {
+      if (r.larguraExcecao && p.larg <= r.larguraExcecao + 1e-6) out.push({ nivel: 'atencao', onde, texto: `largura ${br(p.larg)} m acima de ${br(r.larguraMax)} m — fabricar por exceção (autorizada até ${br(r.larguraExcecao)} m)` });
+      else out.push({ nivel: 'erro', onde, texto: `largura ${br(p.larg)} m acima do máximo de ${br(r.larguraMax)} m` });
+    }
     if (p.aviso) out.push({ nivel: 'atencao', onde, texto: p.aviso });
     for (const x of p.recortes) {
       const esq = x.dl, dir = p.larg - x.dl - x.w, topo = (p.chanfro ? Math.min(p.chanfro.ha, p.chanfro.hb) : p.H) - x.base - x.h;

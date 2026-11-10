@@ -5,6 +5,7 @@ import type { Dxf, Pt, Prim } from './dxf.ts';
 // ---------------- configuração ----------------
 export interface Regras {
   larguraMax: number;      // 3,50
+  larguraExcecao?: number; // painel acima da largura máxima, até esta medida, é fabricado por exceção (só aviso na conferência)
   coluna: number;          // 0,15 entre painéis
   folga: number;           // 0,05 tirado de cada painel
   boneca: number;          // 0,10 lateral e embaixo
