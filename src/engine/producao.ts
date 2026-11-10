@@ -161,3 +161,52 @@ export function conferencia(pavs: Pavimento[], ps: Painel[], lj: LajeAmb[], r: R
   for (const t of trelSemLaje) out.push({ nivel: 'erro', onde: `${nomePav.get(t.pav)} · treliça T${t.t}`, texto: 'sem laje modulada embaixo — conferir o apoio' });
   return out;
 }
+
+// ---------- plano de carga ----------
+// peças deitadas em pilhas na carreta. Carrega ao contrário da montagem (a última a montar vai embaixo),
+// então na obra a peça de cima de alguma pilha é sempre a próxima a montar: descarrega e já monta.
+// Peça grande não fica em cima de peça bem menor: a de cima cabe na de baixo (com folga "tol").
+export interface PecaCarga { id: string; codigo: string; ordem: number; a: number; b: number; peso: number }   // a × b = medidas da peça deitada
+export interface Pilha { n: number; x: number; y: number; comp: number; larg: number; pecas: PecaCarga[] }   // pecas: de baixo para cima
+export interface Carreta { n: number; pecas: PecaCarga[]; peso: number; pilhas: Pilha[]; usado: number; avisos: string[] }
+// modo 'montagem': empilha ao contrário da montagem (descarrega já montando); 'tamanho': maior embaixo (menos carretas)
+export interface OpCarga { pesoMax: number; comp: number; larg: number; altPilha: number; esp: number; tol: number; modo?: 'montagem' | 'tamanho' }
+function montarCarreta(pecas: PecaCarga[], o: OpCarga): Carreta | null {
+  const peso = pecas.reduce((s, p) => s + p.peso, 0);
+  if (peso > o.pesoMax + 1e-6) return null;
+  type Faixa = { x: number; comp: number; usadoY: number };
+  const faixas: Faixa[] = [], pilhas: Pilha[] = [], maxN = Math.max(1, Math.floor(o.altPilha / o.esp + 1e-6)), avisos: string[] = [];
+  let x = 0;
+  // de trás para a frente da montagem: a primeira peça colocada é a última a montar
+  const area = (p: PecaCarga) => Math.max(p.a, p.b) * 100 + Math.min(p.a, p.b);
+  const ordemCarga = o.modo === 'tamanho' ? [...pecas].sort((u, v) => area(v) - area(u) || v.ordem - u.ordem) : [...pecas].sort((u, v) => v.ordem - u.ordem);
+  for (const p of ordemCarga) {
+    const L = Math.max(p.a, p.b), W = Math.min(p.a, p.b);
+    if (W > o.larg + 1e-6) avisos.push(`${p.codigo}: ${W.toFixed(2).replace('.', ',')} m de largura deitada, acima da carreta (${o.larg.toFixed(2).replace('.', ',')} m) — excesso lateral`);
+    // 1º: em cima de uma pilha onde ela cabe (a de baixo é do mesmo tamanho ou maior), a mais justa
+    const topo = (pl: Pilha) => pl.pecas[pl.pecas.length - 1];
+    const cabe = (pl: Pilha) => { const t = topo(pl), tL = Math.max(t.a, t.b), tW = Math.min(t.a, t.b); return pl.pecas.length < maxN && L <= tL + o.tol && W <= tW + o.tol; };
+    const ok = pilhas.filter(cabe).sort((u, v) => { const tu = topo(u), tv = topo(v); return tu.a * tu.b - tv.a * tv.b; })[0];
+    if (ok) { ok.pecas.push(p); continue; }
+    // 2º: pilha nova ao lado de outra (mesma faixa da carreta), se couber na largura
+    let f = faixas.find(fx => fx.comp + 1e-6 >= L && fx.usadoY + W <= o.larg + 1e-6);
+    if (!f) {
+      if (x + L > o.comp + 1e-6) return null;
+      f = { x, comp: L, usadoY: 0 }; faixas.push(f); x += L + 0.1;
+    }
+    pilhas.push({ n: pilhas.length + 1, x: f.x, y: f.usadoY, comp: L, larg: W, pecas: [p] }); f.usadoY += W + 0.1;
+  }
+  return { n: 0, pecas, peso, pilhas, usado: Math.max(0, x - 0.1), avisos };
+}
+// divide a sequência de montagem (já em ordem) em carretas: cada carreta leva o trecho seguinte da sequência
+export function planoCarga(seq: PecaCarga[], o: OpCarga): Carreta[] {
+  const out: Carreta[] = [];
+  let i = 0;
+  while (i < seq.length) {
+    let melhor: Carreta | null = null, j = i;
+    while (j < seq.length) { const c = montarCarreta(seq.slice(i, j + 1), o); if (!c) break; melhor = c; j++; }
+    if (!melhor) { melhor = montarCarreta(seq.slice(i, i + 1), { ...o, pesoMax: Infinity, comp: Infinity })!; j = i + 1; melhor.avisos.push('peça sozinha não cabe na carreta pelas regras — conferir'); }
+    melhor.n = out.length + 1; out.push(melhor); i = j;
+  }
+  return out;
+}

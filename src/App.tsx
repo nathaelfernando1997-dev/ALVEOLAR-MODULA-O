@@ -5,7 +5,7 @@ import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos,
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { plantaSvg, vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
-import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, cargas, escoras, conferencia, paredesIguais, lajesIguais } from './engine/producao.ts';
+import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
@@ -388,6 +388,8 @@ export default function App() {
     }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
+  const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
+  const [modoImp, setModoImp] = useState<'folhas' | 'etiquetas'>('folhas');
 
   const cortes = useMemo(() => dxf ? lerCortes(dxf, pavs.filter(p => p.corte)) : [], [dxf, pavs]);
   const avisos = useMemo(() => conferir(cortes, ativos, quadro, regras, calc.ps), [cortes, pavs, quadro, regras, calc]);
@@ -560,10 +562,11 @@ export default function App() {
             <label className="chk"><input type="checkbox" checked={!!regras.trelicaSobreVao} onChange={e => setRegras({ ...regras, trelicaSobreVao: e.target.checked })} /> Parede de cima sobre vão livre (sala integrada, passagem, sem parede embaixo): reforçar a laje com treliça em vez de viga. A viga continua só onde a laje apoia nessa linha</label>
             <h3>Produção e montagem</h3>
             <div className="grade">
-              {([['densidade', 'Peso do concreto (kg/m³) — peso das peças'], ['cargaMax', 'Carga máxima por caminhão (kg) — romaneio'], ['escoraMax', 'Distância máxima entre linhas de escora da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+              {([['densidade', 'Peso do concreto (kg/m³) — peso das peças'], ['cargaMax', 'Carga máxima por carreta (kg)'], ['carretaComp', 'Comprimento útil da carreta (m)'], ['carretaLarg', 'Largura útil da carreta (m)'], ['pilhaAlt', 'Altura máxima da pilha de peças deitadas (m)'], ['escoraMax', 'Distância máxima entre linhas de escora da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? (REGRAS_PADRAO[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
             </div>
+            <label className="chk"><input type="checkbox" checked={!!regras.cargaPorTamanho} onChange={e => setRegras({ ...regras, cargaPorTamanho: e.target.checked })} /> Plano de carga empilhando por tamanho (maior embaixo, menos carretas). Desmarcado: carrega ao contrário da montagem para descarregar já montando</label>
             <ul className="dica">
               <li>Paredes acima da largura máxima são divididas em partes iguais, com coluna entre elas. No T, a coluna fica só na parede que segue alinhada (ou nenhuma, se a parede for pinada).</li>
               <li>Porta: boneca embaixo + altura do quadro (0,10 + 2,10 = 2,20). Janela: o peitoril baixa e o topo sobe pelo valor acima. Largura sempre maior pelo acréscimo.</li>
@@ -636,15 +639,20 @@ export default function App() {
               <h2>Impressão e arquivos</h2>
               <p>As folhas abaixo saem em <b>A4 deitado</b>. Use <i>Imprimir → Salvar como PDF</i>.</p>
               <div className="botoes">
-                <button onClick={() => window.print()}>Imprimir / salvar PDF</button>
+                <button className={modoImp === 'folhas' ? 'on' : ''} onClick={() => setModoImp('folhas')}>Ver folhas de produção</button>
+                {prod && <button className={modoImp === 'etiquetas' ? 'on' : ''} onClick={() => setModoImp('etiquetas')}>Ver etiquetas das peças</button>}
+                <button onClick={() => window.print()}>Imprimir / salvar PDF ({modoImp === 'folhas' ? 'folhas' : 'etiquetas'})</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj)) : []) + ((regras.motor ?? 1) >= 2 ? csvTrelicas(ativos, calc, aj, regras.perda ?? 10) : ''), 'text/csv')}>Baixar lista de painéis (CSV)</button>
+                {prod && <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-producao.csv', csvProducao(prod, ativos), 'text/csv')}>Baixar planilha de produção (CSV)</button>}
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
-            <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} />
+            {modoImp === 'etiquetas' && prod ? <Etiquetas prod={prod} ativos={ativos} nome={projNome || nome} />
+              : prod ? <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod} />
+              : <p className="dica">As folhas de produção usam o cálculo atual (aba Regras).</p>}
           </section>
         )}
       </main>
@@ -1055,17 +1063,73 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: Laj
   </div>;
 }
 
+// dados de produção de todas as peças: etiqueta, ordem de montagem, vizinhos, face, peso e posição na carreta
+export interface PecaProd { id: string; tipo: 'Parede' | 'Laje'; pav: string; num: number; codigo: string; desc: string; a: number; b: number; area: number; peso: number;
+  ordem: number; ordemPav?: number; esq?: string; dir?: string; face?: string; aberturas?: string; carreta?: number; pilha?: number; pos?: number; nPilha?: number }
+function dadosProducao(ativos: Pavimento[], calc: Calc, regras: Regras, aj: Ajustes, leitura: Leitura) {
+  const sg = siglas(ativos);
+  const nomesAmb = leitura.textos.filter(t => AMBIENTE_RE.test(t.text.trim()) && t.text.length <= 28).map(t => ({ text: t.text.trim(), x: t.x, y: t.y }));
+  const pecas: PecaProd[] = [], ordens = new Map<string, Map<number, number>>(), infos = new Map<number, InfoVista>();
+  let k = 0;
+  for (const pav of ativos) {
+    const ps = calc.ps.filter(p => p.pav === pav.id);
+    const ordem = ordemMontagem(ps), viz = vizinhos(ps); ordens.set(pav.id, ordem);
+    for (const p of [...ps].sort((a, b) => ordem.get(a.num)! - ordem.get(b.num)!)) {
+      const v = viz.get(p.num)!, fc = faceDaVista(p, calc.lajes, nomesAmb);
+      const lista = (xs: Painel[]) => xs.length ? xs.map(x => 'P' + x.num).join(', ') : 'livre';
+      const face = fc.face === 'externa' ? 'vista: face EXTERNA' : fc.face === 'interna' ? `vista: face interna${fc.amb ? ' — ' + fc.amb : ''}` : 'vista: sem ambiente';
+      const info: InfoVista = { codigo: codigoParede(p, sg), esq: lista(v.a), dir: lista(v.b), face };
+      infos.set(p.num, info);
+      pecas.push({ id: 'P' + p.num, tipo: 'Parede', pav: pav.id, num: p.num, codigo: info.codigo, desc: `${br(p.larg)} × ${p.chanfro ? `${br(p.chanfro.ha)}/${br(p.chanfro.hb)}` : br(p.H)}`, a: p.larg, b: p.H,
+        area: areaPainel(p), peso: pesoParede(p, regras), ordem: ++k, ordemPav: ordem.get(p.num), esq: info.esq, dir: info.dir, face, aberturas: p.recortes.map(r => r.tipo).join(', ') });
+    }
+    for (const p of calc.pl.filter(x => x.pav === pav.id).sort((a, b) => a.num - b.num))
+      pecas.push({ id: 'L' + p.num, tipo: 'Laje', pav: pav.id, num: p.num, codigo: codigoLaje(p, sg), desc: `${br(p.comp)} × ${br(p.larg)}`, a: p.comp, b: p.larg, area: areaLaje(p), peso: pesoLaje(p, regras, espDaLaje(aj)(p)), ordem: ++k });
+  }
+  const esp = (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025);
+  const pc = pecas.map(p => ({ id: p.id, codigo: p.codigo, ordem: p.ordem, a: p.a, b: p.b, peso: p.peso }));
+  const op = { pesoMax: regras.cargaMax ?? 35000, comp: regras.carretaComp ?? 12.4, larg: regras.carretaLarg ?? 2.6, altPilha: regras.pilhaAlt ?? 1.5, esp, tol: 0.3 };
+  const porTamanho = !!regras.cargaPorTamanho;
+  const plano = planoCarga(pc, { ...op, modo: porTamanho ? 'tamanho' : 'montagem' });
+  const nOutro = planoCarga(pc, { ...op, modo: porTamanho ? 'montagem' : 'tamanho' }).length;
+  const porId = new Map(pecas.map(p => [p.id, p]));
+  for (const c of plano) for (const pl of c.pilhas) pl.pecas.forEach((x, i) => { const q = porId.get(x.id)!; q.carreta = c.n; q.pilha = pl.n; q.pos = pl.pecas.length - i; q.nPilha = pl.pecas.length; });
+  return { sg, pecas, plano, ordens, infos, porId, porTamanho, nOutro };
+}
+type Prod = ReturnType<typeof dadosProducao>;
+const posTxt = (p: PecaProd) => p.pos === 1 ? 'em cima' : `${p.pos}ª de cima`;
+// planilha de produção (CSV)
+function csvProducao(prod: Prod, ativos: Pavimento[]): string {
+  const nome = new Map(ativos.map(p => [p.id, p.nome]));
+  const L = ['Ordem geral;Peça;Tipo;Pavimento;Medidas (m);Área (m²);Peso (kg);Montagem no pavimento;Carreta;Pilha;Posição na pilha;Lado esquerdo;Lado direito;Face da vista;Aberturas'];
+  for (const p of prod.pecas) L.push([p.ordem, p.codigo, p.tipo, (p.tipo === 'Laje' ? 'sobre o ' : '') + nome.get(p.pav), p.desc, br(p.area), Math.round(p.peso), p.ordemPav ?? '', p.carreta ?? '', p.pilha ?? '', p.pos ? posTxt(p) : '', p.esq ?? '', p.dir ?? '', p.face ?? '', p.aberturas ?? ''].join(';'));
+  L.push('', 'Carreta;Peças;Peso (kg);Comprimento usado (m);Da peça;Até a peça');
+  for (const c of prod.plano) L.push([c.n, c.pecas.length, Math.round(c.peso), br(c.usado), c.pecas[0].codigo, c.pecas[c.pecas.length - 1].codigo].join(';'));
+  return '﻿' + L.join('\r\n');
+}
+// etiquetas para colar nas peças: 12 por folha A4 deitada
+function Etiquetas({ prod, ativos, nome }: { prod: Prod; ativos: Pavimento[]; nome: string }) {
+  const nomePav = new Map(ativos.map(p => [p.id, p.nome])), titulo = nome.replace(/\.(dxf|dwg|pdf|json)$/i, '');
+  return <div className="folhas">{emBlocos(prod.pecas, 12).map((B, i) => <div className="folha etiquetas" key={i}>
+    {B.map(p => <div className="etq" key={p.id}>
+      <div className="etq-cod">{p.codigo}<span>{p.tipo === 'Parede' ? '▲ topo' : ''}</span></div>
+      <div className="etq-obra">{titulo} · {p.tipo === 'Laje' ? 'laje sobre o ' : ''}{nomePav.get(p.pav)}</div>
+      <div><b>{p.tipo} {p.desc} m</b> · {Math.round(p.peso)} kg{p.aberturas ? ` · ${p.aberturas}` : ''}</div>
+      <div>Montagem nº <b>{p.tipo === 'Parede' ? p.ordemPav : '—'}</b> · ordem geral {p.ordem}</div>
+      <div>Carreta <b>{p.carreta}</b> · pilha <b>{p.pilha}</b> · {p.pos ? posTxt(p) : ''}</div>
+      {p.tipo === 'Parede' && <div>Lado esquerdo: <b>{p.esq}</b> · lado direito: <b>{p.dir}</b></div>}
+      {p.tipo === 'Parede' && <div className="etq-face">{p.face}</div>}
+    </div>)}
+  </div>)}</div>;
+}
 const ESC_LAJE = 12, ESC_PAREDE = 12;   // vistas de produção das lajes: 12 mm por metro (mais peças por folha, letras do mesmo tamanho)
-function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes }) {
+function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod }) {
   type F = { key: string; tit: string; body: JSX.Element; rod: string };
   const F: F[] = [];
   const add = (key: string, tit: string, body: JSX.Element, rod: string) => { F.push({ key, tit, body, rod }); return F.length - 1; };
-  const sg = siglas(ativos), nomePav = new Map(ativos.map(p => [p.id, p.nome]));
-  const nomesAmb = leitura.textos.filter(t => AMBIENTE_RE.test(t.text.trim()) && t.text.length <= 28).map(t => ({ text: t.text.trim(), x: t.x, y: t.y }));
+  const sg = prod.sg;
   const fLaje = ESC_VISTA / ESC_LAJE, fPar = ESC_VISTA / ESC_PAREDE, titulo = nome.replace(/\.(dxf|dwg|pdf|json)$/i, '');
   const indice: { pav: string; tipo: 'Paredes' | 'Lajes'; nums: number[]; f: number }[] = [];
-  type Rom = { pav: string; ordem: number; codigo: string; desc: string; area: number; peso: number };
-  const rom: Rom[] = [];
   const trelSemLaje: { pav: string; t: number }[] = [];
   const faixa = (ns: number[]) => { const v = [...ns].sort((a, b) => a - b), out: string[] = []; for (let i = 0; i < v.length;) { let j = i; while (j + 1 < v.length && v[j + 1] === v[j] + 1) j++; out.push(j > i ? `${v[i]}–${v[j]}` : `${v[i]}`); i = j + 1; } return out.join(', '); };
   for (const pav of ativos) {
@@ -1075,24 +1139,16 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
       add(pav.id + 'p', `PLANTA DE MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
         <div className="desenho" dangerouslySetInnerHTML={{ __html: plantaSvg(leitura, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arqDe(pav.box)) }} />,
         '■ vermelho: número do painel · azul: cota da parede (painel = cota − desconto) · rosa: porta / janela');
-      const ordem = ordemMontagem(ps);
+      const ordem = prod.ordens.get(pav.id)!;
       add(pav.id + 's', `SEQUÊNCIA DE MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
         <div className="desenho"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + sequenciaConteudo(ps, ordem, q) }} /></div>,
         'Círculo azul = ordem de montagem (começa num canto e segue sempre encostando em peça já montada, fechando os cantos) · vermelho = número da peça · conferir prumo e travamento a cada canto fechado');
-      for (const p of [...ps].sort((a, b) => ordem.get(a.num)! - ordem.get(b.num)!))
-        rom.push({ pav: pav.id, ordem: ordem.get(p.num)!, codigo: codigoParede(p, sg), desc: `${br(p.larg)} × ${br(p.H)}`, area: areaPainel(p), peso: pesoParede(p, regras) });
-      const viz = vizinhos(ps);
-      const info = (p: Painel): InfoVista => {
-        const v = viz.get(p.num)!, fc = faceDaVista(p, calc.lajes, nomesAmb);
-        const lista = (xs: Painel[]) => xs.length ? xs.map(x => x.num).join(', ') : 'livre';
-        return { codigo: codigoParede(p, sg), esq: lista(v.a), dir: lista(v.b),
-          face: fc.face === 'externa' ? 'vista: face EXTERNA' : fc.face === 'interna' ? `vista: face interna${fc.amb ? ' — ' + fc.amb : ''}` : 'vista: sem ambiente' };
-      };
+      const info = (p: Painel) => prod.infos.get(p.num)!;
       const paginas = paginarVistas(ps, p => p.larg, p => p.H + 0.45 + (0.35 + 0.26) * fPar + Math.ceil((p.aviso || '').length * fPar / (18 * (p.larg + 0.6))) * 0.13 * fPar, 3, ESC_PAREDE);
       paginas.forEach((pgx, i) => {
         const fi = add(pav.id + 'v' + i, `MODULAÇÃO DAS PAREDES — ${pav.nome.toUpperCase()} — ${i + 1}/${paginas.length}`,
           <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaSvg(p, info(p), ESC_PAREDE) }} />)}</div>)}</div>,
-          'Etiqueta = pavimento-peça · ◄ ► = peças que encostam em cada lado · ▲ topo · vãos de portas e janelas maiores pelo acréscimo · boneca nas laterais e embaixo (retirar na obra) · medidas em metros');
+          'Etiqueta = pavimento-peça · embaixo da peça: ◄ P12 = peça encostada no lado ESQUERDO · P2, P6 ► = peças encostadas no lado DIREITO (livre = ponta solta) · ▲ topo · vãos de portas e janelas maiores pelo acréscimo · boneca nas laterais e embaixo (retirar na obra) · medidas em metros');
         indice.push({ pav: pav.id, tipo: 'Paredes', nums: pgx.flat().map(p => p.num), f: fi });
       });
     }
@@ -1129,7 +1185,6 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
           indice.push({ pav: pav.id, tipo: 'Lajes', nums: pgx.flat().map(p => p.num), f: fi });
         });
       }
-      for (const p of P) rom.push({ pav: pav.id, ordem: 1000 + p.num, codigo: codigoLaje(p, sg), desc: `${br(p.comp)} × ${br(p.larg)}`, area: areaLaje(p), peso: pesoLaje(p, regras, espDaLaje(aj)(p)) });
       if (TPf.length) {
         const T0 = TPf.slice(0, LINHAS_TREL), resto = TPf.length > LINHAS_TREL ? emBlocos(TPf.slice(LINHAS_TREL), LINHAS_TREL_CONT) : [];
         const nf = 1 + Math.ceil(resto.length / 2);
@@ -1142,20 +1197,28 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
       }
     }
   }
-  // romaneio: paredes na ordem de montagem e depois as lajes de cada pavimento; carga nova quando passa do limite
-  const romC = cargas(rom, regras.cargaMax ?? 12000);
-  const ROM_LIN = 42, blocosRom = emBlocos(romC, ROM_LIN), porFolha = 3;
-  const nCargas = romC.length ? romC[romC.length - 1].carga : 0;
-  const resumoCargas = Array.from({ length: nCargas }, (_, i) => { const xs = romC.filter(r => r.carga === i + 1); return { c: i + 1, n: xs.length, peso: xs.reduce((s, r) => s + r.peso, 0), de: xs[0]?.codigo, ate: xs[xs.length - 1]?.codigo }; });
-  const tabRom = (B: typeof romC) => <table className="tlaje rom"><thead><tr><th>Carga</th><th>Ordem</th><th>Peça</th><th>Medidas</th><th>Peso (kg)</th></tr></thead><tbody>
-    {B.map((r, i) => <tr key={i} className={i && B[i - 1].carga !== r.carga ? 'nova' : ''}><td>{r.carga}</td><td>{r.ordem < 1000 ? r.ordem : '—'}</td><td>{r.codigo}</td><td>{r.desc}</td><td>{Math.round(r.peso)}</td></tr>)}
-  </tbody></table>;
-  for (let f = 0; f * porFolha < blocosRom.length; f++) add('rom' + f, `ROMANEIO DE CARGAS E ORDEM DE ENTREGA — ${f + 1}/${Math.ceil(blocosRom.length / porFolha)}`,
-    <div className="desenho lajes cont">{blocosRom.slice(f * porFolha, f * porFolha + porFolha).map((B, i) => <div key={i}>{tabRom(B)}</div>)}
-      {(f + 1) * porFolha >= blocosRom.length && <table className="tlaje rom"><thead><tr><th>Carga</th><th>Peças</th><th>De → até</th><th>Peso (kg)</th></tr></thead><tbody>
-        {resumoCargas.map(c => <tr key={c.c}><td>{c.c}</td><td>{c.n}</td><td>{c.de} → {c.ate}</td><td>{Math.round(c.peso)}</td></tr>)}
-        <tr className="tot"><td>Total</td><td>{romC.length}</td><td></td><td>{Math.round(romC.reduce((s, r) => s + r.peso, 0))}</td></tr></tbody></table>}</div>,
-    `Peso = concreto da peça (área líquida × espessura − isopor) × ${regras.densidade ?? 2500} kg/m³ · carga de até ${Math.round(regras.cargaMax ?? 12000)} kg por caminhão · paredes na ordem de montagem, depois as lajes do pavimento · carregar a última peça a montar primeiro (fica embaixo)`);
+  // plano de carga: uma folha por carreta, com as pilhas vistas de cima e a ordem de descarga (= ordem de montagem)
+  const CL = regras.carretaComp ?? 12.4, CW = regras.carretaLarg ?? 2.6, nCargas = prod.plano.length, pesoTot = prod.pecas.reduce((s, p) => s + p.peso, 0);
+  for (const c of prod.plano) {
+    const kk = 100, W = (CL + 0.6) * kk, H = (CW + 0.9) * kk, X = (x: number) => (x + 0.3) * kk, Y = (y: number) => (y + 0.6) * kk;
+    const cores = ['#dbe8ff', '#ffe3c7', '#dff5d8', '#f4dcf5', '#fff3b0', '#d8f1f4'];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><rect x="${X(0)}" y="${Y(0)}" width="${CL * kk}" height="${CW * kk}" fill="#f7f7f7" stroke="#333" stroke-width="3"/>` +
+      `<text x="${X(CL) - 4}" y="${Y(0) - 10}" font-size="22" text-anchor="end" fill="#555">frente da carreta (cavalo) →</text><text x="${X(0)}" y="${Y(0) - 10}" font-size="22" fill="#555">traseira</text>` +
+      c.pilhas.map((pl, i) => `<rect x="${X(pl.x)}" y="${Y(pl.y)}" width="${pl.comp * kk}" height="${pl.larg * kk}" fill="${cores[i % cores.length]}" stroke="${pl.larg > CW + 1e-6 ? '#d11' : '#1a3fd6'}" stroke-width="${pl.larg > CW + 1e-6 ? 5 : 2.5}"/>` +
+        `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y + pl.larg / 2) - 6}" font-size="30" font-weight="bold" text-anchor="middle" fill="#c00">Pilha ${pl.n}</text>` +
+        `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y + pl.larg / 2) + 26}" font-size="${Math.min(22, pl.comp * kk / 13).toFixed(0)}" text-anchor="middle">${pl.pecas.length} peça(s) · topo ${pl.pecas[pl.pecas.length - 1].codigo}</text>` +
+        (pl.larg > CW + 1e-6 ? `<text x="${X(pl.x + pl.comp / 2)}" y="${Y(pl.y + pl.larg / 2) + 54}" font-size="${Math.min(20, pl.comp * kk / 13).toFixed(0)}" text-anchor="middle" fill="#d11" font-weight="bold">excesso lateral</text>` : '')).join('') +
+      `<text x="${X(0)}" y="${Y(CW) + 50}" font-size="22" fill="#333">${br(CL)} × ${br(CW)} m · usado ${br(c.usado)} m · ${Math.round(c.peso)} kg de ${Math.round(regras.cargaMax ?? 35000)} kg</text></svg>`;
+    const seq = [...c.pecas].sort((a, b) => a.ordem - b.ordem);
+    add('carga' + c.n, `PLANO DE CARGA — CARRETA ${c.n}/${nCargas} — ${c.pecas.length} peças · ${br(c.peso / 1000)} t`,
+      <div className="plano">
+        <div className="plano-desenho" dangerouslySetInnerHTML={{ __html: svg }} />
+        <div className="plano-pilhas">{c.pilhas.map(pl => <div key={pl.n} className="pilha"><b>Pilha {pl.n}</b> (de cima para baixo):<br />{[...pl.pecas].reverse().map((x, i) => <span key={x.id}>{i + 1}. {x.codigo}{i < pl.pecas.length - 1 ? ' · ' : ''}</span>)}</div>)}</div>
+        <div className="plano-desc"><b>{prod.porTamanho ? 'Montar nesta ordem' : 'Descarregar e montar nesta ordem'}</b> {prod.porTamanho ? '(pilhas por tamanho: a peça pode estar embaixo — descarregar a carreta e separar no chão)' : '(a próxima peça está sempre em cima de alguma pilha)'}: {seq.map((x, i) => <span key={x.id}>{i ? ' → ' : ''}<b>{x.codigo}</b> <small>(p{c.pilhas.find(pl => pl.pecas.includes(x))!.n})</small></span>)}</div>
+        {c.avisos.length > 0 && <p className="plano-aviso">⚠ Excesso lateral (peça deitada mais larga que a carreta): {c.avisos.map(a => a.split(':')[0]).join(', ')} — transportar em pé (cavalete) ou com autorização de carga larga</p>}
+      </div>,
+      `Peças deitadas · ${prod.porTamanho ? 'pilhas com a maior peça embaixo' : 'carregar ao contrário da montagem (a última a montar vai primeiro, embaixo)'} · peça de cima no máximo 30 cm maior que a de baixo · calçar com caibros entre as peças · amarrar cada pilha`);
+  }
   // conferência
   const alertas = conferencia(ativos, calc.ps, calc.lajes, regras, trelSemLaje);
   const comTrel = new Set(calc.pl.filter(p => calc.vigas.some(v => v.pav === p.pav && v.tipo === 'trelica' && trelicasNasLajes([v], [p]).some(x => x.painel))).map(p => p.num));
@@ -1189,7 +1252,6 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
     return { nome: pv.nome, np: ps.length, ap: ps.reduce((s, p) => s + areaPainel(p), 0), nl: pl.length, al: pl.reduce((s, p) => s + areaLaje(p), 0) };
   }).filter(l => l.np || l.nl);
   const tot = linhasResumo.reduce((s, l) => ({ np: s.np + l.np, ap: s.ap + l.ap, nl: s.nl + l.nl, al: s.al + l.al }), { np: 0, ap: 0, nl: 0, al: 0 });
-  const pesoTot = romC.reduce((s, r) => s + r.peso, 0);
   const capa = <div className="folha capa" key="capa">
     <div className="cab">PRODUÇÃO E MONTAGEM — PAREDES E LAJES</div>
     <h1>{titulo}</h1>
@@ -1198,7 +1260,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativ
         <table className="tlaje"><thead><tr><th>Pavimento</th><th>Paredes</th><th>m²</th><th>Lajes</th><th>m²</th></tr></thead><tbody>
           {linhasResumo.map(l => <tr key={l.nome}><td>{l.nome}</td><td>{l.np}</td><td>{br(l.ap)}</td><td>{l.nl}</td><td>{br(l.al)}</td></tr>)}
           <tr className="tot"><td>Total</td><td>{tot.np}</td><td>{br(tot.ap)}</td><td>{tot.nl}</td><td>{br(tot.al)}</td></tr></tbody></table>
-        <p>{tot.np + tot.nl} peças · {br(tot.ap + tot.al)} m² · peso total {br(pesoTot / 1000)} t · {nCargas} carga(s) de até {br((regras.cargaMax ?? 12000) / 1000)} t</p>
+        <p>{tot.np + tot.nl} peças · {br(tot.ap + tot.al)} m² · peso total {br(pesoTot / 1000)} t · {nCargas} carreta(s) de até {br((regras.cargaMax ?? 35000) / 1000)} t {prod.porTamanho ? `empilhando por tamanho (descarregando já montando seriam ${prod.nOutro})` : `descarregando já montando (empilhando por tamanho seriam ${prod.nOutro})`}</p>
         <p>{alertas.filter(a => a.nivel === 'erro').length} erro(s) e {alertas.filter(a => a.nivel !== 'erro').length} ponto(s) de atenção na conferência automática</p>
         <h3>Onde está cada peça</h3>
         {ativos.flatMap(pv => (['Paredes', 'Lajes'] as const).map(tp => { const xs = indice.filter(x => x.pav === pv.id && x.tipo === tp); if (!xs.length) return null;
