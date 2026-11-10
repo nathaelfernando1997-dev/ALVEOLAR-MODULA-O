@@ -40,7 +40,7 @@ export function plantaSvg(L: Leitura, pav: Pavimento, ps: Painel[], vaos: VaoInt
   const q = quadro(pav);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${q.vb}">${plantaConteudo(L, pav, ps, vaos, arq, q)}</svg>`;
 }
-const AMBIENTE_RE = /^(SALA|COZINHA|QUARTO|SU[IÍ]TE|BANHO|BANHEIRO|WC|LAVABO|GARAGEM|VARANDA|SACADA|[AÁ]REA|SERVI[CÇ]O|LAVANDERIA|DESPENSA|DEP[OÓ]SITO|CLOSET|CIRCULA[CÇ][AÃ]O|CORREDOR|HALL|ESCRIT[OÓ]RIO|OFFICE|GOURMET|ESTAR|JANTAR|COPA|KIT|APTO|APARTAMENTO|LOJA|ESCADA)\b[^0-9]*\d?$/i;
+export const AMBIENTE_RE = /^(SALA|COZINHA|QUARTO|SU[IÍ]TE|BANHO|BANHEIRO|WC|LAVABO|GARAGEM|VARANDA|SACADA|[AÁ]REA|SERVI[CÇ]O|LAVANDERIA|DESPENSA|DEP[OÓ]SITO|CLOSET|CIRCULA[CÇ][AÃ]O|CORREDOR|HALL|ESCRIT[OÓ]RIO|OFFICE|GOURMET|ESTAR|JANTAR|COPA|KIT|APTO|APARTAMENTO|LOJA|ESCADA)\b[^0-9]*\d?$/i;
 export function plantaConteudo(L: Leitura, pav: Pavimento, ps: Painel[], vaos: VaoInteiro[], arq: Prim[], q: Quadro): string {
   const b = pav.box, { X, Y, k } = q;
   const g: string[] = [arqSvg(q, arq)];
@@ -96,24 +96,29 @@ export function plantaConteudo(L: Leitura, pav: Pavimento, ps: Painel[], vaos: V
 }
 
 // vista de um painel (unidades: 1 m = 100)
-export function vistaSvg(p: Painel): string {
-  const k = 100, w = p.larg, h = p.H, mx = 0.55, my = 0.45;
-  const max = Math.max(16, Math.round((w + 0.6) * 18)), linhas: string[] = [];
+// info: etiqueta da peça, painéis que encostam em cada lado e de que face a vista é vista
+export interface InfoVista { codigo: string; esq: string; dir: string; face: string }
+export function vistaSvg(p: Painel, info?: InfoVista, escMm = 18): string {
+  const f = 18 / escMm, k = 100, w = p.larg, h = p.H, mx = 0.55, my = 0.45;
+  const max = Math.max(16, Math.round((w + 0.6) * 18 / f)), linhas: string[] = [];
   for (const pal of (p.aviso || '').split(' ').filter(Boolean)) { const u = linhas.length - 1; if (u >= 0 && (linhas[u] + ' ' + pal).length <= max) linhas[u] += ' ' + pal; else linhas.push(pal); }
-  const W = (w + 2 * mx) * k, Hh = (h + my + 0.35 + Math.max(0, linhas.length - 1) * 0.13) * k;
+  const ext = info ? 0.26 * f : 0;   // duas linhas embaixo: vizinhos e face
+  const W = (w + 2 * mx) * k, Hh = (h + my + 0.35 * f + ext + Math.max(0, linhas.length - 1) * 0.13 * f) * k;
   const X = (x: number) => (x + mx) * k, Y = (y: number) => (h + my - y) * k;
-  const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(W / 100 * 18).toFixed(1)}mm">`];
+  const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(W / 100 * escMm).toFixed(1)}mm">`];
   const L = (x1: number, y1: number, x2: number, y2: number, c = '#000', sw = 1.2) => s.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${c}" stroke-width="${sw}"/>`);
-  const T = (x: number, y: number, t: string, fs = 12, c = VERM, anc = 'middle', rot = false) => s.push(`<text x="${X(x).toFixed(1)}" y="${Y(y).toFixed(1)}" font-size="${fs}" fill="${c}" text-anchor="${anc}" paint-order="stroke" stroke="#fff" stroke-width="3"${rot ? ` transform="rotate(-90 ${X(x).toFixed(1)} ${Y(y).toFixed(1)})"` : ''}>${t}</text>`);
+  const T = (x: number, y: number, t: string, fs = 12, c = VERM, anc = 'middle', rot = false) => s.push(`<text x="${X(x).toFixed(1)}" y="${Y(y).toFixed(1)}" font-size="${(fs * f).toFixed(1)}" fill="${c}" text-anchor="${anc}" paint-order="stroke" stroke="#fff" stroke-width="3"${rot ? ` transform="rotate(-90 ${X(x).toFixed(1)} ${Y(y).toFixed(1)})"` : ''}>${t}</text>`);
   const dimH = (a: number, b: number, y: number, t: string) => { L(a, y, b, y, AZUL, 0.8); L(a, y - 0.04, a, y + 0.04, AZUL, 0.8); L(b, y - 0.04, b, y + 0.04, AZUL, 0.8); T((a + b) / 2, y + 0.03, t, 11); };
   const dimV = (x: number, a: number, b: number, t: string) => { L(x, a, x, b, AZUL, 0.8); L(x - 0.04, a, x + 0.04, a, AZUL, 0.8); L(x - 0.04, b, x + 0.04, b, AZUL, 0.8); T(x - 0.03, (a + b) / 2, t, 11, VERM, 'middle', true); };
   // topo inclinado (chanfro): altura ha na esquerda e hb na direita
   const ha = p.chanfro?.ha ?? h, hb = p.chanfro?.hb ?? h, hEm = (x: number) => ha + (hb - ha) * x / w;
   L(0, 0, w, 0); L(w, 0, w, hb); L(w, hb, 0, ha); L(0, ha, 0, 0); L(-0.3, 0, w + 0.1, 0);
   for (let i = 1; i < 5; i++) { const z = Math.min(ha, hb) * i / 5; L(-0.08, z, 0, z, '#000', 0.8); L(w, z, w + 0.08, z, '#000', 0.8); }
-  s.push(`<text x="${X(0.06)}" y="${Y(Math.min(ha, hb) - 0.2)}" font-size="16" fill="${VERM}" font-weight="bold">${p.num}</text>`);
+  s.push(`<text x="${X(0.06)}" y="${Y(Math.min(ha, hb) - 0.2 * f)}" font-size="${(16 * f).toFixed(1)}" fill="${VERM}" font-weight="bold">${info ? esc(info.codigo) : p.num}</text>`);
+  // topo da peça (não montar de cabeça para baixo)
+  if (info) { const largo = w > 0.13 * f * (info.codigo.length + 6); s.push(`<text x="${X(largo ? w - 0.05 : 0.06)}" y="${Y(Math.min(ha, hb) - (largo ? 0.13 : 0.36) * f)}" font-size="${(9 * f).toFixed(1)}" fill="#555" text-anchor="${largo ? 'end' : 'start'}">▲ topo</text>`); }
   dimH(0, w, h + 0.2, br(w)); dimV(-0.22, 0, ha, br(ha));
-  if (p.chanfro) { dimV(w + 0.25, 0, hb, br(hb)); T(w / 2, h + 0.36, `topo chanfrado ${br(ha)} → ${br(hb)}`, 10, '#b00'); }
+  if (p.chanfro) { dimV(w + 0.25, 0, hb, br(hb)); T(w / 2, h + 0.2 + 0.16 * f, `topo chanfrado ${br(ha)} → ${br(hb)}`, 10, '#b00'); }
   for (const r of p.recortes) {
     const ox = r.dl, ob = r.base, ow = r.w, oh = r.h;
     s.push(`<rect x="${X(ox).toFixed(1)}" y="${Y(ob + oh).toFixed(1)}" width="${(ow * k).toFixed(1)}" height="${(oh * k).toFixed(1)}" fill="none" stroke="#000" stroke-width="1"/>`);
@@ -126,8 +131,13 @@ export function vistaSvg(p: Painel): string {
     const hl = hEm(ox + ow * 0.5), top = hl - ob - oh; if (top > 0.005) dimV(ox + ow * 0.5, ob + oh, hl, br(top));
   }
   // aviso quebrado em linhas da largura do painel (não invade o painel do lado)
+  if (info) {
+    // ◄ peça que encosta à esquerda · à direita ► ; e de que lado se olha a peça
+    s.push(`<text x="${X(w / 2)}" y="${Y(-0.14 * f)}" font-size="${(9.5 * f).toFixed(1)}" fill="#1a3fd6" text-anchor="middle">◄ ${esc(info.esq)}  |  ${esc(info.dir)} ►</text>`);
+    T(w / 2, -0.27 * f, esc(info.face), 9.5, '#333');
+  }
   if (p.aviso) {
-    linhas.forEach((l, i) => T(w / 2, -0.22 - i * 0.13, esc(l), 10, '#b00'));
+    linhas.forEach((l, i) => T(w / 2, -0.22 * f - ext - i * 0.13 * f, esc(l), 10, '#b00'));
   }
   s.push('</svg>');
   return s.join('');
@@ -175,19 +185,20 @@ function trelicasResumo(TT: TrelPainel[], w: number, h: number) {
     .map(t => `T${t.n}: de ${br(t.i0)} a ${br(t.i1)} ${t.vert ? 'de baixo' : 'da esquerda'} (${br(t.i1 - t.i0)} m)`);
   return { PH, PV, NT };
 }
-export const extraVistaLaje = (p: PainelLaje, TR: TrelicaLinha[]) => { const loc = lajeLocal(p), r = trelicasResumo(trelicasNoPainel(p, TR), loc.W, loc.L);
-  return { larg: Math.max(r.PH.length ? 0.08 + r.PH.length * 0.17 : 0, Math.max(0, ...r.NT.map(n => n.length * 0.05)) - loc.W - 0.6), alt: (r.PV.length ? 0.1 + r.PV.length * 0.17 : 0) + r.NT.length * 0.13 }; };
-export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLinha[] = [], baixoMin = 0): string {
-  const k = 100, loc = lajeLocal(p), w = loc.W, h = loc.L, mx = 0.5, my = 0.45;
+// f = aumento das letras quando a vista sai numa escala menor que 18 mm/m (texto do mesmo tamanho no papel)
+export const extraVistaLaje = (p: PainelLaje, TR: TrelicaLinha[], f = 1) => { const loc = lajeLocal(p), r = trelicasResumo(trelicasNoPainel(p, TR), loc.W, loc.L);
+  return { larg: Math.max(r.PH.length ? 0.08 + r.PH.length * 0.17 * f : 0, Math.max(0, ...r.NT.map(n => n.length * 0.05 * f)) - loc.W - 0.6), alt: (r.PV.length ? 0.1 + r.PV.length * 0.17 * f : 0) + r.NT.length * 0.13 * f }; };
+export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLinha[] = [], baixoMin = 0, escMm = 18, codigo?: string): string {
+  const f = 18 / escMm, k = 100, loc = lajeLocal(p), w = loc.W, h = loc.L, mx = 0.5, my = 0.45;
   const d = loc.d && { u0: loc.d.v0, u1: loc.d.v1, v0: loc.d.u0, v1: loc.d.u1 };
   const TT = trelicasNoPainel(p, TR), TH = TT.filter(t => !t.vert).sort((a, b) => a.pos - b.pos), TV = TT.filter(t => t.vert).sort((a, b) => a.pos - b.pos);
   // cotas das treliças fora do painel: horizontais à direita, verticais embaixo (uma fileira por treliça, sem sobrepor)
-  const { PH, PV, NT } = trelicasResumo(TT, w, h), DT = 0.17, extD = PH.length ? 0.08 + PH.length * DT : 0, extB = PV.length ? 0.1 + PV.length * DT : 0;
-  const Hh = (h + my + 0.35 + Math.max(baixoMin, extB + (NT.length + notas.length) * 0.13) + 0.15) * k, Wd = Math.max(w + 2 * mx + extD, Math.max(0, ...NT.map(n => n.length * 0.05 + 0.2))) * k;
+  const { PH, PV, NT } = trelicasResumo(TT, w, h), DT = 0.17 * f, extD = PH.length ? 0.08 + PH.length * DT : 0, extB = PV.length ? 0.1 + PV.length * DT : 0;
+  const Hh = (h + my + 0.35 + Math.max(baixoMin, extB + (NT.length + notas.length) * 0.13 * f) + 0.15 * f) * k, Wd = Math.max(w + 2 * mx + extD, Math.max(0, ...NT.map(n => n.length * 0.05 * f + 0.2))) * k;
   const X = (x: number) => (x + mx) * k, Y = (y: number) => (h + my - y) * k;
-  const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(Wd / 100 * 18).toFixed(1)}mm">`];
+  const s: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd.toFixed(0)} ${Hh.toFixed(0)}" style="width:${(Wd / 100 * escMm).toFixed(1)}mm">`];
   const Ln = (x1: number, y1: number, x2: number, y2: number, c = '#000', sw = 1.2, da = '') => s.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${c}" stroke-width="${sw}"${da ? ` stroke-dasharray="${da}"` : ''}/>`);
-  const T = (x: number, y: number, t: string, fs = 12, c = VERM, rot = false) => s.push(`<text x="${X(x).toFixed(1)}" y="${Y(y).toFixed(1)}" font-size="${fs}" fill="${c}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3"${rot ? ` transform="rotate(-90 ${X(x).toFixed(1)} ${Y(y).toFixed(1)})"` : ''}>${t}</text>`);
+  const T = (x: number, y: number, t: string, fs = 12, c = VERM, rot = false) => s.push(`<text x="${X(x).toFixed(1)}" y="${Y(y).toFixed(1)}" font-size="${(fs * f).toFixed(1)}" fill="${c}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3"${rot ? ` transform="rotate(-90 ${X(x).toFixed(1)} ${Y(y).toFixed(1)})"` : ''}>${t}</text>`);
   const dimH = (a: number, b: number, y: number, t: string) => { Ln(a, y, b, y, AZUL, 0.8); Ln(a, y - 0.04, a, y + 0.04, AZUL, 0.8); Ln(b, y - 0.04, b, y + 0.04, AZUL, 0.8); T((a + b) / 2, y + 0.03, t, 11); };
   const dimV = (x: number, a: number, b: number, t: string) => { Ln(x, a, x, b, AZUL, 0.8); Ln(x - 0.04, a, x + 0.04, a, AZUL, 0.8); Ln(x - 0.04, b, x + 0.04, b, AZUL, 0.8); T(x - 0.03, (a + b) / 2, t, 11, VERM, true); };
   // contorno (com o dente recortado num canto)
@@ -208,10 +219,10 @@ export function vistaLajeSvg(p: PainelLaje, notas: string[] = [], TR: TrelicaLin
   for (const t of TH) { Ln(t.i0, t.pos, t.i1, t.pos, RX, 1.6, '8 4'); T((t.i0 + t.i1) / 2, t.pos + 0.06, nome(t), 10, RX); }
   for (const t of TV) { Ln(t.pos, t.i0, t.pos, t.i1, RX, 1.6, '8 4'); T(t.pos > w - 0.25 ? t.pos - 0.08 : t.pos + 0.12, (t.i0 + t.i1) / 2, nome(t), 10, RX, true); }
   // treliça que não pega o painel inteiro: em texto embaixo (sem encher o desenho de cotas)
-  NT.forEach((n, i) => T(Wd / k / 2 - mx, -0.25 - extB - i * 0.13, n, 9.5, RX));
-  s.push(`<text x="${X(0.06)}" y="${Y(h - 0.2)}" font-size="16" fill="${VERM}" font-weight="bold">L${p.num}</text>`);
+  NT.forEach((n, i) => T(Wd / k / 2 - mx, -0.25 * f - extB - i * 0.13 * f, n, 9.5, RX));
+  s.push(`<text x="${X(0.06)}" y="${Y(h - 0.2 * f)}" font-size="${(16 * f).toFixed(1)}" fill="${VERM}" font-weight="bold">${codigo ? esc(codigo) : 'L' + p.num}</text>`);
   dimH(0, w, h + 0.2, br(w)); dimV(-0.22, 0, h, br(h));
-  notas.forEach((n, i) => T(w / 2, -0.25 - extB - (NT.length + i) * 0.13, esc(n), 10, '#b00'));
+  notas.forEach((n, i) => T(w / 2, -0.25 * f - extB - (NT.length + i) * 0.13 * f, esc(n), 10, '#b00'));
   s.push('</svg>');
   return s.join('');
 }
@@ -273,4 +284,86 @@ export function vigasConteudo(V: (Viga & { n: number })[], q: Quadro, sel: strin
     g.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="20" font-weight="bold" fill="${cor}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="4">${tr ? 'T' : 'V'}${v.n}</text>`);
   }
   return g.join('');
+}
+
+// sequência de montagem: cada painel como uma faixa azul com a ordem num círculo e o número da peça
+export function sequenciaConteudo(ps: Painel[], ordem: Map<number, number>, q: Quadro): string {
+  const { X, Y } = q, g: string[] = [];
+  for (const p of ps) {
+    const [x1, y1, x2, y2] = p.o === 'H' ? [p.a, p.c, p.b, p.c] : [p.c, p.a, p.c, p.b];
+    g.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${AZUL}" stroke-width="9" stroke-opacity=".35"/>`);
+  }
+  for (const p of ps) {
+    const m = (p.a + p.b) / 2, [x, y] = p.o === 'H' ? [m, p.c] : [p.c, m], n = ordem.get(p.num) ?? 0;
+    g.push(`<circle cx="${X(x).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="17" fill="#fff" stroke="${AZUL}" stroke-width="2.5"/>`);
+    g.push(`<text x="${X(x).toFixed(1)}" y="${(Y(y) + 6).toFixed(1)}" font-size="17" font-weight="bold" fill="${AZUL}" text-anchor="middle">${n}</text>`);
+    const [tx, ty] = p.o === 'H' ? [X(x), Y(y) + 34] : [X(x) + 34, Y(y) + 5];
+    g.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="12" fill="${VERM}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3">P${p.num}</text>`);
+  }
+  return g.join('');
+}
+
+// escoramento das lajes: linhas tracejadas verdes perpendiculares ao vão, com a distância entre elas
+import type { LinhaEscora } from './producao.ts';
+export function escorasConteudo(L: LinhaEscora[], V: { o: 'H' | 'V'; ini: number; fim: number; c: number; n: number; passo: number }[], q: Quadro): string {
+  const { X, Y } = q, g: string[] = [], VERDE = '#0a7d2c';
+  for (const l of L) {
+    const [x1, y1, x2, y2] = l.o === 'H' ? [l.a, l.c, l.b, l.c] : [l.c, l.a, l.c, l.b];
+    g.push(`<line x1="${X(x1).toFixed(1)}" y1="${Y(y1).toFixed(1)}" x2="${X(x2).toFixed(1)}" y2="${Y(y2).toFixed(1)}" stroke="${VERDE}" stroke-width="4" stroke-dasharray="14 7"/>`);
+  }
+  // uma cota do espaçamento por ambiente (no meio do vão, entre a parede e a primeira linha)
+  for (const v of V) {
+    const a = v.ini, b = v.ini + v.passo, t = `${br(v.passo)}`;
+    if (v.o === 'H') g.push(cotaSvg(X, Y, 'H', a, b, v.c, 0, t, 15).replace(/#1a3fd6/g, VERDE));
+    else g.push(cotaSvg(X, Y, 'V', a, b, v.c, 0, t, 15).replace(/#1a3fd6/g, VERDE));
+    const [lx, ly] = v.o === 'H' ? [(v.ini + v.fim) / 2, v.c - 0.25] : [v.c + 0.3, (v.ini + v.fim) / 2];
+    g.push(`<text x="${X(lx).toFixed(1)}" y="${Y(ly).toFixed(1)}" font-size="14" fill="${VERDE}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3">${v.n} linha${v.n > 1 ? 's' : ''} a cada ${br(v.passo)}</text>`);
+  }
+  return g.join('');
+}
+
+// folha de detalhes típicos (esquemáticos), com as medidas das regras
+export function detalhesSvg(r: { esp: number; lajeEsp: number; apoio: number; apoioBorda: number; coluna: number; folga: number; vigaAlt: number; vigaLarg: number }): string {
+  const k = 700, BW = 1200, BH = 1050, s: string[] = [];   // 1 m = 700 unidades
+  const caixa = (i: number, tit: string, corpo: string) => s.push(`<g transform="translate(${(i % 3) * (BW + 60)},${Math.floor(i / 3) * (BH + 60)})"><rect x="0" y="0" width="${BW}" height="${BH}" fill="#fff" stroke="#999" stroke-width="2"/><text x="24" y="52" font-size="40" font-weight="bold" fill="#c00">${tit}</text>${corpo}<text x="24" y="${BH - 24}" font-size="24" fill="#777">Esquemático · armaduras, grautes e ligações conforme o projeto estrutural</text></g>`);
+  const R = (x: number, y: number, w: number, h: number, f = '#d9d9d9', da = '') => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${f}" stroke="#000" stroke-width="3"${da ? ` stroke-dasharray="${da}"` : ''}/>`;
+  const T = (x: number, y: number, t: string, fs = 30, c = '#222', anc = 'start') => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${fs}" fill="${c}" text-anchor="${anc}">${t}</text>`;
+  const cH = (x1: number, x2: number, y: number, t: string, dy = -12) => `<g stroke="${AZUL}" stroke-width="2"><line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/><line x1="${x1}" y1="${y - 14}" x2="${x1}" y2="${y + 14}"/><line x1="${x2}" y1="${y - 14}" x2="${x2}" y2="${y + 14}"/></g>${T((x1 + x2) / 2, y + dy, t, 30, VERM, 'middle')}`;
+  const cV = (x: number, y1: number, y2: number, t: string) => `<g stroke="${AZUL}" stroke-width="2"><line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/><line x1="${x - 14}" y1="${y1}" x2="${x + 14}" y2="${y1}"/><line x1="${x - 14}" y1="${y2}" x2="${x + 14}" y2="${y2}"/></g><text x="${x - 12}" y="${(y1 + y2) / 2}" font-size="30" fill="${VERM}" text-anchor="middle" transform="rotate(-90 ${x - 12} ${(y1 + y2) / 2})">${t}</text>`;
+  const cm = (v: number) => `${Math.round(v * 100)} cm`;
+  const alv = (x: number, y: number, w: number, h: number) => { let o = ''; const n = Math.max(1, Math.floor(w / 90)); for (let i = 0; i < n; i++) { const cx = x + w * (i + 0.5) / n; o += `<rect x="${cx - 26}" y="${y + h * 0.22}" width="52" height="${h * 0.56}" fill="#fff" stroke="#999" stroke-width="1.5"/>`; } return o; };
+  const e = r.esp * k, le = r.lajeEsp * k;
+  // 1. canto em L (planta)
+  caixa(0, '1 · Canto em L (planta)', R(260, 260, 760, e) + R(260, 260 + e, e, 600) + T(260 + e + 30, 700, 'painel que encosta') + T(640, 240, 'painel que passa', 30, '#222', 'middle') +
+    `<line x1="${260 + e}" y1="${260 + e}" x2="${260 + e}" y2="${260 + e + 600}" stroke="#c00" stroke-width="3" stroke-dasharray="10 8"/>` + T(260 + e + 30, 760, 'junta (vermelho)', 26, '#c00') + cV(220, 260, 260 + e, cm(r.esp)));
+  // 2. encontro em T (planta)
+  caixa(1, '2 · Encontro em T (planta)', R(150, 260, 900, e) + R(600 - e / 2, 260 + e, e, 600) + T(600, 240, 'painel contínuo (passa direto)', 30, '#222', 'middle') +
+    T(600 + e / 2 + 30, 700, 'painel que chega (encosta)') + cH(600 - e / 2, 600 + e / 2, 920, cm(r.esp), 44) +
+    `<line x1="${600 - e / 2}" y1="${260 + e}" x2="${600 + e / 2}" y2="${260 + e}" stroke="#c00" stroke-width="4" stroke-dasharray="10 8"/>`);
+  // 3. emenda alinhada com coluna (planta)
+  const c = r.coluna * k;
+  caixa(2, `3 · Emenda com coluna de ${cm(r.coluna)} (planta)`, R(80, 470, 520 - c / 2, e) + R(600 + c / 2, 470, 520 - c / 2, e) + R(600 - c / 2, 470, c, e, '#9cc3ff', '10 6') +
+    cH(600 - c / 2, 600 + c / 2, 420, cm(r.coluna)) + T(600, 470 + e + 60, 'coluna concretada na obra entre os painéis', 30, AZUL, 'middle') + cV(60, 470, 470 + e, cm(r.esp)) +
+    T(340, 470 + e + 130, 'painel', 30, '#222', 'middle') + T(860, 470 + e + 130, 'painel', 30, '#222', 'middle'));
+  // 4. apoio da laje na parede (corte): parede do meio com laje dos dois lados; parede da borda com laje de um lado
+  const ap = r.apoio * k, ab = r.apoioBorda * k, top = 330, w1 = 420, w2 = 950;
+  caixa(3, '4 · Apoio da laje na parede (corte)',
+    R(w1, top + le, e, 520) + R(w2, top + le, e, 520) +
+    R(60, top, w1 + ap - 60, le, '#eee') + alv(60, top, w1 + ap - 60, le) +
+    R(w1 + e - ap, top, w2 + ab - (w1 + e - ap), le, '#eee') + alv(w1 + e - ap, top, w2 + ab - (w1 + e - ap), le) +
+    cH(w1, w1 + ap, top - 30, cm(r.apoio)) + cH(w1 + e - ap, w1 + e, top + le + 50, cm(r.apoio), 44) + cH(w2 + ab - ab, w2 + ab, top - 30, cm(r.apoioBorda)) +
+    T(w1 - 20, top + le + 300, 'parede com laje', 28, '#222', 'end') + T(w1 - 20, top + le + 340, 'dos dois lados', 28, '#222', 'end') + T(w2 - 20, top + le + 300, 'parede de borda', 28, '#222', 'end') +
+    cV(w2 + e + 60, top, top + le, cm(r.lajeEsp)));
+  // 5. laje apoiada na viga (corte)
+  const va = r.vigaAlt * k, vl = r.vigaLarg * k;
+  caixa(4, '5 · Laje apoiada na viga (corte)', R(600 - vl / 2, 330 + le, vl, va, '#bdbdbd') +
+    R(100, 330, 500 - 6, le, '#eee') + alv(100, 330, 494, le) + R(606, 330, 494, le, '#eee') + alv(606, 330, 494, le) +
+    cH(600 - vl / 2, 600 + vl / 2, 330 + le + va + 60, `viga ${cm(r.vigaLarg)}`, 44) + cV(600 + vl / 2 + 60, 330 + le, 330 + le + va, cm(r.vigaAlt)) +
+    T(600, 280, 'posição das vigas: folha de vigas · dimensionar com o engenheiro', 28, '#222', 'middle'));
+  // 6. treliça embaixo de parede do pavimento de cima (corte)
+  caixa(5, '6 · Treliça na laje embaixo de parede (corte)', R(100, 560, 1000, le, '#eee') + alv(100, 560, 1000, le) + R(600 - e / 2, 160, e, 400) +
+    `<polyline points="${[0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => `${600 - 80 + i * 20},${i % 2 ? 560 + 10 : 560 + le - 10}`).join(' ')}" fill="none" stroke="#7a3fb0" stroke-width="6"/>` +
+    T(600 + e / 2 + 30, 300, 'parede do pavimento de cima') + T(600, 560 + le + 70, 'treliça centrada no eixo da parede', 30, '#7a3fb0', 'middle') +
+    T(600, 560 + le + 115, 'posição e comprimento: folha de treliças', 28, '#7a3fb0', 'middle'));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 ${3 * BW + 140} ${2 * BH + 80}">${s.join('')}</svg>`;
 }

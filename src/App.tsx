@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
-import { plantaSvg, vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo } from './engine/draw.ts';
+import { plantaSvg, vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
+import type { InfoVista } from './engine/draw.ts';
+import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, cargas, escoras, conferencia, paredesIguais, lajesIguais } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
@@ -556,6 +558,12 @@ export default function App() {
               ))}
             </div>
             <label className="chk"><input type="checkbox" checked={!!regras.trelicaSobreVao} onChange={e => setRegras({ ...regras, trelicaSobreVao: e.target.checked })} /> Parede de cima sobre vão livre (sala integrada, passagem, sem parede embaixo): reforçar a laje com treliça em vez de viga. A viga continua só onde a laje apoia nessa linha</label>
+            <h3>Produção e montagem</h3>
+            <div className="grade">
+              {([['densidade', 'Peso do concreto (kg/m³) — peso das peças'], ['cargaMax', 'Carga máxima por caminhão (kg) — romaneio'], ['escoraMax', 'Distância máxima entre linhas de escora da laje (m)']] as [keyof Regras, string][]).map(([k, t]) => (
+                <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? (REGRAS_PADRAO[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
+              ))}
+            </div>
             <ul className="dica">
               <li>Paredes acima da largura máxima são divididas em partes iguais, com coluna entre elas. No T, a coluna fica só na parede que segue alinhada (ou nenhuma, se a parede for pinada).</li>
               <li>Porta: boneca embaixo + altura do quadro (0,10 + 2,10 = 2,20). Janela: o peitoril baixa e o topo sobe pelo valor acima. Largura sempre maior pelo acréscimo.</li>
@@ -856,18 +864,26 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
 const LINHAS_TLAJE = 40, LINHAS_TREL = 24, LINHAS_TREL_CONT = 30;
 // vistas de produção: 18 mm por metro; linhas por largura (13,8 m) e folhas pela altura útil da folha A4 deitada
 const ESC_VISTA = 18, LARG_FOLHA = 13.8, ALT_FOLHA_MM = 172;
-function paginarVistas<T>(itens: T[], larg: (p: T) => number, alt: (p: T) => number, maxLinhas = 99): T[][][] {
-  const linhas: T[][] = []; let lin: T[] = [], w = 0;
-  for (const p of itens) { if (lin.length && w + larg(p) + 1.1 > LARG_FOLHA) { linhas.push(lin); lin = []; w = 0; } lin.push(p); w += larg(p) + 1.1; }
-  if (lin.length) linhas.push(lin);
-  const pgs: T[][][] = []; let pg: T[][] = [], h = 0;
-  for (const l of linhas) {
-    const hl = Math.max(...l.map(alt)) * ESC_VISTA + 4;
-    if (pg.length && (h + hl > ALT_FOLHA_MM || pg.length >= maxLinhas)) { pgs.push(pg); pg = []; h = 0; }
-    pg.push(l); h += hl;
+function paginarVistas<T>(itens: T[], larg: (p: T) => number, alt: (p: T) => number, maxLinhas = 99, esc = ESC_VISTA): T[][][] {
+  // na ordem dos números, mas uma peça que não cabe na linha ainda pode entrar numa linha anterior da mesma folha
+  // (enche os buracos sem embaralhar a numeração); esc = mm por metro na folha
+  const W = LARG_FOLHA * ESC_VISTA / esc, hL = (p: T) => alt(p) * esc + 4;
+  const pgs: { linhas: { it: T[]; w: number; h: number }[] }[] = [];
+  let pg: { linhas: { it: T[]; w: number; h: number }[] } | null = null;
+  const altPg = (g: typeof pg) => g!.linhas.reduce((s, l) => s + l.h, 0);
+  for (const p of itens) {
+    const w = larg(p) + 1.1, h = hL(p);
+    let ok = false;
+    if (pg) for (const l of pg.linhas) {
+      if (l.w + w > W) continue;
+      if (altPg(pg) - l.h + Math.max(l.h, h) > ALT_FOLHA_MM) continue;
+      l.it.push(p); l.w += w; l.h = Math.max(l.h, h); ok = true; break;
+    }
+    if (ok) continue;
+    if (pg && pg.linhas.length < maxLinhas && altPg(pg) + h <= ALT_FOLHA_MM) { pg.linhas.push({ it: [p], w, h }); continue; }
+    pg = { linhas: [{ it: [p], w, h }] }; pgs.push(pg);
   }
-  if (pg.length) pgs.push(pg);
-  return pgs.length ? pgs : [[[]]];
+  return pgs.length ? pgs.map(g => g.linhas.map(l => l.it)) : [[[]]];
 }
 function emBlocos<T>(a: T[], n: number): T[][] { const out: T[][] = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out.length ? out : [[]]; }
 
@@ -1039,79 +1055,164 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: Laj
   </div>;
 }
 
+const ESC_LAJE = 12, ESC_PAREDE = 12;   // vistas de produção das lajes: 12 mm por metro (mais peças por folha, letras do mesmo tamanho)
 function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes }) {
-  const folhas: JSX.Element[] = [];
-  const rod = (t: string) => <div className="rod"><span>{t}</span><span>{nome}</span></div>;
+  type F = { key: string; tit: string; body: JSX.Element; rod: string };
+  const F: F[] = [];
+  const add = (key: string, tit: string, body: JSX.Element, rod: string) => { F.push({ key, tit, body, rod }); return F.length - 1; };
+  const sg = siglas(ativos), nomePav = new Map(ativos.map(p => [p.id, p.nome]));
+  const nomesAmb = leitura.textos.filter(t => AMBIENTE_RE.test(t.text.trim()) && t.text.length <= 28).map(t => ({ text: t.text.trim(), x: t.x, y: t.y }));
+  const fLaje = ESC_VISTA / ESC_LAJE, fPar = ESC_VISTA / ESC_PAREDE, titulo = nome.replace(/\.(dxf|dwg|pdf|json)$/i, '');
+  const indice: { pav: string; tipo: 'Paredes' | 'Lajes'; nums: number[]; f: number }[] = [];
+  type Rom = { pav: string; ordem: number; codigo: string; desc: string; area: number; peso: number };
+  const rom: Rom[] = [];
+  const trelSemLaje: { pav: string; t: number }[] = [];
+  const faixa = (ns: number[]) => { const v = [...ns].sort((a, b) => a - b), out: string[] = []; for (let i = 0; i < v.length;) { let j = i; while (j + 1 < v.length && v[j + 1] === v[j] + 1) j++; out.push(j > i ? `${v[i]}–${v[j]}` : `${v[i]}`); i = j + 1; } return out.join(', '); };
   for (const pav of ativos) {
     const ps = calc.ps.filter(p => p.pav === pav.id);
-    if (!ps.length) continue;
-    folhas.push(<div className="folha" key={pav.id + 'p'}>
-      <div className="cab">PLANTA DE MONTAGEM DAS PAREDES — {pav.nome.toUpperCase()}</div>
-      <div className="desenho" dangerouslySetInnerHTML={{ __html: plantaSvg(leitura, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arqDe(pav.box)) }} />
-      {rod('■ vermelho: número do painel · azul: cota da parede (painel = cota − desconto) · rosa: porta / janela')}
-    </div>);
-    const paginas = paginarVistas(ps, p => p.larg, p => p.H + 0.8 + Math.ceil((p.aviso || '').length / 40) * 0.13, 2);
-    paginas.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'v' + i}>
-      <div className="cab">MODULAÇÃO DAS PAREDES — {pav.nome.toUpperCase()} — folha {i + 1}/{paginas.length}</div>
-      <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaSvg(p) }} />)}</div>)}</div>
-      {rod('Vãos de portas e janelas maiores pelo acréscimo · boneca nas laterais e embaixo (retirar na obra) · medidas em metros')}
-    </div>));
-    const VG = calc.vigas.filter(v => v.pav === pav.id);
-    if (VG.length) {
-      const q = quadroDe(pav);
-      folhas.push(<div className="folha" key={pav.id + 'g'}>
-        <div className="cab">VIGAS E TRELIÇAS — {pav.nome.toUpperCase()}</div>
-        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + vigasConteudo(VG, q) }} />
-          <div className="tvigas">{VG.map(v => <p key={v.id}><b>{v.tipo === 'trelica' ? 'T' : 'V'}{v.n}</b> ({v.tipo === 'trelica' ? 'treliça' : v.obrigatoria ? 'obrigatória' : 'recomendada'}, {br(v.b - v.a)} m): {v.motivo} <i>{v.ideia}</i>{v.rebaixos.length ? ` Rebaixo: ${v.rebaixos.map(r => `${r.painel} (${br(r.de)}→${br(r.para)})`).join(', ')}.` : ''}</p>)}</div></div>
-        {rod('Sugestões para o engenheiro conferir e dimensionar · vermelho = viga obrigatória · laranja = recomendada · roxo = treliça de reforço da laje')}
-      </div>);
+    const q = quadroDe(pav);
+    if (ps.length) {
+      add(pav.id + 'p', `PLANTA DE MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
+        <div className="desenho" dangerouslySetInnerHTML={{ __html: plantaSvg(leitura, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arqDe(pav.box)) }} />,
+        '■ vermelho: número do painel · azul: cota da parede (painel = cota − desconto) · rosa: porta / janela');
+      const ordem = ordemMontagem(ps);
+      add(pav.id + 's', `SEQUÊNCIA DE MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
+        <div className="desenho"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + sequenciaConteudo(ps, ordem, q) }} /></div>,
+        'Círculo azul = ordem de montagem (começa num canto e segue sempre encostando em peça já montada, fechando os cantos) · vermelho = número da peça · conferir prumo e travamento a cada canto fechado');
+      for (const p of [...ps].sort((a, b) => ordem.get(a.num)! - ordem.get(b.num)!))
+        rom.push({ pav: pav.id, ordem: ordem.get(p.num)!, codigo: codigoParede(p, sg), desc: `${br(p.larg)} × ${br(p.H)}`, area: areaPainel(p), peso: pesoParede(p, regras) });
+      const viz = vizinhos(ps);
+      const info = (p: Painel): InfoVista => {
+        const v = viz.get(p.num)!, fc = faceDaVista(p, calc.lajes, nomesAmb);
+        const lista = (xs: Painel[]) => xs.length ? xs.map(x => x.num).join(', ') : 'livre';
+        return { codigo: codigoParede(p, sg), esq: lista(v.a), dir: lista(v.b),
+          face: fc.face === 'externa' ? 'vista: face EXTERNA' : fc.face === 'interna' ? `vista: face interna${fc.amb ? ' — ' + fc.amb : ''}` : 'vista: sem ambiente' };
+      };
+      const paginas = paginarVistas(ps, p => p.larg, p => p.H + 0.45 + (0.35 + 0.26) * fPar + Math.ceil((p.aviso || '').length * fPar / (18 * (p.larg + 0.6))) * 0.13 * fPar, 3, ESC_PAREDE);
+      paginas.forEach((pgx, i) => {
+        const fi = add(pav.id + 'v' + i, `MODULAÇÃO DAS PAREDES — ${pav.nome.toUpperCase()} — ${i + 1}/${paginas.length}`,
+          <div className="vistas">{pgx.map((linha, j) => <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaSvg(p, info(p), ESC_PAREDE) }} />)}</div>)}</div>,
+          'Etiqueta = pavimento-peça · ◄ ► = peças que encostam em cada lado · ▲ topo · vãos de portas e janelas maiores pelo acréscimo · boneca nas laterais e embaixo (retirar na obra) · medidas em metros');
+        indice.push({ pav: pav.id, tipo: 'Paredes', nums: pgx.flat().map(p => p.num), f: fi });
+      });
     }
+    const VG = calc.vigas.filter(v => v.pav === pav.id);
+    if (VG.length) add(pav.id + 'g', `VIGAS E TRELIÇAS — ${pav.nome.toUpperCase()}`,
+      <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + vigasConteudo(VG, q) }} />
+        <div className="tvigas">{VG.map(v => <p key={v.id}><b>{v.tipo === 'trelica' ? 'T' : 'V'}{v.n}</b> ({v.tipo === 'trelica' ? 'treliça' : v.obrigatoria ? 'obrigatória' : 'recomendada'}, {br(v.b - v.a)} m): {v.motivo} <i>{v.ideia}</i>{v.rebaixos.length ? ` Rebaixo: ${v.rebaixos.map(r => `${r.painel} (${br(r.de)}→${br(r.para)})`).join(', ')}.` : ''}</p>)}</div></div>,
+      'Sugestões para o engenheiro conferir e dimensionar · vermelho = viga obrigatória · laranja = recomendada · roxo = treliça de reforço da laje');
     const P = calc.pl.filter(p => p.pav === pav.id);
     const TRf = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica'), TPf = trelicasNasLajes(TRf, P);
+    for (const t of TPf) if (!t.painel) trelSemLaje.push({ pav: pav.id, t: t.t });
     if (P.length) {
-      const q = quadroDe(pav);
-      folhas.push(<div className="folha" key={pav.id + 'l'}>
-        <div className="cab">MODULAÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()}</div>
-        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf.filter(t => TPf.some(x => x.t === t.n))) }} />
+      const LJ = calc.lajes.filter(a => a.pav === pav.id);
+      const desenhoLaje = DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(LJ, P, q, TRf.filter(t => TPf.some(x => x.t === t.n)));
+      add(pav.id + 'l', `MODULAÇÃO DA LAJE SOBRE O ${pav.nome.toUpperCase()}`,
+        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: desenhoLaje }} />
           <div className="tlajes">{emBlocos(P, LINHAS_TLAJE).map((B, bi, BB) => <table className="tlaje" key={bi}><thead><tr><th>Painel</th><th>Comp.</th><th>Larg.</th><th>m²</th></tr></thead><tbody>
             {B.map(p => <tr key={p.num}><td>L{p.num}{p.dente ? '*' : ''}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(areaLaje(p))}</td></tr>)}
             {bi === BB.length - 1 && <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + areaLaje(p), 0))}</td></tr>}
-          </tbody></table>)}</div></div>
-        {rod('Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · * = painel com dente (recorte no canto) · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça')}
-      </div>);
-      // produção: uma vista por painel de laje, como as paredes
+          </tbody></table>)}</div></div>,
+        'Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · * = painel com dente (recorte no canto) · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça');
+      const ES = escoras(LJ, regras.escoraMax ?? 1.5);
+      if (ES.linhas.length) add(pav.id + 'e', `ESCORAMENTO DA LAJE SOBRE O ${pav.nome.toUpperCase()}`,
+        <div className="desenho"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(LJ, P, q) + escorasConteudo(ES.linhas, ES.vaos, q) }} /></div>,
+        `Verde tracejado = linha de escora (pontaletes com travessa), perpendicular ao vão, a no máximo ${br(regras.escoraMax ?? 1.5)} m uma da outra e das paredes · cota = distância entre linhas · conferir com o fabricante e o engenheiro · retirar só após a cura do capeamento`);
       if (novo) {
         const trDe = (p: PainelLaje) => TRf.map(t => ({ ...t, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) }));
-        const pgs = paginarVistas(P, p => p.larg + extraVistaLaje(p, TRf).larg, p => p.comp + 0.95 + extraVistaLaje(p, TRf).alt);
-        pgs.forEach((pgx, i) => folhas.push(<div className="folha" key={pav.id + 'lv' + i}>
-          <div className="cab">PRODUÇÃO DA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {i + 1}/{pgs.length}</div>
-          <div className="vistas lajes">{pgx.map((linha, j) => { const bx = Math.max(...linha.map(p => extraVistaLaje(p, TRf).alt)); return <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], trDe(p), bx) }} />)}</div>; })}</div>
-          {rod('Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes')}
-        </div>));
+        const ex = (p: PainelLaje) => extraVistaLaje(p, TRf, fLaje);
+        const pgs = paginarVistas(P, p => p.larg + ex(p).larg, p => p.comp + 0.8 + 0.15 * fLaje + ex(p).alt, 99, ESC_LAJE);
+        pgs.forEach((pgx, i) => {
+          const fi = add(pav.id + 'lv' + i, `PRODUÇÃO DA LAJE SOBRE O ${pav.nome.toUpperCase()} — ${i + 1}/${pgs.length}`,
+            <div className="vistas lajes">{pgx.map((linha, j) => { const bx = Math.max(...linha.map(p => ex(p).alt)); return <div className="linha" key={j}>{linha.map(p => <div key={p.num} className="vista" dangerouslySetInnerHTML={{ __html: vistaLajeSvg(p, [], trDe(p), bx, ESC_LAJE, codigoLaje(p, sg)) }} />)}</div>; })}</div>,
+            'Painéis em pé: comprimento na vertical (seta = alvéolos) · largura na horizontal · roxo = treliça de reforço, cotada a partir da borda esquerda / de baixo · dente = recorte no canto · medidas em metros, já com o apoio em cima das paredes');
+          indice.push({ pav: pav.id, tipo: 'Lajes', nums: pgx.flat().map(p => p.num), f: fi });
+        });
       }
+      for (const p of P) rom.push({ pav: pav.id, ordem: 1000 + p.num, codigo: codigoLaje(p, sg), desc: `${br(p.comp)} × ${br(p.larg)}`, area: areaLaje(p), peso: pesoLaje(p, regras, espDaLaje(aj)(p)) });
       if (TPf.length) {
-        // a tabela não cabe inteira ao lado do desenho: o resto continua em folhas só de tabela (sem cortar linhas)
         const T0 = TPf.slice(0, LINHAS_TREL), resto = TPf.length > LINHAS_TREL ? emBlocos(TPf.slice(LINHAS_TREL), LINHAS_TREL_CONT) : [];
         const nf = 1 + Math.ceil(resto.length / 2);
-        folhas.push(<div className="folha" key={pav.id + 't'}>
-          <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()}{nf > 1 ? ` — folha 1/${nf}` : ''}</div>
-          <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(calc.lajes.filter(a => a.pav === pav.id), P, q, TRf.filter(t => TPf.some(x => x.t === t.n))) }} />
-            <TabelaTrelicas TP={T0} TR={TRf} curta /></div>
-          {rod('Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel')}
-        </div>);
-        for (let f = 0; f * 2 < resto.length; f++) folhas.push(<div className="folha" key={pav.id + 't' + (f + 1)}>
-          <div className="cab">TRELIÇAS DE REFORÇO NA LAJE SOBRE O {pav.nome.toUpperCase()} — folha {f + 2}/{nf} (continuação da tabela)</div>
-          <div className="desenho lajes cont">{resto.slice(f * 2, f * 2 + 2).map((B, i) => <TabelaTrelicas key={i} TP={B} TR={TRf} curta />)}</div>
-          {rod('Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel')}
-        </div>);
+        add(pav.id + 't', `TRELIÇAS DE REFORÇO NA LAJE SOBRE O ${pav.nome.toUpperCase()}${nf > 1 ? ` — 1/${nf}` : ''}`,
+          <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: desenhoLaje }} /><TabelaTrelicas TP={T0} TR={TRf} curta /></div>,
+          'Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel');
+        for (let f = 0; f * 2 < resto.length; f++) add(pav.id + 't' + (f + 1), `TRELIÇAS DE REFORÇO NA LAJE SOBRE O ${pav.nome.toUpperCase()} — ${f + 2}/${nf} (continuação da tabela)`,
+          <div className="desenho lajes cont">{resto.slice(f * 2, f * 2 + 2).map((B, i) => <TabelaTrelicas key={i} TP={B} TR={TRf} curta />)}</div>,
+          'Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel');
       }
     }
   }
-  if (novo) folhas.push(<div className="folha" key="quant">
-    <div className="cab">QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)</div>
-    <Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} />
-    <TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} />
-    {rod(`Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, em barras de ${br(regras.isoporComp ?? 4)} m, sobras aproveitadas (em cima das janelas e nas lajes), ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · portas e janelas sem concreto e sem isopor`)}
-  </div>);
-  return <div className="folhas">{folhas}</div>;
+  // romaneio: paredes na ordem de montagem e depois as lajes de cada pavimento; carga nova quando passa do limite
+  const romC = cargas(rom, regras.cargaMax ?? 12000);
+  const ROM_LIN = 42, blocosRom = emBlocos(romC, ROM_LIN), porFolha = 3;
+  const nCargas = romC.length ? romC[romC.length - 1].carga : 0;
+  const resumoCargas = Array.from({ length: nCargas }, (_, i) => { const xs = romC.filter(r => r.carga === i + 1); return { c: i + 1, n: xs.length, peso: xs.reduce((s, r) => s + r.peso, 0), de: xs[0]?.codigo, ate: xs[xs.length - 1]?.codigo }; });
+  const tabRom = (B: typeof romC) => <table className="tlaje rom"><thead><tr><th>Carga</th><th>Ordem</th><th>Peça</th><th>Medidas</th><th>Peso (kg)</th></tr></thead><tbody>
+    {B.map((r, i) => <tr key={i} className={i && B[i - 1].carga !== r.carga ? 'nova' : ''}><td>{r.carga}</td><td>{r.ordem < 1000 ? r.ordem : '—'}</td><td>{r.codigo}</td><td>{r.desc}</td><td>{Math.round(r.peso)}</td></tr>)}
+  </tbody></table>;
+  for (let f = 0; f * porFolha < blocosRom.length; f++) add('rom' + f, `ROMANEIO DE CARGAS E ORDEM DE ENTREGA — ${f + 1}/${Math.ceil(blocosRom.length / porFolha)}`,
+    <div className="desenho lajes cont">{blocosRom.slice(f * porFolha, f * porFolha + porFolha).map((B, i) => <div key={i}>{tabRom(B)}</div>)}
+      {(f + 1) * porFolha >= blocosRom.length && <table className="tlaje rom"><thead><tr><th>Carga</th><th>Peças</th><th>De → até</th><th>Peso (kg)</th></tr></thead><tbody>
+        {resumoCargas.map(c => <tr key={c.c}><td>{c.c}</td><td>{c.n}</td><td>{c.de} → {c.ate}</td><td>{Math.round(c.peso)}</td></tr>)}
+        <tr className="tot"><td>Total</td><td>{romC.length}</td><td></td><td>{Math.round(romC.reduce((s, r) => s + r.peso, 0))}</td></tr></tbody></table>}</div>,
+    `Peso = concreto da peça (área líquida × espessura − isopor) × ${regras.densidade ?? 2500} kg/m³ · carga de até ${Math.round(regras.cargaMax ?? 12000)} kg por caminhão · paredes na ordem de montagem, depois as lajes do pavimento · carregar a última peça a montar primeiro (fica embaixo)`);
+  // conferência
+  const alertas = conferencia(ativos, calc.ps, calc.lajes, regras, trelSemLaje);
+  const comTrel = new Set(calc.pl.filter(p => calc.vigas.some(v => v.pav === p.pav && v.tipo === 'trelica' && trelicasNasLajes([v], [p]).some(x => x.painel))).map(p => p.num));
+  const iguaisP = paredesIguais(calc.ps), iguaisL = lajesIguais(calc.pl, comTrel);
+  // [elemento, quantas linhas impressas ocupa]
+  const nl = (t: string) => Math.max(1, Math.ceil(t.length / 105));
+  const linhasConf: [JSX.Element, number][] = [
+    ...alertas.map((a, i) => [<p key={'a' + i} className={a.nivel === 'erro' ? 'erro' : ''}><b>{a.nivel === 'erro' ? '✖' : '!'} {a.onde}:</b> {a.texto}</p>, nl(a.onde + a.texto + '   ')] as [JSX.Element, number]),
+    [<h3 key="hp">Peças iguais (mesma fôrma / mesma produção)</h3>, 2],
+    ...iguaisP.map((g, i) => { const t = g.map(p => codigoParede(p, sg)).join(', '); return [<p key={'p' + i}><b>{g.length} paredes</b> {br(g[0].larg)} × {br(g[0].H)}{g[0].recortes.length ? ` com ${g[0].recortes.map(r => r.tipo).join(', ')}` : ''}: {t}</p>, nl(t + '                         ')] as [JSX.Element, number]; }),
+    ...iguaisL.map((g, i) => { const t = g.map(p => codigoLaje(p, sg)).join(', '); return [<p key={'l' + i}><b>{g.length} lajes</b> {br(g[0].comp)} × {br(g[0].larg)}: {t}</p>, nl(t + '                    ')] as [JSX.Element, number]; }),
+  ];
+  // cada coluna leva ~46 linhas impressas; item longo conta como várias linhas
+  const blocosConf: JSX.Element[][] = [[]]; let carga = 0;
+  for (const [el, w] of linhasConf) { if (carga + w > 46 && blocosConf[blocosConf.length - 1].length) { blocosConf.push([]); carga = 0; } blocosConf[blocosConf.length - 1].push(el); carga += w; }
+  for (let f = 0; f * 2 < blocosConf.length; f++) add('conf' + f, `CONFERÊNCIA AUTOMÁTICA${blocosConf.length > 2 ? ` — ${f + 1}/${Math.ceil(blocosConf.length / 2)}` : ''}`,
+    <div className="desenho lajes cont conf">{f === 0 && <p className="resumoConf"><b>{alertas.filter(a => a.nivel === 'erro').length} erro(s)</b> · {alertas.filter(a => a.nivel !== 'erro').length} ponto(s) de atenção · {iguaisP.length + iguaisL.length} grupo(s) de peças iguais</p>}
+      {blocosConf.slice(f * 2, f * 2 + 2).map((B, i) => <div className="ccol" key={i}>{B}</div>)}</div>,
+    '✖ = corrigir antes de produzir · ! = conferir · aberturas a menos de 15 cm da borda ou do topo · peças iguais agrupadas para produzir juntas');
+  add('det', 'DETALHES TÍPICOS DE MONTAGEM',
+    <div className="desenho" dangerouslySetInnerHTML={{ __html: detalhesSvg({ esp: (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025), lajeEsp: (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025), apoio: regras.lajeApoio, apoioBorda: regras.lajeApoioBorda ?? 0.1, coluna: regras.coluna, folga: regras.folga, vigaAlt: regras.vigaAltura, vigaLarg: regras.vigaLargura }) }} />,
+    'Detalhes esquemáticos com as medidas das regras do projeto · armaduras, grautes, ligações e fundação conforme o projeto estrutural');
+  if (novo) add('quant', 'QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)',
+    <><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} />
+      <TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></>,
+    `Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, em barras de ${br(regras.isoporComp ?? 4)} m, sobras aproveitadas (em cima das janelas e nas lajes), ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · portas e janelas sem concreto e sem isopor`);
+  // capa: resumo e índice (folha 1); as outras começam na 2
+  const N = F.length + 1, num = (i: number) => i + 2;
+  const linhasResumo = ativos.map(pv => {
+    const ps = calc.ps.filter(p => p.pav === pv.id), pl = calc.pl.filter(p => p.pav === pv.id);
+    return { nome: pv.nome, np: ps.length, ap: ps.reduce((s, p) => s + areaPainel(p), 0), nl: pl.length, al: pl.reduce((s, p) => s + areaLaje(p), 0) };
+  }).filter(l => l.np || l.nl);
+  const tot = linhasResumo.reduce((s, l) => ({ np: s.np + l.np, ap: s.ap + l.ap, nl: s.nl + l.nl, al: s.al + l.al }), { np: 0, ap: 0, nl: 0, al: 0 });
+  const pesoTot = romC.reduce((s, r) => s + r.peso, 0);
+  const capa = <div className="folha capa" key="capa">
+    <div className="cab">PRODUÇÃO E MONTAGEM — PAREDES E LAJES</div>
+    <h1>{titulo}</h1>
+    <div className="capa-grid">
+      <div>
+        <table className="tlaje"><thead><tr><th>Pavimento</th><th>Paredes</th><th>m²</th><th>Lajes</th><th>m²</th></tr></thead><tbody>
+          {linhasResumo.map(l => <tr key={l.nome}><td>{l.nome}</td><td>{l.np}</td><td>{br(l.ap)}</td><td>{l.nl}</td><td>{br(l.al)}</td></tr>)}
+          <tr className="tot"><td>Total</td><td>{tot.np}</td><td>{br(tot.ap)}</td><td>{tot.nl}</td><td>{br(tot.al)}</td></tr></tbody></table>
+        <p>{tot.np + tot.nl} peças · {br(tot.ap + tot.al)} m² · peso total {br(pesoTot / 1000)} t · {nCargas} carga(s) de até {br((regras.cargaMax ?? 12000) / 1000)} t</p>
+        <p>{alertas.filter(a => a.nivel === 'erro').length} erro(s) e {alertas.filter(a => a.nivel !== 'erro').length} ponto(s) de atenção na conferência automática</p>
+        <h3>Onde está cada peça</h3>
+        {ativos.flatMap(pv => (['Paredes', 'Lajes'] as const).map(tp => { const xs = indice.filter(x => x.pav === pv.id && x.tipo === tp); if (!xs.length) return null;
+          return <p key={pv.id + tp} className="idx"><b>{tp} — {pv.nome}:</b> {xs.map(x => `${tp === 'Paredes' ? 'P' : 'L'}${faixa(x.nums)} → folha ${num(x.f)}`).join(' · ')}</p>; }))}
+      </div>
+      <div className="indice">
+        <h3>Índice das folhas</h3>
+        <ol start={1}><li>Capa, resumo e índice</li>{F.map(f => <li key={f.key}>{f.tit}</li>)}</ol>
+      </div>
+    </div>
+    <div className="rod"><span>Folha 1/{N} · gerado em {new Date().toLocaleDateString('pt-BR')}</span><span>{nome}</span></div>
+  </div>;
+  return <div className="folhas">{capa}{F.map((f, i) => <div className="folha" key={f.key}>
+    <div className="cab">{f.tit}</div>{f.body}
+    <div className="rod"><span>{f.rod}</span><span>{nome} · folha {num(i)}/{N}</span></div>
+  </div>)}</div>;
 }

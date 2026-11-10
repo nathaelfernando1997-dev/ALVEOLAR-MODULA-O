@@ -42,6 +42,10 @@ export interface Regras {
   vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
   beiral: number;          // balanço de laje permitido sem viga
   trelicaSobreVao?: boolean; // parede de cima sobre vão livre (sem parede embaixo): reforço com treliça na laje, não viga
+  // produção e montagem
+  densidade?: number;      // peso do concreto (kg/m³): 2500
+  cargaMax?: number;       // carga máxima por caminhão (kg): 12000
+  escoraMax?: number;      // distância máxima entre linhas de escora da laje (m): 1,50
 }
 // regras de um projeto salvo: completa com as atuais e abre sempre no cálculo atual,
 // a não ser que o usuário tenha desligado o cálculo novo nele
@@ -59,6 +63,7 @@ export const REGRAS_PADRAO: Regras = {
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 4.0, lajeLarg: 2.5, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15, platibanda: 0.40,
   vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, perda: 10, vaoViga: 5.0, beiral: 1.0,
+  densidade: 2500, cargaMax: 12000, escoraMax: 1.5,
 };
 
 export interface Esquadria { tag: string; larg: number; alt: number; peit: number }  // metros
