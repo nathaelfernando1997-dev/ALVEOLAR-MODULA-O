@@ -309,3 +309,69 @@ export function csvEsperas(es: Espera[], ox = 0, oy = 0): string {
   const n = (v: number) => v.toFixed(3).replace('.', ',');
   return ['Espera;Painel;Distancia do inicio do painel (m);X a partir da origem (m);Y a partir da origem (m)', ...es.map(e => `E${e.n};${e.cod};${n(e.d)};${n(e.x - ox)};${n(e.y - oy)}`)].join('\r\n');
 }
+
+// ---------- detalhamento do bloco de coroamento ----------
+// gaiola: n estribos quadrados fechados em cada direção (lado da armadura x altura da armadura), com gancho nas pontas
+export interface OpBloco { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho: number; qtd: number }
+export const BLOCO_PADRAO: Omit<OpBloco, 'qtd'> = { lado: 0.5, alt: 0.5, armLado: 0.45, armAlt: 0.45, barras: 4, bitola: 8.0, barra: 12, gancho: 0.08 };
+export const pesoBitola = (mm: number) => 0.006165 * mm * mm;   // kg/m (aço CA-50)
+
+export function quantBloco(o: OpBloco) {
+  const comp = 2 * o.armLado + 2 * o.armAlt + 2 * (o.gancho ?? 0);   // N1 = N2, estribo fechado com 2 ganchos
+  const porBloco = 2 * o.barras, total = porBloco * o.qtd;
+  const metros = total * comp, kg = metros * pesoBitola(o.bitola);
+  const porBarra = Math.floor(o.barra / comp + 1e-9), barras12 = porBarra ? Math.ceil(total / porBarra) : 0;
+  const conc = o.lado * o.lado * o.alt;
+  return { comp, porBloco, total, metros, kg, porBarra, barras12, sobra: o.barra - porBarra * comp, conc, concTotal: conc * o.qtd, forma: 4 * o.lado * o.alt * o.qtd, esp: o.barras > 1 ? (o.armLado) / (o.barras - 1) : 0, cob: (o.lado - o.armLado) / 2, cobFundo: (o.alt - o.armAlt) / 2 };
+}
+
+// desenho em SVG (unidades em cm): planta, corte A-A e a barra dobrada, com cotas
+export function blocoSvg(o: OpBloco): { svg: string; w: number; h: number } {
+  const c = (m: number) => m * 100, br = (v: number) => (Math.round(v * 10) / 10).toString().replace('.', ','), bit = o.bitola.toFixed(1).replace('.', ',');
+  const L = c(o.lado), H = c(o.alt), A = c(o.armLado), AH = c(o.armAlt), cb = (L - A) / 2, cbf = (H - AH) / 2, n = o.barras, e = n > 1 ? A / (n - 1) : 0;
+  const s: string[] = [];
+  const ln = (x1: number, y1: number, x2: number, y2: number, cor = '#222', w = 0.35, extra = '') => s.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${cor}" stroke-width="${w}" ${extra}/>`);
+  const tx = (x: number, y: number, t: string, h = 2.4, anc = 'middle', rot = 0, cor = '#222', peso = 'normal') => s.push(`<text x="${x}" y="${y}" font-size="${h}" text-anchor="${anc}" fill="${cor}" font-weight="${peso}"${rot ? ` transform="rotate(${rot} ${x} ${y})"` : ''}>${t}</text>`);
+  const cotaH = (x1: number, x2: number, y: number, t: string) => { ln(x1, y, x2, y, '#1c7ed6', 0.2); ln(x1, y - 1, x1, y + 1, '#1c7ed6', 0.2); ln(x2, y - 1, x2, y + 1, '#1c7ed6', 0.2); tx((x1 + x2) / 2, y - 0.8, t, 2, 'middle', 0, '#1c7ed6'); };
+  const cotaV = (x: number, y1: number, y2: number, t: string) => { ln(x, y1, x, y2, '#1c7ed6', 0.2); ln(x - 1, y1, x + 1, y1, '#1c7ed6', 0.2); ln(x - 1, y2, x + 1, y2, '#1c7ed6', 0.2); tx(x - 0.8, (y1 + y2) / 2, t, 2, 'middle', -90, '#1c7ed6'); };
+  const ferro = '#c92a2a', fw = Math.max(0.5, o.bitola / 10);
+  // PLANTA (origem em 15,15)
+  let X0 = 15, Y0 = 18;
+  tx(X0 + L / 2, Y0 - 8, 'PLANTA', 3.2, 'middle', 0, '#222', 'bold');
+  s.push(`<rect x="${X0}" y="${Y0}" width="${L}" height="${L}" fill="#f1f3f5" stroke="#222" stroke-width="0.6"/>`);
+  for (let i = 0; i < n; i++) { const p = cb + i * e; ln(X0 + cb, Y0 + p, X0 + cb + A, Y0 + p, ferro, fw); ln(X0 + p, Y0 + cb, X0 + p, Y0 + cb + A, ferro, fw, 'stroke-dasharray="2 1"'); }
+  tx(X0 + L + 2, Y0 + cb + 1, `N1`, 2.2, 'start', 0, ferro); tx(X0 + cb + 1, Y0 + L + 4, `N2`, 2.2, 'start', 0, ferro);
+  cotaH(X0, X0 + L, Y0 + L + 9, br(L)); cotaH(X0 + cb, X0 + cb + A, Y0 + L + 5.5, br(A));
+  cotaV(X0 - 8, Y0, Y0 + L, br(L));
+  for (let i = 0; i < n - 1; i++) cotaV(X0 - 4, Y0 + cb + i * e, Y0 + cb + (i + 1) * e, br(e));
+  // corte A-A indicado
+  ln(X0 - 12, Y0 + L / 2, X0 + L + 3, Y0 + L / 2, '#555', 0.25, 'stroke-dasharray="3 1 1 1"'); tx(X0 - 13, Y0 + L / 2 + 1, 'A', 2.4, 'end'); tx(X0 + L + 4, Y0 + L / 2 + 1, 'A', 2.4, 'start');
+  // CORTE A-A (ao lado)
+  const X1 = X0 + L + 30, Y1 = Y0;
+  tx(X1 + L / 2, Y1 - 8, 'CORTE A-A', 3.2, 'middle', 0, '#222', 'bold');
+  s.push(`<rect x="${X1}" y="${Y1}" width="${L}" height="${H}" fill="#f1f3f5" stroke="#222" stroke-width="0.6"/>`);
+  // U da N1 (fundo embaixo, pernas para cima)
+  const yb = Y1 + H - cbf, yt = yb - AH;
+  s.push(`<rect x="${X1 + cb}" y="${yt}" width="${A}" height="${AH}" fill="none" stroke="${ferro}" stroke-width="${fw}"/>`);
+  // gancho no canto de cima à esquerda
+  ln(X1 + cb, yt, X1 + cb + 4, yt + 4, ferro, fw); ln(X1 + cb, yt, X1 + cb + 4.5, yt + 2.5, ferro, fw);
+  // N2 cortadas: pontos no fundo e no topo
+  for (let i = 0; i < n; i++) for (const yy of [yb - fw, yt + fw]) s.push(`<circle cx="${X1 + cb + i * e}" cy="${yy}" r="${fw * 0.8}" fill="${ferro}"/>`);
+  tx(X1 + L / 2, yb - 3, 'N1', 2.2, 'middle', 0, ferro); tx(X1 + L + 2, yb, 'N2', 2.2, 'start', 0, ferro);
+  cotaH(X1, X1 + L, Y1 + H + 9, br(L)); cotaH(X1 + cb, X1 + cb + A, Y1 + H + 5.5, br(A));
+  cotaV(X1 + L + 8, Y1, Y1 + H, br(H)); cotaV(X1 + L + 4, yt, yb, br(AH));
+  if (cbf > 0.1) cotaV(X1 - 3, yb, Y1 + H, br(cbf));
+  ln(X1 - 6, Y1 + H, X1 + L + 6, Y1 + H, '#888', 0.25); tx(X1 - 6, Y1 + H + 3, 'fundo do bloco', 1.8, 'start', 0, '#888');
+  // BARRA DOBRADA
+  const X2 = X1 + L + 30, Y2 = Y0 + 4, k = 0.6;
+  tx(X2 + A * k / 2, Y2 - 12, 'ESTRIBO N1 = N2', 3.2, 'middle', 0, '#222', 'bold');
+  s.push(`<rect x="${X2}" y="${Y2}" width="${A * k}" height="${AH * k}" fill="none" stroke="${ferro}" stroke-width="${fw * 1.2}"/>`);
+  const G = c(o.gancho ?? 0);
+  if (G > 0) { ln(X2, Y2, X2 + G * k * 0.7, Y2 + G * k * 0.7, ferro, fw * 1.2); ln(X2, Y2, X2 + G * k * 0.95, Y2 + G * k * 0.3, ferro, fw * 1.2); tx(X2 + G * k + 1, Y2 + G * k * 0.7 + 2, `gancho ${br(G)}`, 1.8, 'start', 0, '#555'); }
+  tx(X2 - 1.5, Y2 + AH * k / 2, br(AH), 2.4, 'end'); tx(X2 + A * k + 1.5, Y2 + AH * k / 2, br(AH), 2.4, 'start'); tx(X2 + A * k / 2, Y2 + AH * k + 4, br(A), 2.4); tx(X2 + A * k / 2, Y2 - 1.5, br(A), 2.4);
+  const comp = 2 * A + 2 * AH + 2 * G;
+  tx(X2 + A * k / 2, Y2 + AH * k + 10, `${o.barras} Ø${bit} C=${br(comp)}`, 2.6, 'middle', 0, ferro, 'bold');
+  tx(X2 + A * k / 2, Y2 + AH * k + 14, '(em cada direção: N1 e N2)', 2, 'middle', 0, '#555');
+  const w = X2 + A * k + 25, h = Y0 + Math.max(L, H) + 14;
+  return { svg: s.join(''), w, h };
+}

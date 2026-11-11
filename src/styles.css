@@ -209,3 +209,8 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .carimbo > div:first-child { flex: 2; font-size: 11pt; }
 .carimbo > div:last-child { border-right: none; flex: 0.6; }
 @media print { .so-imp { display: flex; } }
+.bloco-folha svg { flex: 1; min-height: 0; }
+.bloco-folha .nota { font-size: 9pt; color: #444; margin: 3mm 0 0; }
+.bloco-tabs { display: flex; gap: 8mm; align-items: flex-start; flex-wrap: wrap; margin-top: 4mm; }
+.bloco-tela { background: #fff; padding: 12px; }
+.bloco-tela svg { width: 100%; max-height: 520px; }
