@@ -64,7 +64,8 @@ const DESC: Record<TipoPonto, string> = { L: 'canto (L)', T: 'encontro (T)', X: 
 // DXF R12 simples (LINE, CIRCLE, TEXT), em metros, nas coordenadas do projeto
 export function dxfFundacao(pav: Pavimento, ts: Trecho[], pts: PontoFund[], arq: Prim[] = [], cotas = true): string {
   const o: string[] = [];
-  const tx = (t: string) => t.replace(/[^\x20-\x7e]/g, ch => '\\U+' + ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0'));
+  // sem acentos (o Eberick e outros programas nem sempre leem o \U+ do AutoCAD)
+  const tx = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/·/g, '-').replace(/[^\x20-\x7e]/g, '');
   const line = (l: string, x1: number, y1: number, x2: number, y2: number, cor = 7) => o.push('0', 'LINE', '8', l, '62', String(cor), '10', x1.toFixed(4), '20', y1.toFixed(4), '11', x2.toFixed(4), '21', y2.toFixed(4));
   const circ = (l: string, x: number, y: number, r: number, cor = 7) => o.push('0', 'CIRCLE', '8', l, '62', String(cor), '10', x.toFixed(4), '20', y.toFixed(4), '40', r.toFixed(4));
   const text = (l: string, x: number, y: number, h: number, t: string, cor = 7, rot = 0, centro = false) => {
