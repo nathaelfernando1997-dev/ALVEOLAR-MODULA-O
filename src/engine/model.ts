@@ -355,7 +355,7 @@ function eixos(F: Face[], r: Regras): Eixo[] {
   });
 }
 
-export interface Vao { a: number; b: number; tag: string | null; tipo: string; w: number; x0: number; x1: number; base: number; h: number; inteiro: boolean;
+export interface Vao { a: number; b: number; tag: string | null; tipo: string; w: number; x0: number; x1: number; base: number; h: number; inteiro: boolean; key?: string;
   continua?: boolean; sobe?: boolean;
   topo?: number }   // altura do topo da abertura a partir do piso (porta = altura do quadro)   // sobe = porta que continua na parede de cima   // continuação de porta mais alta que o pavimento de baixo (começa no pé da parede, sem boneca embaixo)
 export interface Trecho { id: string; pav: string; o: 'H' | 'V'; c: number; s: number; e: number; vaos: Vao[]; H: number; esp: number; pinado?: boolean }
@@ -369,6 +369,8 @@ export interface Ajustes {
   altura: Record<string, number>;          // altura manual do trecho
   alturaPainel?: Record<string, number>;   // altura manual de um painel só (chave = trecho@início do painel), ex.: parede que baixa para a viga da sacada
   vaoTipo: Record<string, string>;         // `${trecho}@${posição}` -> tag (ex.: P04) ou "livre"
+  vaoCentro?: string[];                    // vãos (mesma chave) centralizados na parede (ex.: janelas dos banheiros)
+  vigasManuais?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }[];   // vigas desenhadas no sistema (apoio da laje, como a LINHA DE PISO)
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
@@ -533,7 +535,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     const tag = aj.vaoTipo[key] ?? v.tag ?? 'livre';
     const q = tag !== 'livre' ? Q.get(tag) : undefined;
     const m = (v.a + v.b) / 2;
-    if (!q) return { a: v.a, b: v.b, tag: tag === 'livre' ? null : tag, tipo: tag === 'livre' ? 'vão livre' : tag, w: v.b - v.a, x0: v.a, x1: v.b, base: 0, h: Hh, inteiro: true, topo: Hh };
+    if (!q) return { a: v.a, b: v.b, tag: tag === 'livre' ? null : tag, tipo: tag === 'livre' ? 'vão livre' : tag, w: v.b - v.a, x0: v.a, x1: v.b, base: 0, h: Hh, inteiro: true, topo: Hh, key };
     const janela = q.tag.startsWith('J');
     let w = q.larg + r.acrescimoLargura;
     let base: number, h: number;
@@ -541,7 +543,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     else { base = r.boneca; h = q.alt; }   // porta: boneca embaixo + altura do quadro
     const inteiro = (!janela && base + h >= Hh - 1e-6) || w > r.larguraMax - 2 * r.boneca;
     if (inteiro) { w = Math.max(w, v.b - v.a); }
-    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt };   // mesmo topo do recorte (porta = boneca + altura)
+    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt, key };   // mesmo topo do recorte (porta = boneca + altura)
   }
   // ajustes: excluir e juntar
   let res = out.filter(t => t.e - t.s >= r.minParede && !aj.excluir.includes(t.id));
@@ -620,6 +622,23 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
         junta(t, nx); mudou = true;
       }
     }
+  }
+  // a medida de toda parede vai até a face da parede em que ela chega (canto em L ou T): se a parede termina
+  // antes da face (ex.: porta encostada no canto, batente desenhado afastado), estica até a face, no máximo 12 cm
+  if ((r.motor ?? 1) >= 2) {
+    for (const t of res) for (const q of res) {
+      // q atravessa a linha de t (T) ou termina na face de t (canto em L, quina com quina)
+      const tol = t.esp / 2 + 0.05;
+      if (q === t || q.pav !== t.pav || q.o === t.o || !(q.s - tol <= t.c && t.c <= q.e + tol)) continue;
+      const fFim = q.c - q.esp / 2, fIni = q.c + q.esp / 2;
+      if (q.c > t.e && fFim - t.e > 0.005 && fFim - t.e <= 0.12) t.e = fFim;
+      if (q.c < t.s && t.s - fIni > 0.005 && t.s - fIni <= 0.12) t.s = fIni;
+    }
+  }
+  // janela marcada para centralizar: fica no meio da parede (de face a face)
+  for (const t of res) for (const v of t.vaos) if (v.key && aj.vaoCentro?.includes(v.key)) {
+    const d = (t.s + t.e) / 2 - (v.x0 + v.x1) / 2;
+    if (Math.abs(d) > 0.005) { v.a += d; v.b += d; v.x0 += d; v.x1 += d; }
   }
   return res;
 }
@@ -717,6 +736,8 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           else if (toda) aviso = `${o.tipo} na parede toda: bonecas de ${r.boneca * 100} cm nas laterais (retirar após concretar)`;
           else if (w < o.w - 1e-6) aviso = `${o.tipo}: recorte reduzido para caber as bonecas`;
           let dl = Math.min(Math.max(o.x0 - pa, bl), larg - w - bl);
+          // janela centralizada: fica no meio da peça (as mesmas sobras dos dois lados)
+          if (o.key && aj.vaoCentro?.includes(o.key) && !toda && larg - w >= 2 * bl - 1e-6) dl = (larg - w) / 2;
           if (dl < bl - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${bl * 100} cm`; }
           let base = o.base, h = o.h;
           if (base < r.boneca && !o.continua) { h -= r.boneca - base; base = r.boneca; }
@@ -731,7 +752,13 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           rec.push({ tipo: o.tipo, dl, w, base, h });
         }
         if (larg < r.naoFabricar) aviso = 'n fabricar';
-        const chave = `${t.id}@${pa.toFixed(2)}`, Hp = aj.alturaPainel?.[chave];
+        // altura manual do painel: pela chave exata ou, se a parede mudou um pouco (medida esticada até a face), pelo início mais próximo (até 15 cm)
+        let chave = `${t.id}@${pa.toFixed(2)}`;
+        if (aj.alturaPainel && aj.alturaPainel[chave] == null) {
+          const perto = Object.keys(aj.alturaPainel).filter(k => k.startsWith(t.id + '@')).map(k => ({ k, d: Math.abs(parseFloat(k.slice(t.id.length + 1)) - pa) })).filter(x => x.d <= 0.15).sort((x, y) => x.d - y.d)[0];
+          if (perto) chave = perto.k;
+        }
+        const Hp = aj.alturaPainel?.[chave];
         if (Hp !== undefined) aviso = (aviso ? aviso + ' · ' : '') + `altura de ${Hp.toFixed(2).replace('.', ',')} m definida à mão`;
         P.push({ num: 0, trecho: t.id, pav: t.pav, o: t.o, c: t.c, a: pa, b: pb, larg, H: Hp ?? t.H, comp: pb - pa, recortes: rec, aviso, chave });
       }

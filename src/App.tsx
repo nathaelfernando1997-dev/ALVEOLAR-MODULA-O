@@ -95,6 +95,7 @@ export default function App() {
   const [vaoSel, setVaoSel] = useState<string | null>(null);
   const [ambSel, setAmbSel] = useState<string | null>(null);
   const [lajeSel, setLajeSel] = useState<string | null>(null);   // painel de laje clicado (chaveLaje)
+  const [modoViga, setModoViga] = useState<{ x: number; y: number } | null | 'ok'>(null);   // adicionar viga: null = desligado, 'ok' = esperando o 1º clique
   const [cortando, setCortando] = useState<{ trecho: string; coluna: boolean } | null>(null);
   const [vigaSel, setVigaSel] = useState<string | null>(null);
   const [projId, setProjId] = useState<string | null>(null);
@@ -240,6 +241,8 @@ export default function App() {
       // "LINHA DE PISO" do projeto: viga que serve de apoio para a laje
       const pp: Trecho[] = leitura.linhas.filter(l => l.tipo === 'piso' && naCaixa(p.box, l))
         .map(l => ({ id: `${p.id}|piso|${l.c.toFixed(2)}|${l.a.toFixed(2)}`, pav: p.id, o: l.o, c: l.c, s: l.a, e: l.b, vaos: [], H: p.altura, esp: regras.vigaLargura }));
+      // vigas desenhadas no sistema (aba Lajes → Adicionar viga): apoio da laje como a LINHA DE PISO
+      for (const v of aj.vigasManuais || []) if (v.pav === p.id) pp.push({ id: `${p.id}|vmanual|${v.o}|${v.c.toFixed(2)}|${v.a.toFixed(2)}`, pav: p.id, o: v.o, c: v.c, s: v.a, e: v.b, vaos: [], H: p.altura, esp: regras.vigaLargura });
       // parede marcada como viga (muxarabi, vidro): não vira painel, a laje apoia nela
       const vp = porPav[i].filter(x => (aj.viga || []).includes(x.id));
       vazio.vigasParede.push(...vp);
@@ -606,7 +609,30 @@ export default function App() {
               <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setSel(null); setVaoSel(null); setAmbSel(null); setLajeSel(null); }}>{p.nome}</button>)}</div>
               {aba === 'modulacao'
                 ? <Acoes pav={pavAtual} sel={sel} vaoSel={vaoSel} calc={calc} aj={aj} setAj={setAj} quadro={quadro} regras={regras} cortando={cortando} setCortando={setCortando} limpar={() => { setSel(null); setVaoSel(null); setCortando(null); }} />
-                : <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />}
+                : <>
+                  <div className="card acoes">
+                    <h3>Vigas desenhadas</h3>
+                    <button className={modoViga ? 'on' : ''} onClick={() => setModoViga(modoViga ? null : 'ok')}>{modoViga ? (modoViga === 'ok' ? 'Clique no 1º ponto da viga… (clique aqui para parar)' : 'Clique no 2º ponto da viga…') : 'Adicionar viga (clique em 2 pontos na planta)'}</button>
+                    <p className="dica">A viga vira apoio da laje (como a LINHA DE PISO): depois dá para girar a laje do ambiente. Fica reta: horizontal ou vertical, pela direção dos dois cliques.</p>
+                    {(aj.vigasManuais || []).filter(v => v.pav === pavAtual.id).map((v, i) => <div key={i} className="corte-item">{v.o === 'H' ? 'horizontal' : 'vertical'} · {br(v.b - v.a)} m
+                      <button onClick={() => setAj({ ...aj, vigasManuais: (aj.vigasManuais || []).filter(x => x !== v) })}>remover</button></div>)}
+                  </div>
+                  <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />
+                </>}
+              {aba === 'modulacao' && <div className="card acoes">
+                <h3>Janelas</h3>
+                {(() => {
+                  const altas = calc.ts.filter(t => t.pav === pavAtual.id).flatMap(t => t.vaos.filter(v => v.key && v.tag?.startsWith('J') && (quadro.find(q => q.tag === v.tag)?.peit ?? 0) >= 1.4 - 1e-6).map(v => v.key!));
+                  const todas = calc.ts.flatMap(t => t.vaos.filter(v => v.key && v.tag?.startsWith('J') && (quadro.find(q => q.tag === v.tag)?.peit ?? 0) >= 1.4 - 1e-6).map(v => v.key!));
+                  const cent = aj.vaoCentro || [];
+                  return <>
+                    <button onClick={() => setAj({ ...aj, vaoCentro: [...new Set([...cent, ...todas])] })}>Centralizar as janelas altas de todos os pavimentos (banheiros: peitoril 1,40 m ou mais) — {todas.length}</button>
+                    <button onClick={() => setAj({ ...aj, vaoCentro: [...new Set([...cent, ...altas])] })}>Só deste pavimento — {altas.length}</button>
+                    {cent.length > 0 && <button onClick={() => setAj({ ...aj, vaoCentro: [] })}>Voltar todas as janelas para a posição do projeto ({cent.length} centralizada(s))</button>}
+                    <p className="dica">Para uma janela só: clique nela na planta e marque "Centralizar".</p>
+                  </>;
+                })()}
+              </div>}
               <details><summary>Desfazer ajustes</summary>
                 <button onClick={() => { if (confirm('Apagar todos os ajustes manuais deste projeto?')) setAj(AJUSTES_VAZIOS); }}>Apagar todos os ajustes</button>
               </details>
@@ -615,7 +641,16 @@ export default function App() {
               ? <PlantaParedes L={leitura} pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} sel={sel} vaoSel={vaoSel} cortando={cortando}
                   onCorte={(t, along) => { const tr = calc.ts.find(x => x.id === t); if (!tr || !cortando) return; const d = Math.round((along - tr.s) * 100) / 100; const k = cortando.coluna ? 'colunas' : 'cortes'; const m = { ...(aj[k] || {}) }; m[t] = [...(m[t] || []), d].sort((a, b) => a - b); setAj({ ...aj, [k]: m }); setCortando(null); }}
                   onPainel={t => { setSel({ trecho: t }); setVaoSel(null); }} onVao={k => { setVaoSel(k); setSel(null); setCortando(null); }} />
-              : <PlantaLajes pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} ambSel={ambSel} lajeSel={lajeSel} onAmb={id => { setAmbSel(id); setLajeSel(null); }} onLaje={p => { setAmbSel(p.amb); setLajeSel(chaveLaje(p)); }} />}
+              : <PlantaLajes pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} ambSel={ambSel} lajeSel={lajeSel} onAmb={id => { setAmbSel(id); setLajeSel(null); }} onLaje={p => { setAmbSel(p.amb); setLajeSel(chaveLaje(p)); }}
+                  vigas={(aj.vigasManuais || []).filter(v => v.pav === pavAtual.id)} modoViga={modoViga}
+                  onPonto={(x, y) => {
+                    if (modoViga === 'ok' || modoViga === null) { setModoViga({ x, y }); return; }
+                    const dx = x - modoViga.x, dy = y - modoViga.y, o: 'H' | 'V' = Math.abs(dx) >= Math.abs(dy) ? 'H' : 'V';
+                    const r2 = (v: number) => Math.round(v * 100) / 100;
+                    const v = o === 'H' ? { pav: pavAtual.id, o, c: r2((y + modoViga.y) / 2), a: r2(Math.min(x, modoViga.x)), b: r2(Math.max(x, modoViga.x)) } : { pav: pavAtual.id, o, c: r2((x + modoViga.x) / 2), a: r2(Math.min(y, modoViga.y)), b: r2(Math.max(y, modoViga.y)) };
+                    if (v.b - v.a > 0.2) setAj({ ...aj, vigasManuais: [...(aj.vigasManuais || []), v] });
+                    setModoViga('ok');
+                  }} />}
           </section>
         )}
 
@@ -885,7 +920,7 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
             }}><title>Painel {p.num} · {br(p.larg)} × {p.chanfro ? `${br(p.chanfro.ha)} → ${br(p.chanfro.hb)} (chanfro)` : br(p.H)}</title></line>;
         })}
         {ts.flatMap(t => t.vaos.map(v => {
-          const key = `${t.id}@${((v.a + v.b) / 2).toFixed(2)}`;
+          const key = v.key ?? `${t.id}@${((v.a + v.b) / 2).toFixed(2)}`;
           const [x, y, w, h] = t.o === 'H' ? [v.x0, t.c - 0.13, v.x1 - v.x0, 0.26] : [t.c - 0.13, v.x0, 0.26, v.x1 - v.x0];
           const on = vaoSel === key;
           return <rect key={key} className="hit" x={q.X(x)} y={q.Y(y + h)} width={w * q.k} height={h * q.k} fill={on ? 'rgba(204,0,204,.35)' : v.tag ? 'rgba(204,0,204,.08)' : 'rgba(255,170,0,.25)'} stroke={v.tag ? '#c0c' : '#e80'} strokeWidth={2} strokeDasharray={v.tag ? '' : '8 5'} onClick={() => onVao(key)}><title>{v.tag ? `${v.tag}` : 'vão sem etiqueta — clique para definir'}</title></rect>;
@@ -933,7 +968,8 @@ function TabelaTrelicas({ TP, TR, curta }: { TP: TrelicaPainel[]; TR: VigaN[]; c
   </div>;
 }
 
-function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje }: { pav: Pavimento; calc: Calc; arq: Prim[]; ambSel: string | null; lajeSel: string | null; onAmb: (id: string) => void; onLaje: (p: PainelLaje) => void }) {
+function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje, vigas = [], modoViga = null, onPonto }: { pav: Pavimento; calc: Calc; arq: Prim[]; ambSel: string | null; lajeSel: string | null; onAmb: (id: string) => void; onLaje: (p: PainelLaje) => void;
+  vigas?: { o: 'H' | 'V'; c: number; a: number; b: number }[]; modoViga?: { x: number; y: number } | null | 'ok'; onPonto?: (x: number, y: number) => void }) {
   const q = quadroDe(pav);
   const lj = calc.lajes.filter(a => a.pav === pav.id), P = calc.pl.filter(p => p.pav === pav.id);
   const TR = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica'), TP = trelicasNasLajes(TR, P);
@@ -953,6 +989,22 @@ function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje }: { pav: 
         {P.map(p => <rect key={p.num} className="hit" x={q.X(p.x0)} y={q.Y(p.y1)} width={(p.x1 - p.x0) * q.k} height={(p.y1 - p.y0) * q.k}
           fill={lajeSel === chaveLaje(p) ? 'rgba(230,0,0,.18)' : 'transparent'} stroke={lajeSel === chaveLaje(p) ? '#e00' : 'none'} strokeWidth={3}
           onClick={() => onLaje(p)}><title>{`L${p.num} · ${br(p.comp)} × ${br(p.larg)}`}</title></rect>)}
+        {/* vigas desenhadas no sistema */}
+        {vigas.map((v, i) => { const [x1, y1, x2, y2] = v.o === 'H' ? [v.a, v.c, v.b, v.c] : [v.c, v.a, v.c, v.b];
+          return <line key={'vm' + i} x1={q.X(x1)} y1={q.Y(y1)} x2={q.X(x2)} y2={q.Y(y2)} stroke="#e67700" strokeWidth={12} strokeOpacity={0.8}><title>Viga desenhada · {br(v.b - v.a)} m</title></line>; })}
+        {modoViga && typeof modoViga === 'object' && <circle cx={q.X(modoViga.x)} cy={q.Y(modoViga.y)} r={10} fill="#e67700" />}
+        {/* adicionar viga: a planta toda recebe o clique; o ponto encosta no eixo da parede mais perto (até 20 cm) */}
+        {modoViga && onPonto && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(230,119,0,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
+          const svg = (e.target as SVGElement).ownerSVGElement!; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+          const v = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+          let x = q.iX(v.x), y = q.iY(v.y);
+          const ts = calc.ts.filter(t => t.pav === pav.id);
+          const vx = ts.filter(t => t.o === 'V').map(t => t.c).sort((a, b) => Math.abs(a - x) - Math.abs(b - x))[0];
+          const hy = ts.filter(t => t.o === 'H').map(t => t.c).sort((a, b) => Math.abs(a - y) - Math.abs(b - y))[0];
+          if (vx !== undefined && Math.abs(vx - x) < 0.2) x = vx;
+          if (hy !== undefined && Math.abs(hy - y) < 0.2) y = hy;
+          onPonto(x, y);
+        }} />}
       </ZoomSvg>
       <p className="dica">Laje sobre este pavimento. Clique numa laje para mudar a espessura só dela, ou girar o sentido / tirar a laje do ambiente dela. Clique num ambiente para tirar a laje (vazio, área externa), girar o sentido dos painéis ou mudar a espessura (ex.: 16 cm). Marcador laranja "!" = precisa de atenção (passe o mouse ou clique para ver). Linha roxa = treliça de reforço embaixo de parede de cima.</p>
       {TP.length > 0 && <TabelaTrelicas TP={TP} TR={TR} />}
@@ -987,7 +1039,9 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
     return <div className="card acoes"><h3>Vão</h3>
       <label>O que é este vão?<select value={atual ?? ''} onChange={e => { const v = { ...aj.vaoTipo }; if (e.target.value) v[vaoSel] = e.target.value; else delete v[vaoSel]; setAj({ ...aj, vaoTipo: v }); }}>
         <option value="">(automático pela etiqueta)</option><option value="livre">vão livre (sem painel)</option>{quadro.map(q => <option key={q.tag} value={q.tag}>{q.tag} — {br(q.larg)} × {br(q.alt)}</option>)}
-      </select></label><button onClick={limpar}>Fechar</button></div>;
+      </select></label>
+      <label className="chk"><input type="checkbox" checked={(aj.vaoCentro || []).includes(vaoSel)} onChange={e => setAj({ ...aj, vaoCentro: e.target.checked ? [...(aj.vaoCentro || []), vaoSel] : (aj.vaoCentro || []).filter(x => x !== vaoSel) })} /> Centralizar esta janela/porta na parede (de face a face)</label>
+      <button onClick={limpar}>Fechar</button></div>;
   }
   if (!t) return <div className="card acoes"><p>Clique numa parede ou num vão na planta.</p>
     {calc.muros.some(m => m.pav === pav.id) && <>
