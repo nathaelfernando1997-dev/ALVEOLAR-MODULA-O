@@ -5,12 +5,12 @@
 import type { Trecho, Painel, Pavimento } from './model.ts';
 import type { Prim } from './dxf.ts';
 
-export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário';
+export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual';
 export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number }
 
 const TOL = 0.15;
 
-export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0): PontoFund[] {
+export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { extra?: { x: number; y: number }[]; remover?: { x: number; y: number }[] } = {}): PontoFund[] {
   type Q = { x: number; y: number; tipo?: TipoPonto; esp: number };
   const qs: Q[] = [];
   const add = (x: number, y: number, esp: number, tipo?: TipoPonto) => {
@@ -54,12 +54,18 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0): PontoF
       for (let j = 1; j < k; j++) qs.push({ ...(() => { const [x, y] = xy(t, nos[i] + d * j / k); return { x, y }; })(), esp: t.esp, tipo: 'intermediário' });
     }
   }
+  // edição à mão: pontos tirados e pontos acrescentados
+  for (const r of ed.remover || []) { const i = qs.findIndex(q => Math.hypot(q.x - r.x, q.y - r.y) < TOL); if (i >= 0) qs.splice(i, 1); }
+  for (const e of ed.extra || []) if (!qs.some(q => Math.hypot(q.x - e.x, q.y - e.y) < 0.05)) {
+    const t = ts.find(t => t.o === 'H' ? Math.abs(t.c - e.y) < 0.1 && e.x > t.s - TOL && e.x < t.e + TOL : Math.abs(t.c - e.x) < 0.1 && e.y > t.s - TOL && e.y < t.e + TOL);
+    qs.push({ x: e.x, y: e.y, esp: t?.esp ?? 0.15, tipo: 'manual' });
+  }
   // numeração: de cima para baixo, da esquerda para a direita
   qs.sort((p, q) => Math.abs(p.y - q.y) > TOL ? q.y - p.y : p.x - q.x);
   return qs.map((q, i) => ({ n: i + 1, x: q.x, y: q.y, tipo: q.tipo!, esp: q.esp }));
 }
 
-const DESC: Record<TipoPonto, string> = { L: 'canto (L)', T: 'encontro (T)', X: 'cruzamento', ponta: 'ponta de parede', emenda: 'emenda de parede', coluna: 'coluna no meio da parede', 'intermediário': 'intermediário (espaçamento)' };
+const DESC: Record<TipoPonto, string> = { L: 'canto (L)', T: 'encontro (T)', X: 'cruzamento', ponta: 'ponta de parede', emenda: 'emenda de parede', coluna: 'coluna no meio da parede', 'intermediário': 'intermediário (espaçamento)', manual: 'ponto acrescentado' };
 
 // DXF R12 simples (LINE, CIRCLE, TEXT), em metros, nas coordenadas do projeto
 export function dxfFundacao(pav: Pavimento, ts: Trecho[], pts: PontoFund[], arq: Prim[] = [], cotas = true): string {
@@ -133,12 +139,12 @@ export interface Locacao { ox: number; oy: number; ex: { nome: string; v: number
 const letra = (i: number): string => i < 26 ? String.fromCharCode(65 + i) : letra(Math.floor(i / 26) - 1) + letra(i % 26);
 const brl = (v: number) => v.toFixed(2).replace('.', ',');
 
-export function locacao(pts: PontoFund[]): Locacao {
+export function locacao(pts: PontoFund[], origem?: { x: number; y: number } | null): Locacao {
   const d: DesenhoLoc = { linhas: [], circs: [], textos: [] };
   const agr = (vs: number[]) => { const s = [...vs].sort((a, b) => a - b), o: number[] = []; for (const v of s) if (!o.length || v - o[o.length - 1] > 0.05) o.push(v); return o; };
   const xs = agr(pts.map(p => p.x)), ys = agr(pts.map(p => p.y));
   if (!xs.length) return { ox: 0, oy: 0, ex: [], ey: [], pts: [], d };
-  const ox = xs[0], oy = ys[0], X1 = xs[xs.length - 1], Y1 = ys[ys.length - 1];
+  const ox = origem?.x ?? xs[0], oy = origem?.y ?? ys[0], X1 = xs[xs.length - 1], Y1 = ys[ys.length - 1], X0 = xs[0], Y0 = ys[0];
   const ex = xs.map((v, i) => ({ nome: String(i + 1), v })), ey = ys.map((v, i) => ({ nome: letra(i), v }));
   const R = 0.3, M = 1.2;   // raio da bolinha do eixo e distância das linhas além da obra
   const L = (x1: number, y1: number, x2: number, y2: number, l: string, cor: number, tr = false) => d.linhas.push({ x1, y1, x2, y2, l, cor, tr });
@@ -146,16 +152,16 @@ export function locacao(pts: PontoFund[]): Locacao {
   // eixos com bolinha nas duas pontas; eixos muito juntos: a bolinha sobe um nível (não fica uma em cima da outra)
   const niveis = (vs: number[]) => { const lv: number[] = []; vs.forEach((v, i) => { let n = 0; while (vs.slice(0, i).some((u, j) => lv[j] === n && v - u < 2 * R + 0.06)) n++; lv.push(n); }); return lv; };
   const nx = niveis(xs), ny = niveis(ys), PASSO = 2 * R + 0.25;
-  const topo = Y1 + M + R + Math.max(0, ...nx) * PASSO, esq = ox - M - R - Math.max(0, ...ny) * PASSO;
+  const topo = Y1 + M + R + Math.max(0, ...nx) * PASSO, esq = X0 - M - R - Math.max(0, ...ny) * PASSO;
   ex.forEach((e, i) => {
-    const yb = oy - M - R - nx[i] * PASSO, yt = Y1 + M + R + nx[i] * PASSO;
+    const yb = Y0 - M - R - nx[i] * PASSO, yt = Y1 + M + R + nx[i] * PASSO;
     L(e.v, yb + R, e.v, yt - R, 'EIXO-LOCACAO', 1, true);
     for (const y of [yb, yt]) { d.circs.push({ x: e.v, y, r: R, l: 'EIXO-LOCACAO', cor: 1 }); T(e.v, y - 0.09, 0.22, e.nome, 'EIXO-NOME', 1); }
     // distância acumulada desde a origem, em pé ao lado da linha do eixo
     T(e.v - 0.05, topo + R + 0.2, .13, brl(e.v - ox), 'COTA-ACUMULADA', 5, 90, false);
   });
   ey.forEach((e, i) => {
-    const xl = ox - M - R - ny[i] * PASSO, xr = X1 + M + R + ny[i] * PASSO;
+    const xl = X0 - M - R - ny[i] * PASSO, xr = X1 + M + R + ny[i] * PASSO;
     L(xl + R, e.v, xr - R, e.v, 'EIXO-LOCACAO', 1, true);
     for (const x of [xl, xr]) { d.circs.push({ x, y: e.v, r: R, l: 'EIXO-LOCACAO', cor: 1 }); T(x, e.v - 0.09, 0.22, e.nome, 'EIXO-NOME', 1); }
     T(esq - R - 0.2, e.v + 0.05, .13, brl(e.v - oy), 'COTA-ACUMULADA', 5, 0, false);
@@ -167,8 +173,8 @@ export function locacao(pts: PontoFund[]): Locacao {
   const yP = topo + R + 1.25, xP = esq - R - 1.25;
   for (let i = 0; i < xs.length - 1; i++) if (xs[i + 1] - xs[i] > 0.05) cotaH(xs[i], xs[i + 1], yP, brl(xs[i + 1] - xs[i]), i);
   for (let i = 0; i < ys.length - 1; i++) if (ys[i + 1] - ys[i] > 0.05) cotaV(xP, ys[i], ys[i + 1], brl(ys[i + 1] - ys[i]), i);
-  cotaH(ox, X1, yP + 0.55, brl(X1 - ox), 0); cotaV(xP - 0.55, oy, Y1, brl(Y1 - oy), 0);
-  T(ox, yP + 1.0, .13, 'numeros em pe junto dos eixos = distancia acumulada desde a origem', 'COTA', 5, 0, false);
+  cotaH(X0, X1, yP + 0.55, brl(X1 - X0), 0); cotaV(xP - 0.55, Y0, Y1, brl(Y1 - Y0), 0);
+  T(X0, yP + 1.0, .13, 'numeros em pe junto dos eixos = distancia acumulada desde a origem', 'COTA', 5, 0, false);
   // origem
   L(ox - .35, oy - .35, ox + .35, oy + .35, 'ORIGEM', 6); L(ox - .35, oy + .35, ox + .35, oy - .35, 'ORIGEM', 6);
   T(ox + 0.45, oy - 0.6, .16, 'ORIGEM (0,00 ; 0,00)', 'ORIGEM', 6, 0, false);
@@ -186,7 +192,7 @@ export function locacao(pts: PontoFund[]): Locacao {
   return { ox, oy, ex, ey, pts: out, d };
 }
 
-export function dxfLocacao(pav: Pavimento, loc: Locacao, arq: Prim[] = []): string {
+export function dxfLocacao(pav: Pavimento, loc: Locacao, arq: Prim[] = [], origemDesc = 'eixo 1 / eixo A'): string {
   const o: string[] = [];
   const tx = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/·/g, '-').replace(/[^\x20-\x7e]/g, '');
   // camada do eixo em traço e ponto (tabela de tipos de linha)
@@ -202,14 +208,14 @@ export function dxfLocacao(pav: Pavimento, loc: Locacao, arq: Prim[] = []): stri
   };
   for (const t of loc.d.textos) text(t.l, t.x, t.y, t.h, t.t, t.cor, t.rot, t.centro);
   // título e tabela
-  const xMax = Math.max(...loc.ex.map(e => e.v)), yMax = Math.max(...loc.ey.map(e => e.v));
-  text('TEXTO', loc.ox - 2.5, yMax + 7, .35, `PLANTA DE LOCACAO - ${pav.nome.toUpperCase()}`, 7);
-  text('TEXTO', loc.ox - 2.5, yMax + 6.5, .14, `${loc.pts.length} pontos - coordenadas em metros a partir da ORIGEM (eixo 1 / eixo A)`, 7);
+  const xMax = Math.max(...loc.ex.map(e => e.v)), yMax = Math.max(...loc.ey.map(e => e.v)), xMin = Math.min(...loc.ex.map(e => e.v)), yMin = Math.min(...loc.ey.map(e => e.v));
+  text('TEXTO', xMin - 2.5, yMax + 7, .35, `PLANTA DE LOCACAO - ${pav.nome.toUpperCase()}`, 7);
+  text('TEXTO', xMin - 2.5, yMax + 6.5, .14, `${loc.pts.length} pontos - coordenadas em metros a partir da ORIGEM (${origemDesc})`, 7);
   let ty = yMax + 1.5, txx = xMax + 3.5;
   text('TABELA', txx, ty, .16, 'PONTO   EIXO     X (m)     Y (m)', 7);
   for (const p of loc.pts) {
     ty -= 0.28;
-    if (ty < loc.oy - 2) { ty = yMax + 1.5 - 0.28; txx += 4.5; }
+    if (ty < yMin - 2) { ty = yMax + 1.5 - 0.28; txx += 4.5; }
     text('TABELA', txx, ty, .13, `B${p.n}`, 7); text('TABELA', txx + 0.8, ty, .13, p.eixo, 7); text('TABELA', txx + 1.7, ty, .13, brl(p.X), 7); text('TABELA', txx + 2.8, ty, .13, brl(p.Y), 7);
   }
   return [...hdr, '0', 'SECTION', '2', 'ENTITIES', ...o, '0', 'ENDSEC', '0', 'EOF'].join('\r\n');
@@ -228,4 +234,78 @@ export function svgLocacao(loc: Locacao, X: (x: number) => number, Y: (y: number
   return loc.d.linhas.map(l => `<line x1="${X(l.x1)}" y1="${Y(l.y1)}" x2="${X(l.x2)}" y2="${Y(l.y2)}" stroke="${cor(l.cor)}" stroke-width="${l.tr ? 1.2 : 1.6}"${l.tr ? ' stroke-dasharray="24 6 4 6"' : ''}/>`).join('') +
     loc.d.circs.map(c => `<circle cx="${X(c.x)}" cy="${Y(c.y)}" r="${c.r * k}" fill="#fff" stroke="${cor(c.cor)}" stroke-width="2"/>`).join('') +
     loc.d.textos.map(t => `<text x="${X(t.x)}" y="${Y(t.y)}" font-size="${t.h * k * 1.3}" fill="${cor(t.cor)}"${t.centro ? ' text-anchor="middle"' : ''}${t.rot ? ` transform="rotate(${-t.rot} ${X(t.x)} ${Y(t.y)})"` : ''}>${esc(t.t)}</text>`).join('');
+}
+
+// ---------- esperas (arranques) dos painéis na fundação ----------
+// em cada painel, esperas a `borda` das pontas e no meio até o espaçamento máximo; embaixo de porta não tem espera
+export interface Espera { n: number; cod: string; painel: Painel; d: number; x: number; y: number }
+export function esperasPaineis(ps: Painel[], cod: (p: Painel) => string, borda = 0.2, espac = 1.2): Espera[] {
+  const out: Espera[] = [];
+  for (const p of [...ps].sort((a, b) => a.num - b.num)) {
+    // trechos do pé do painel que encostam na fundação (tira as portas)
+    const portas = p.recortes.filter(r => r.base <= 0.01).map(r => [r.dl, r.dl + r.w] as [number, number]).sort((a, b) => a[0] - b[0]);
+    const segs: [number, number][] = []; let s0 = 0;
+    for (const [a, b] of portas) { if (a - s0 > 0.05) segs.push([s0, a]); s0 = Math.max(s0, b); }
+    if (p.larg - s0 > 0.05) segs.push([s0, p.larg]);
+    const ds: number[] = [];
+    for (const [a, b] of segs) {
+      const L = b - a;
+      if (L < 0.15) continue;
+      if (L < 2 * borda + 0.1) { ds.push(a + L / 2); continue; }
+      const i0 = a + borda, i1 = b - borda, k = Math.max(1, Math.ceil((i1 - i0) / espac - 1e-9));
+      for (let j = 0; j <= k; j++) ds.push(i0 + (i1 - i0) * j / k);
+    }
+    for (const d of ds) out.push({ n: out.length + 1, cod: cod(p), painel: p, d, x: p.o === 'H' ? p.a + d : p.c, y: p.o === 'H' ? p.c : p.a + d });
+  }
+  return out;
+}
+
+export function dxfEsperas(pav: Pavimento, ts: Trecho[], ps: Painel[], es: Espera[], cod: (p: Painel) => string, arq: Prim[] = [], borda = 0.2, espac = 1.2): string {
+  const o: string[] = [];
+  const tx = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/·/g, '-').replace(/[^\x20-\x7e]/g, '');
+  const line = (l: string, x1: number, y1: number, x2: number, y2: number, cor: number) => o.push('0', 'LINE', '8', l, '62', String(cor), '10', x1.toFixed(4), '20', y1.toFixed(4), '11', x2.toFixed(4), '21', y2.toFixed(4));
+  const text = (l: string, x: number, y: number, h: number, t: string, cor: number, rot = 0, centro = false) => {
+    o.push('0', 'TEXT', '8', l, '62', String(cor), '10', x.toFixed(4), '20', y.toFixed(4), '40', h.toFixed(3), '1', tx(t));
+    if (rot) o.push('50', String(rot));
+    if (centro) o.push('72', '1', '11', x.toFixed(4), '21', y.toFixed(4));
+  };
+  for (const p of arq) for (let i = 0; i < p.pts.length - 1; i++) line('ARQUITETURA', p.pts[i][0], p.pts[i][1], p.pts[i + 1][0], p.pts[i + 1][1], 8);
+  for (const t of ts) if (t.o === 'H') line('EIXO-PAREDE', t.s, t.c, t.e, t.c, 1); else line('EIXO-PAREDE', t.c, t.s, t.c, t.e, 1);
+  for (const p of ps) {
+    const h = 0.06, [x0, y0, x1, y1] = p.o === 'H' ? [p.a, p.c, p.a + p.larg, p.c] : [p.c, p.a, p.c, p.a + p.larg];
+    const cor = p.num % 2 ? 5 : 30;
+    // painel: faixa fina com risco nas pontas
+    if (p.o === 'H') { line('PAINEL', x0, y0 - h, x1, y1 - h, cor); line('PAINEL', x0, y0 + h, x1, y1 + h, cor); line('PAINEL', x0, y0 - .12, x0, y0 + .12, cor); line('PAINEL', x1, y1 - .12, x1, y1 + .12, cor); }
+    else { line('PAINEL', x0 - h, y0, x1 - h, y1, cor); line('PAINEL', x0 + h, y0, x1 + h, y1, cor); line('PAINEL', x0 - .12, y0, x0 + .12, y0, cor); line('PAINEL', x1 - .12, y1, x1 + .12, y1, cor); }
+    const m = p.a + p.larg / 2;
+    if (p.o === 'H') text('PAINEL-NOME', m, p.c + 0.22, .1, cod(p), cor, 0, true); else text('PAINEL-NOME', p.c - 0.22, m, .1, cod(p), cor, 90, true);
+    // cotas do início do painel até cada espera
+    const ds = es.filter(e => e.painel === p).map(e => e.d);
+    const marcos = [0, ...ds, p.larg];
+    for (let i = 0; i < marcos.length - 1; i++) {
+      const a = p.a + marcos[i], b = p.a + marcos[i + 1]; if (b - a < 0.03) continue;
+      const t = (b - a).toFixed(2).replace('.', ',');
+      if (p.o === 'H') { const y = p.c - 0.3; line('COTA', a, y, b, y, 5); line('COTA', a, y - .04, a, y + .04, 5); line('COTA', b, y - .04, b, y + .04, 5); text('COTA', (a + b) / 2, y - .13, .07, t, 5, 0, true); }
+      else { const x = p.c + 0.3; line('COTA', x, a, x, b, 5); line('COTA', x - .04, a, x + .04, a, 5); line('COTA', x - .04, b, x + .04, b, 5); text('COTA', x + .13, (a + b) / 2, .07, t, 5, 90, true); }
+    }
+  }
+  for (const e of es) {
+    o.push('0', 'CIRCLE', '8', 'ESPERA', '62', '1', '10', e.x.toFixed(4), '20', e.y.toFixed(4), '40', '0.035');
+    line('ESPERA', e.x - .07, e.y - .07, e.x + .07, e.y + .07, 1); line('ESPERA', e.x - .07, e.y + .07, e.x + .07, e.y - .07, 1);
+  }
+  const b = pav.box;
+  text('TEXTO', b.x0, b.y1 + 1.2, .3, `ESPERAS DOS PAINEIS NA FUNDACAO - ${pav.nome.toUpperCase()}`, 7);
+  text('TEXTO', b.x0, b.y1 + 0.8, .14, `${es.length} esperas - ${borda.toFixed(2).replace('.', ',')} m das pontas do painel e no maximo ${espac.toFixed(2).replace('.', ',')} m entre elas - sem espera embaixo de porta - cotas a partir do inicio de cada painel`, 7);
+  let ty = b.y1, txx = b.x1 + 2;
+  text('TABELA', txx, ty, .16, 'PAINEL     ESPERAS (m a partir do inicio do painel)', 7);
+  for (const p of [...ps].sort((a, c) => a.num - c.num)) {
+    ty -= 0.26; if (ty < b.y0 - 2) { ty = b.y1 - 0.26; txx += 6; }
+    text('TABELA', txx, ty, .12, cod(p), 7); text('TABELA', txx + 1.1, ty, .12, es.filter(e => e.painel === p).map(e => e.d.toFixed(2).replace('.', ',')).join('  '), 7);
+  }
+  return ['0', 'SECTION', '2', 'ENTITIES', ...o, '0', 'ENDSEC', '0', 'EOF'].join('\r\n');
+}
+
+export function csvEsperas(es: Espera[], ox = 0, oy = 0): string {
+  const n = (v: number) => v.toFixed(3).replace('.', ',');
+  return ['Espera;Painel;Distancia do inicio do painel (m);X a partir da origem (m);Y a partir da origem (m)', ...es.map(e => `E${e.n};${e.cod};${n(e.d)};${n(e.x - ox)};${n(e.y - oy)}`)].join('\r\n');
 }

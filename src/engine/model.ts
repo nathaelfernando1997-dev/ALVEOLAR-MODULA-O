@@ -5,7 +5,9 @@ import type { Dxf, Pt, Prim } from './dxf.ts';
 // ---------------- configuração ----------------
 export interface Regras {
   larguraMax: number;      // 3,50
-  fundEspac?: number;      // planta de fundação: espaçamento máximo entre pontos ao longo da parede (0 = só cantos, encontros, pontas e colunas)
+  fundEspac?: number;
+  esperaBorda?: number;    // esperas dos painéis na fundação: distância da ponta do painel (m)
+  esperaEspac?: number;    // esperas: espaçamento máximo entre elas (m)      // planta de fundação: espaçamento máximo entre pontos ao longo da parede (0 = só cantos, encontros, pontas e colunas)
   larguraExcecao?: number; // painel acima da largura máxima, até esta medida, é fabricado por exceção (só aviso na conferência)
   coluna: number;          // 0,15 entre painéis
   folga: number;           // 0,05 tirado de cada painel
@@ -378,6 +380,9 @@ export interface Ajustes {
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
+  fundExtra?: { pav: string; x: number; y: number }[];     // pontos de fundação acrescentados à mão
+  fundRemover?: { pav: string; x: number; y: number }[];   // pontos de fundação tirados à mão
+  fundOrigem?: { pav: string; x: number; y: number; dx: number; dy: number };   // origem da locação: ponto escolhido + deslocamento (ex.: até a divisa)
   lajeInteira?: string[];                  // ambientes com um painel só na largura, mesmo acima da largura máxima (fabricar por exceção)
   lajeJuntar?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }[];   // trecho de parede que não divide a laje (a laje passa por cima e junta os ambientes)
   laje16?: string[];                       // (antigo) ambientes com laje de 16 cm

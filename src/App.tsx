@@ -14,7 +14,7 @@ import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
-import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao } from './engine/fundacao.ts';
+import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas } from './engine/fundacao.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
@@ -78,7 +78,8 @@ function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
 
 export default function App() {
   const [aba, setAbaEstado] = useState<Aba>('arquivo');
-  const [verFund, setVerFund] = useState<'pontos' | 'locacao'>('pontos');
+  const [verFund, setVerFund] = useState<'pontos' | 'locacao' | 'esperas' | 'folhas'>('pontos');
+  const [modoFund, setModoFund] = useState<null | 'add' | 'rem' | 'mover' | 'origem' | { x: number; y: number }>(null);
   // aba atual também num ref: o carregamento (que demora) só troca de aba se o usuário não tiver saído dela
   const abaRef = useRef<Aba>('arquivo');
   const setAba = (a: Aba) => { abaRef.current = a; setAbaEstado(a); };
@@ -702,40 +703,128 @@ export default function App() {
         {aba === 'fundacao' && leitura && (
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos.</p></section> : (() => {
             // planta de fundação: paredes do pavimento mais baixo (térreo)
-            const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), pts = pontosFundacao(tf, calc.ps.filter(p => p.pav === pf.id), regras.fundEspac ?? 0);
+            const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), psf = calc.ps.filter(p => p.pav === pf.id);
+            const doPav = <T extends { pav: string }>(l?: T[]) => (l || []).filter(e => e.pav === pf.id);
+            const pts = pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover) });
+            const og = aj.fundOrigem?.pav === pf.id ? aj.fundOrigem : null;
+            const pOg = og ? pts.find(p => Math.hypot(p.x - og.x, p.y - og.y) < 0.15) : null;
+            const origem = og ? { x: og.x + og.dx, y: og.y + og.dy } : null;
+            const origemDesc = og ? `ponto B${pOg?.n ?? '?'}${og.dx || og.dy ? ` deslocado ${br(og.dx)} em X e ${br(og.dy)} em Y` : ''}` : 'eixo 1 / eixo A';
+            const loc = locacao(pts, origem);
+            const sgF = siglas(ativos), codF = (p: Painel) => codigoParede(p, sgF);
+            const eb = regras.esperaBorda ?? 0.2, ee = regras.esperaEspac ?? 1.2, es = esperasPaineis(psf, codF, eb, ee);
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
-            const base = nome.replace(/\.dxf$/i, ''), loc = locacao(pts), q = quadroDe(pf, verFund === 'locacao' ? 6 : 1.4);
-            const svg = verFund === 'locacao' ? arqSvg(q, arqDe(pf.box)) + svgLocacao(loc, q.X, q.Y, q.k) : arqSvg(q, arqDe(pf.box)) +
-              tf.map(t => t.o === 'H' ? `<line x1="${q.X(t.s)}" y1="${q.Y(t.c)}" x2="${q.X(t.e)}" y2="${q.Y(t.c)}" stroke="#c92a2a" stroke-width="${t.esp * q.k}" opacity=".35"/>` : `<line x1="${q.X(t.c)}" y1="${q.Y(t.s)}" x2="${q.X(t.c)}" y2="${q.Y(t.e)}" stroke="#c92a2a" stroke-width="${t.esp * q.k}" opacity=".35"/>`).join('') +
-              pts.map(p => `<circle cx="${q.X(p.x)}" cy="${q.Y(p.y)}" r="${0.25 * q.k}" fill="none" stroke="#1971c2" stroke-width="3"/><rect x="${q.X(p.x) - p.esp * q.k / 2}" y="${q.Y(p.y) - p.esp * q.k / 2}" width="${p.esp * q.k}" height="${p.esp * q.k}" fill="${p.tipo === 'intermediário' ? '#e67700' : '#2b8a3e'}"/><text x="${q.X(p.x) + 20}" y="${q.Y(p.y) - 20}" font-size="${0.16 * q.k}" fill="#1971c2" font-weight="bold">B${p.n}</text>`).join('');
-            return <section className="mod">
+            const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box);
+            const q = quadroDe(pf, verFund === 'locacao' ? 6 : 1.4);
+            const svgPontos = (Q: typeof q) => arqSvg(Q, arqF) +
+              tf.map(t => t.o === 'H' ? `<line x1="${Q.X(t.s)}" y1="${Q.Y(t.c)}" x2="${Q.X(t.e)}" y2="${Q.Y(t.c)}" stroke="#c92a2a" stroke-width="${t.esp * Q.k}" opacity=".35"/>` : `<line x1="${Q.X(t.c)}" y1="${Q.Y(t.s)}" x2="${Q.X(t.c)}" y2="${Q.Y(t.e)}" stroke="#c92a2a" stroke-width="${t.esp * Q.k}" opacity=".35"/>`).join('') +
+              pts.map(p => `<circle cx="${Q.X(p.x)}" cy="${Q.Y(p.y)}" r="${0.25 * Q.k}" fill="none" stroke="#1971c2" stroke-width="3"/><rect x="${Q.X(p.x) - p.esp * Q.k / 2}" y="${Q.Y(p.y) - p.esp * Q.k / 2}" width="${p.esp * Q.k}" height="${p.esp * Q.k}" fill="${p.tipo === 'intermediário' ? '#e67700' : p.tipo === 'manual' ? '#ae3ec9' : '#2b8a3e'}"/><text x="${Q.X(p.x) + 20}" y="${Q.Y(p.y) - 20}" font-size="${0.16 * Q.k}" fill="#1971c2" font-weight="bold">B${p.n}</text>`).join('') +
+              (origem ? `<g stroke="#ae3ec9" stroke-width="4"><line x1="${Q.X(origem.x) - 30}" y1="${Q.Y(origem.y) - 30}" x2="${Q.X(origem.x) + 30}" y2="${Q.Y(origem.y) + 30}"/><line x1="${Q.X(origem.x) - 30}" y1="${Q.Y(origem.y) + 30}" x2="${Q.X(origem.x) + 30}" y2="${Q.Y(origem.y) - 30}"/></g><text x="${Q.X(origem.x) + 35}" y="${Q.Y(origem.y) + 45}" font-size="${0.18 * Q.k}" fill="#ae3ec9">ORIGEM</text>` : '');
+            const svgEsperas = (Q: typeof q) => arqSvg(Q, arqF) +
+              psf.map(p => { const [x0, y0, x1, y1] = p.o === 'H' ? [p.a, p.c, p.a + p.larg, p.c] : [p.c, p.a, p.c, p.a + p.larg]; const m = p.a + p.larg / 2;
+                return `<line x1="${Q.X(x0)}" y1="${Q.Y(y0)}" x2="${Q.X(x1)}" y2="${Q.Y(y1)}" stroke="${p.num % 2 ? '#1971c2' : '#e8590c'}" stroke-width="${0.12 * Q.k}" opacity=".55"/>` +
+                  (p.o === 'H' ? `<text x="${Q.X(m)}" y="${Q.Y(p.c) - 18}" font-size="${0.1 * Q.k}" text-anchor="middle" fill="#333">${codF(p)}</text>` : `<text x="${Q.X(p.c) - 18}" y="${Q.Y(m)}" font-size="${0.1 * Q.k}" text-anchor="middle" fill="#333" transform="rotate(-90 ${Q.X(p.c) - 18} ${Q.Y(m)})">${codF(p)}</text>`); }).join('') +
+              es.map(e => `<g stroke="#c92a2a" stroke-width="3"><line x1="${Q.X(e.x) - 7}" y1="${Q.Y(e.y) - 7}" x2="${Q.X(e.x) + 7}" y2="${Q.Y(e.y) + 7}"/><line x1="${Q.X(e.x) - 7}" y1="${Q.Y(e.y) + 7}" x2="${Q.X(e.x) + 7}" y2="${Q.Y(e.y) - 7}"/></g>`).join('');
+            const svg = verFund === 'locacao' ? arqSvg(q, arqF) + svgLocacao(loc, q.X, q.Y, q.k) : verFund === 'esperas' ? svgEsperas(q) : svgPontos(q);
+            // clique na planta (ferramentas de edição)
+            const perto = (x: number, y: number) => pts.map(p => ({ p, d: Math.hypot(p.x - x, p.y - y) })).sort((a, b) => a.d - b.d)[0];
+            const noEixo = (x: number, y: number) => {
+              // encosta no eixo da parede mais perto
+              const c = tf.map(t => { const u = t.o === 'H' ? Math.min(t.e, Math.max(t.s, x)) : t.c, w = t.o === 'H' ? t.c : Math.min(t.e, Math.max(t.s, y)); return { x: u, y: w, d: Math.hypot(u - x, w - y) }; }).sort((a, b) => a.d - b.d)[0];
+              return c && c.d < 0.4 ? { x: +c.x.toFixed(3), y: +c.y.toFixed(3) } : { x: +x.toFixed(3), y: +y.toFixed(3) };
+            };
+            const tirar = (p: { x: number; y: number }) => {
+              const ex = doPav(aj.fundExtra).find(e => Math.hypot(e.x - p.x, e.y - p.y) < 0.15);
+              return ex ? { fundExtra: (aj.fundExtra || []).filter(e => e !== ex), fundRemover: aj.fundRemover || [] } : { fundExtra: aj.fundExtra || [], fundRemover: [...(aj.fundRemover || []), { pav: pf.id, x: p.x, y: p.y }] };
+            };
+            const clique = (x: number, y: number) => {
+              if (!modoFund) return;
+              if (modoFund === 'add') { setAj({ ...aj, fundExtra: [...(aj.fundExtra || []), { pav: pf.id, ...noEixo(x, y) }] }); return; }
+              const c = perto(x, y);
+              if (modoFund === 'rem') { if (c && c.d < 0.5) setAj({ ...aj, ...tirar(c.p) }); return; }
+              if (modoFund === 'origem') { if (c && c.d < 0.5) { setAj({ ...aj, fundOrigem: { pav: pf.id, x: c.p.x, y: c.p.y, dx: 0, dy: 0 } }); setModoFund(null); } return; }
+              if (modoFund === 'mover') { if (c && c.d < 0.5) setModoFund({ x: c.p.x, y: c.p.y }); return; }
+              // segundo clique do mover: tira o ponto de lá e põe aqui
+              const t = tirar(modoFund); setAj({ ...aj, ...t, fundExtra: [...t.fundExtra, { pav: pf.id, ...noEixo(x, y) }] }); setModoFund('mover');
+            };
+            const dicaModo = modoFund === 'add' ? 'Clique na planta onde quer o ponto (ele encosta no eixo da parede mais perto).' : modoFund === 'rem' ? 'Clique no ponto que quer tirar.' : modoFund === 'origem' ? 'Clique no ponto que será a origem.' : modoFund === 'mover' ? 'Clique no ponto que quer mover.' : modoFund ? 'Agora clique no lugar novo do ponto.' : '';
+            const carimbo = (titulo: string, n: number, tot: number) => <div className="carimbo"><div><b>{titulo}</b><br />{projNome || base} · {pf.nome}</div><div>Origem: {origemDesc}<br />Medidas em metros · sem escala: use as cotas</div><div>{new Date().toLocaleDateString('pt-BR')}<br />Folha {n}/{tot}</div></div>;
+            const qL = quadroDe(pf, 6), qE = quadroDe(pf, 1.4);
+            const linhasTab = loc.pts.map(p => <tr key={p.n}><td>B{p.n}</td><td>{p.eixo}</td><td>{br(p.X)}</td><td>{br(p.Y)}</td><td>{p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</td></tr>);
+            const metade = Math.ceil(linhasTab.length / 2);
+            const tabela = (l: typeof linhasTab) => <table className="tab-loc"><thead><tr><th>Ponto</th><th>Eixo</th><th>X (m)</th><th>Y (m)</th><th>Tipo</th></tr></thead><tbody>{l}</tbody></table>;
+            const folhas = <div className={'folhas folhas-a3' + (verFund === 'folhas' ? '' : ' so-imp')}>
+              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qL.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k) }} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, 3)}</div>
+              <div className="folha a3"><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, 3)}</div>
+              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qE.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: svgEsperas(qE) }} /></div>{carimbo(`ESPERAS DOS PAINÉIS (${es.length}) · ${br(eb)} m das pontas · máx. ${br(ee)} m entre elas`, 3, 3)}</div>
+            </div>;
+            return <>
+            <section className="mod noprint">
               <div className="lado">
                 <div className="card acoes">
-                  <h3>Planta de fundação (para o Eberick)</h3>
+                  <h3>Pontos de fundação (para o Eberick)</h3>
                   <p>{pf.nome}: <b>{pts.length} pontos</b></p>
-                  <p className="dica">{cont('L')} cantos (L) · {cont('T')} encontros (T) · {cont('X')} cruzamentos · {cont('ponta')} pontas · {cont('coluna')} colunas no meio da parede{cont('emenda') ? ` · ${cont('emenda')} emendas` : ''}{cont('intermediário') ? ` · ${cont('intermediário')} intermediários (laranja)` : ''}</p>
+                  <p className="dica">{cont('L')} cantos (L) · {cont('T')} encontros (T) · {cont('X')} cruzamentos · {cont('ponta')} pontas · {cont('coluna')} colunas no meio da parede{cont('emenda') ? ` · ${cont('emenda')} emendas` : ''}{cont('intermediário') ? ` · ${cont('intermediário')} intermediários (laranja)` : ''}{cont('manual') ? ` · ${cont('manual')} acrescentados (roxo)` : ''}</p>
                   <label>Espaçamento máximo entre pontos ao longo da parede (m) — 0 = só cantos, encontros, pontas e colunas
                     <input type="number" step="0.1" value={regras.fundEspac ?? 0} onChange={e => setRegras({ ...regras, fundEspac: parseFloat(e.target.value) || 0 })} /></label>
-                  <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqDe(pf.box)), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
+                  <h3>Editar pontos</h3>
+                  <div className="botoes">
+                    {([['add', 'Acrescentar'], ['rem', 'Tirar'], ['mover', 'Mover']] as const).map(([k, t]) => <button key={k} className={modoFund === k || (k === 'mover' && typeof modoFund === 'object' && modoFund) ? 'on' : ''} onClick={() => { setModoFund(modoFund === k ? null : k); setVerFund('pontos'); }}>{t}</button>)}
+                  </div>
+                  {dicaModo && <p className="dica"><b>{dicaModo}</b> (clique de novo no botão para parar)</p>}
+                  {(doPav(aj.fundExtra).length > 0 || doPav(aj.fundRemover).length > 0) && <button onClick={() => setAj({ ...aj, fundExtra: (aj.fundExtra || []).filter(e => e.pav !== pf.id), fundRemover: (aj.fundRemover || []).filter(e => e.pav !== pf.id) })}>Voltar aos pontos automáticos ({doPav(aj.fundExtra).length} acrescentados, {doPav(aj.fundRemover).length} tirados)</button>}
+                  <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
                   <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
+                  <p className="dica">DXF em metros, nas mesmas coordenadas do projeto. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
+                </div>
+                <div className="card acoes">
                   <h3>Planta de locação</h3>
-                  <p className="dica">Eixos numerados (1, 2, 3… na vertical) e com letras (A, B, C… na horizontal), cotas parciais e acumuladas a partir da origem (eixo 1 / eixo A, canto de baixo à esquerda) e a coordenada de cada ponto.</p>
-                  <button onClick={() => baixar(base + '-locacao.dxf', dxfLocacao(pf, loc, arqDe(pf.box)), 'application/dxf')}>Baixar planta de locação (DXF)</button>
+                  <p className="dica">Origem: <b>{origemDesc}</b>.</p>
+                  <button className={modoFund === 'origem' ? 'on' : ''} onClick={() => { setModoFund(modoFund === 'origem' ? null : 'origem'); setVerFund('pontos'); }}>Escolher a origem na planta (clique num ponto)</button>
+                  {og && <div className="grade">
+                    <label>Deslocar a origem em X (m)<input type="number" step="0.01" key={'dx' + og.x} defaultValue={og.dx} onBlur={e => setAj({ ...aj, fundOrigem: { ...og, dx: parseFloat(e.target.value.replace(',', '.')) || 0 } })} /></label>
+                    <label>Deslocar a origem em Y (m)<input type="number" step="0.01" key={'dy' + og.y} defaultValue={og.dy} onBlur={e => setAj({ ...aj, fundOrigem: { ...og, dy: parseFloat(e.target.value.replace(',', '.')) || 0 } })} /></label>
+                  </div>}
+                  {og && <p className="dica">Ex.: divisa 1,50 m à esquerda do ponto → X = -1,50; 2,00 m abaixo → Y = -2,00.</p>}
+                  {og && <button onClick={() => setAj({ ...aj, fundOrigem: undefined })}>Voltar a origem para o canto de baixo à esquerda</button>}
+                  <button onClick={() => baixar(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc), 'application/dxf')}>Baixar planta de locação (DXF)</button>
                   <button onClick={() => baixar(base + '-locacao.csv', csvLocacao(loc), 'text/csv')}>Baixar coordenadas da locação (CSV)</button>
-                  <p className="dica">O DXF está em metros, nas mesmas coordenadas do projeto, com cotas entre os pontos e a tabela de coordenadas. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
+                </div>
+                <div className="card acoes">
+                  <h3>Esperas dos painéis</h3>
+                  <p><b>{es.length} esperas</b> em {psf.length} painéis</p>
+                  <div className="grade">
+                    <label>Distância da ponta do painel (m)<input type="number" step="0.01" value={eb} onChange={e => setRegras({ ...regras, esperaBorda: parseFloat(e.target.value) || 0 })} /></label>
+                    <label>Espaçamento máximo entre esperas (m)<input type="number" step="0.05" value={ee} onChange={e => setRegras({ ...regras, esperaEspac: parseFloat(e.target.value) || 1.2 })} /></label>
+                  </div>
+                  <p className="dica">Embaixo de porta não tem espera. As cotas saem a partir do início de cada painel.</p>
+                  <button onClick={() => baixar(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee), 'application/dxf')}>Baixar planta das esperas (DXF)</button>
+                  <button onClick={() => baixar(base + '-esperas.csv', csvEsperas(es, loc.ox, loc.oy), 'text/csv')}>Baixar tabela das esperas (CSV)</button>
+                </div>
+                <div className="card acoes">
+                  <h3>Folhas para imprimir (A3 deitado)</h3>
+                  <p className="dica">Locação, tabela de coordenadas e esperas, com carimbo. Na impressão escolha <b>A3</b> e <i>Salvar como PDF</i> (ou mande para a gráfica).</p>
+                  <button onClick={() => { setVerFund('folhas'); setTimeout(() => window.print(), 300); }}>Imprimir / salvar PDF</button>
                 </div>
                 <div className="card acoes">
                   <h3>Pontos</h3>
-                  <p className="dica">Coordenadas a partir da origem (eixo 1 / eixo A).</p>
-                  {loc.pts.map(p => <div key={p.n} className="dica">B{p.n} · eixo {p.eixo} · X {p.X.toFixed(2).replace('.', ',')} · Y {p.Y.toFixed(2).replace('.', ',')} · {p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</div>)}
+                  <p className="dica">Coordenadas a partir da origem.</p>
+                  {loc.pts.map(p => <div key={p.n} className="dica">B{p.n} · eixo {p.eixo} · X {br(p.X)} · Y {br(p.Y)} · {p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</div>)}
                 </div>
               </div>
               <div className="planta">
-                <div className="botoes"><button className={verFund === 'pontos' ? 'on' : ''} onClick={() => setVerFund('pontos')}>Pontos de fundação</button><button className={verFund === 'locacao' ? 'on' : ''} onClick={() => setVerFund('locacao')}>Planta de locação</button></div>
-                <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} /></ZoomSvg>
-                <p className="dica">Pontos de fundação nas paredes do {pf.nome.toLowerCase()}: verde = canto, encontro, ponta ou coluna · laranja = intermediário pelo espaçamento. Mudou as paredes, a planta acompanha.</p>
+                <div className="botoes">{([['pontos', 'Pontos de fundação'], ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
+                {verFund !== 'folhas' && <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} />
+                  {modoFund && verFund === 'pontos' && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(174,62,201,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
+                    const el = (e.target as SVGElement).ownerSVGElement!; const pt = el.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+                    const v = pt.matrixTransform(el.getScreenCTM()!.inverse()); clique(q.iX(v.x), q.iY(v.y)); }} />}
+                  {typeof modoFund === 'object' && modoFund && <circle cx={q.X(modoFund.x)} cy={q.Y(modoFund.y)} r={0.3 * q.k} fill="none" stroke="#ae3ec9" strokeWidth={6} />}
+                </ZoomSvg>}
+                {verFund !== 'folhas' && <p className="dica">{verFund === 'esperas' ? 'Painéis do térreo (azul e laranja alternados) com as esperas (x vermelho).' : 'Pontos de fundação nas paredes do térreo: verde = canto, encontro, ponta ou coluna · laranja = intermediário · roxo = acrescentado à mão. Mudou as paredes, a planta acompanha.'}</p>}
               </div>
-            </section>;
+            </section>
+            {folhas}
+            </>;
           })()
         )}
         {aba === 'vigas' && leitura && (
