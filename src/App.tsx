@@ -329,7 +329,7 @@ export default function App() {
       // o sentido da laje leva em conta as paredes do pavimento de cima
       // sem parede embaixo da borda da área coberta: viga apoiada em pilares
       const bv: Trecho[] = [];
-      const am = ambientes(p, t, pp, vz, { fechar: novo, cobertas: cob, vigasBorda: bv });
+      const am = ambientes(p, t, pp, vz, { fechar: novo, cobertas: cob, vigasBorda: bv, juntar: (aj.lajeJuntar || []).filter(j => j.pav === p.id) });
       for (const b of bv) b.esp = regras.vigaLargura;
       pisos.push(...bv);
       const m = modularLajes(am, regras, aj, [...t, ...pp, ...bv], cargasDeCima([...t, ...pp, ...bv], tc, man, regras.trelicaSobreVao), bordas);
@@ -634,6 +634,12 @@ export default function App() {
                     {(aj.vigasManuais || []).filter(v => v.pav === pavAtual.id).map((v, i) => <div key={i} className="corte-item">{v.o === 'H' ? 'horizontal' : 'vertical'} · {br(v.b - v.a)} m
                       <button onClick={() => setAj({ ...aj, vigasManuais: (aj.vigasManuais || []).filter(x => x !== v) })}>remover</button></div>)}
                   </div>
+                  {(aj.lajeJuntar || []).some(j => j.pav === pavAtual.id) && <div className="card acoes">
+                    <h3>Ambientes juntados na laje</h3>
+                    <p className="dica">A laje passa por cima destas paredes (os ambientes viram um só na laje). A parede continua sendo fabricada.</p>
+                    {(aj.lajeJuntar || []).filter(j => j.pav === pavAtual.id).map((j, i) => <div key={i} className="corte-item">parede {j.o === 'H' ? 'horizontal' : 'vertical'} · {br(j.b - j.a)} m
+                      <button onClick={() => setAj({ ...aj, lajeJuntar: (aj.lajeJuntar || []).filter(x => x !== j) })}>separar</button></div>)}
+                  </div>}
                   <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />
                 </>}
               {aba === 'modulacao' && <div className="card acoes">
@@ -1171,7 +1177,7 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
 function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: LajeAmb | null; lajeSel: string | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento; espPadrao: number }) {
   const lj = calc.lajes.filter(a => a.pav === pav.id && a.incluida), P = calc.pl.filter(p => p.pav === pav.id);
   const area = P.reduce((s, p) => s + areaLaje(p), 0);
-  const tog = (k: 'lajeFora' | 'lajeGiro' | 'laje16', id: string) => setAj({ ...aj, [k]: (aj[k] || []).includes(id) ? (aj[k] || []).filter(x => x !== id) : [...(aj[k] || []), id] });
+  const tog = (k: 'lajeFora' | 'lajeGiro' | 'laje16' | 'lajeInteira', id: string) => setAj({ ...aj, [k]: (aj[k] || []).includes(id) ? (aj[k] || []).filter(x => x !== id) : [...(aj[k] || []), id] });
   return <div className="card acoes">
     <h3>Laje sobre {pav.nome}</h3>
     <p>{P.length} painéis · {br(area)} m² · {lj.length} ambientes</p>
@@ -1201,6 +1207,16 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: Laj
       {P.filter(p => p.amb === amb.id).map(p => <div key={p.num} className="dica">L{p.num}: {br(p.comp)} × {br(p.larg)}{p.dente ? ` · dente ${br(p.dente.x1 - p.dente.x0)} × ${br(p.dente.y1 - p.dente.y0)}` : ''}</div>)}
       <button onClick={() => tog('lajeFora', amb.id)}>{(aj.lajeFora || []).includes(amb.id) ? 'Colocar laje neste ambiente' : 'Sem laje aqui (vazio, área externa)'}</button>
       <button onClick={() => tog('lajeGiro', amb.id)}>Girar o sentido dos painéis</button>
+      {(P.filter(p => p.amb === amb.id).length > 1 || (aj.lajeInteira || []).includes(amb.id)) && <button onClick={() => setAj({ ...aj, lajeInteira: (aj.lajeInteira || []).includes(amb.id) ? (aj.lajeInteira || []).filter(x => x !== amb.id) : [...(aj.lajeInteira || []), amb.id] })}>
+        {(aj.lajeInteira || []).includes(amb.id) ? 'Voltar a dividir na largura máxima' : 'Laje inteira (um painel só na largura)'}</button>}
+      {(() => {
+        // juntar com o ambiente vizinho: a parede entre os dois deixa de dividir a laje
+        const lados = ([['o', 'à esquerda'], ['l', 'à direita'], ['n', 'de cima'], ['s', 'de baixo']] as const).filter(([l]) => amb.apoio[l] && !amb.externo?.[l]);
+        const seg = (l: 'o' | 'l' | 's' | 'n') => l === 'o' || l === 'l' ? { pav: pav.id, o: 'V' as const, c: l === 'o' ? amb.x0 : amb.x1, a: amb.y0, b: amb.y1 } : { pav: pav.id, o: 'H' as const, c: l === 's' ? amb.y0 : amb.y1, a: amb.x0, b: amb.x1 };
+        return lados.length ? <>
+          {lados.map(([l, t]) => <button key={l} onClick={() => setAj({ ...aj, lajeJuntar: [...(aj.lajeJuntar || []), seg(l)] })}>Juntar com o ambiente {t} (laje passa por cima da parede)</button>)}
+        </> : null;
+      })()}
       <label>Pé-direito deste ambiente (m) — vazio = {br(pav.altura)} do pavimento
         <input type="number" step="0.01" key={'pe' + amb.id} defaultValue={aj.peAmb?.[amb.id] ?? ''} onBlur={e => {
           const v = parseFloat(e.target.value.replace(',', '.')); const m = { ...(aj.peAmb || {}) };

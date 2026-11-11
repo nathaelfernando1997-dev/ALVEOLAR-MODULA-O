@@ -377,6 +377,8 @@ export interface Ajustes {
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
+  lajeInteira?: string[];                  // ambientes com um painel só na largura, mesmo acima da largura máxima (fabricar por exceção)
+  lajeJuntar?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }[];   // trecho de parede que não divide a laje (a laje passa por cima e junta os ambientes)
   laje16?: string[];                       // (antigo) ambientes com laje de 16 cm
   lajeEspAmb?: Record<string, number>;     // espessura da laje por ambiente (m); 16 cm usa treliça TG12, 20 cm TG16, 25 cm TG20
   lajeEspPainel?: Record<string, number>;  // espessura de um painel de laje só (chave = ambiente@canto), vale mais que a do ambiente

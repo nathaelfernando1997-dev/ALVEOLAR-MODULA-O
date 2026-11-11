@@ -22,12 +22,12 @@ const agrupa = (vs: number[], tol = 0.06) => {
 // op.fechar = cálculo novo (motor 2): fecha quinas abertas e tira sobras minúsculas
 // op.cobertas = ambientes do pavimento de cima (nesta planta): área sem paredes embaixo deles (garagem, varanda) leva laje,
 // apoiada em vigas na borda, que voltam em `op.vigasBorda`
-export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], vazios: Box[] = [], op: { fechar?: boolean; cobertas?: Box[]; vigasBorda?: Trecho[] } = {}): Ambiente[] {
+export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], vazios: Box[] = [], op: { fechar?: boolean; cobertas?: Box[]; vigasBorda?: Trecho[]; juntar?: { o: 'H' | 'V'; c: number; a: number; b: number }[] } = {}): Ambiente[] {
   let cobertas = op.cobertas ?? [];
   const vigasBorda = op.vigasBorda;
   if (cobertas.length) {
     // só as áreas de cima que ficam (quase todas) fora dos ambientes daqui
-    const base = ambientes(pav, ts, extras, vazios, { fechar: op.fechar });
+    const base = ambientes(pav, ts, extras, vazios, { fechar: op.fechar, juntar: op.juntar });
     const sob = (b: Box) => base.reduce((s, a) => s + Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)), 0);
     cobertas = cobertas.filter(b => { const A = (b.x1 - b.x0) * (b.y1 - b.y0); return A > 1 && A - sob(b) > 0.3 * A; });
     if (!cobertas.length) return base;
@@ -43,7 +43,10 @@ export function ambientes(pav: Pavimento, ts: Trecho[], extras: Trecho[] = [], v
   if (xs.length < 2 || ys.length < 2) return [];
   // parede cobrindo uma aresta da malha (folga para colunas nos encontros)
   // a aresta pode estar coberta por mais de um trecho (parede dividida nos encontros em T)
+  const juntar = op.juntar ?? [];
   const parede = (o: 'H' | 'V', c: number, a: number, b: number) => {
+    // trecho marcado para juntar os ambientes: a laje passa por cima da parede
+    if (juntar.some(j => j.o === o && Math.abs(j.c - c) < 0.08 && j.a <= (a + b) / 2 && (a + b) / 2 <= j.b)) return undefined;
     const ps = T.filter(t => t.o === o && Math.abs(t.c - c) < 0.08 && t.s < b && t.e > a).sort((p, q) => p.s - q.s);
     if (!ps.length) return undefined;
     let pos = a;
@@ -218,8 +221,10 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       const [l0, l1] = sent === 'H' ? [cy0, cy1] : [cx0, cx1];
       const oParede: 'H' | 'V' = sent === 'H' ? 'V' : 'H';
       // parede interna paralela às bordas de apoio, cobrindo boa parte do outro lado
+      // parede marcada para juntar os ambientes: a laje passa por cima, não apoia nela
+      const juntada = (t: Trecho) => (aj.lajeJuntar || []).some(j => j.pav === a.pav && j.o === t.o && Math.abs(j.c - t.c) < 0.08 && Math.min(j.b, l1) - Math.max(j.a, l0) > 0.3);
       const internas = ts.filter(t => t.pav === a.pav && t.o === oParede && t.c > ini + 0.3 && t.c < fim - 0.3 &&
-        Math.min(t.e, l1) - Math.max(t.s, l0) > 0.6 * (l1 - l0)).map(t => ({ c: t.c, esp: t.esp })).sort((p, q) => p.c - q.c);
+        Math.min(t.e, l1) - Math.max(t.s, l0) > 0.6 * (l1 - l0) && !juntada(t)).map(t => ({ c: t.c, esp: t.esp })).sort((p, q) => p.c - q.c);
       const apoios: { a: number; b: number }[] = [{ a: ini - 1, b: ini }];
       for (const w of internas) apoios.push({ a: w.c - w.esp / 2, b: w.c + w.esp / 2 });
       apoios.push({ a: fim, b: fim + 1 });
@@ -286,7 +291,9 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const [pa0, pa1] = lados(esc.sn).pontas;
     // folga entre painéis vizinhos para o encaixe
     const f = r.lajeFolga ?? 0.02;
-    const n = Math.max(1, Math.ceil((ladoL + f) / (r.lajeLarg + f) - 1e-9)), w = (ladoL - (n - 1) * f) / n;
+    const inteira = (aj.lajeInteira || []).includes(a.id);
+    const n = inteira ? 1 : Math.max(1, Math.ceil((ladoL + f) / (r.lajeLarg + f) - 1e-9)), w = (ladoL - (n - 1) * f) / n;
+    if (inteira && w > r.lajeLarg + 1e-6) { const t = `painel inteiro de ${br2(w)} m de largura, acima do máximo de ${br2(r.lajeLarg)} m — fabricar por exceção`; L.aviso = L.aviso ? `${L.aviso} · ${t}` : t; }
     esc.p.vaos.forEach(([s0, s1], iv) => { for (let k = 0; k < n; k++) {
       // nas pontas com beiral o painel vai até a linha da projeção
       const ult = iv === esc.p.vaos.length - 1;
