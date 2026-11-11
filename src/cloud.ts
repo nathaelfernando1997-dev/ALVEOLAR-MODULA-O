@@ -125,3 +125,11 @@ export function situacoes(hist: Marcacao[]): Map<string, { etapas: Marcacao[]; a
   for (const h of hist) { const l = m.get(h.peca) || []; if (h.etapa === 'desfeita') l.pop(); else l.push(h); m.set(h.peca, l); }
   return new Map([...m].map(([k, l]) => [k, { etapas: l, atual: l[l.length - 1] ?? null }]));
 }
+
+// ---------- planta para o portal do cliente (sistema de gestão; tabela da migração 0025 do gestão) ----------
+export async function enviarPlantaPortal(projeto: string, dados: unknown) {
+  const { error } = await sb!.from('planta_portal').upsert({ projeto, dados, atualizado: new Date().toISOString() });
+  if (error) throw new Error(/planta_portal|relation|schema cache/i.test(error.message)
+    ? 'Falta rodar no Supabase a migração 0025 do sistema de gestão (planta do portal).'
+    : 'Não enviou: ' + error.message);
+}

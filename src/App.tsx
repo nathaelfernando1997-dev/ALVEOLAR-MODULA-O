@@ -16,6 +16,7 @@ import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, pesoBitola, ESTACA_PADRAO, quantEstaca, fundacaoTecnico, dxfFundacaoDetalhe } from './engine/fundacao.ts';
 import { ZoomSvg } from './Zoom.tsx';
+import { plantaPortal } from './engine/portal.ts';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
 import * as cloud from './cloud.ts';
@@ -711,6 +712,7 @@ export default function App() {
 
         {aba === 'acompanhamento' && leitura && prod && (
           <Acompanhamento prod={prod} ativos={ativos} calc={calc} arqDe={arqDe} marcs={marcs} chave={chaveQR} logado={!!(sess && projId && cloud.nuvemConfigurada)}
+            projId={projId} planta={() => plantaPortal(nome.replace(/\.dxf$/i, ''), ativos, calc, regras, aj)}
             atualizar={() => projId && cloud.lerMarcacoes(projId).then(setMarcs)}
             trocar={async () => { if (projId && confirm('Trocar a chave da obra? As etiquetas impressas param de funcionar e precisam ser impressas de novo.')) setChaveQR(await cloud.chaveObra(projId, true)); }} />
         )}
@@ -1793,13 +1795,30 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
   </div>;
 }
 
-function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atualizar, trocar }: { prod: Prod; ativos: Pavimento[]; calc: Calc; arqDe: (b: Box) => Prim[]; marcs: cloud.Marcacao[]; chave: string | null; logado: boolean; atualizar: () => void; trocar: () => void }) {
+// card "Portal do cliente": manda a planta (paredes, lajes e estacas) para o sistema de gestão
+function CardPortal({ projId, planta, logado }: { projId: string | null; planta: () => ReturnType<typeof plantaPortal>; logado: boolean }) {
+  const [msg, setMsg] = useState(''); const [ocupado, setOcupado] = useState(false);
+  const baixar = () => { const b = new Blob([JSON.stringify(planta())], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'planta-portal.json'; a.click(); };
+  return <div className="card acoes">
+    <h3>Portal do cliente</h3>
+    <p className="dica">O cliente vê no portal do sistema de gestão a planta da obra: estacas concretadas e paredes/lajes montadas (pelo QR das etiquetas).</p>
+    {logado && projId ? <>
+      <p className="dica">1) Envie a planta (de novo sempre que mudar o projeto). 2) No sistema de gestão, na obra → <b>Planta</b>, cole o código abaixo.</p>
+      <button disabled={ocupado} onClick={async () => { setOcupado(true); setMsg(''); try { await cloud.enviarPlantaPortal(projId, planta()); setMsg('✔ Planta enviada ao portal.'); } catch (e) { setMsg((e as Error).message); } setOcupado(false); }}>{ocupado ? 'Enviando…' : 'Enviar planta ao portal'}</button>
+      <p className="dica">Código da modulação: <b style={{ userSelect: 'all' }}>{projId}</b> <button onClick={() => { navigator.clipboard?.writeText(projId); setMsg('Código copiado.'); }}>Copiar</button></p>
+    </> : <p className="dica">Para enviar ao portal, entre com o seu e-mail e abra o projeto salvo na nuvem.</p>}
+    <button onClick={baixar}>Baixar planta do portal (.json)</button>
+    {msg && <p className={msg.startsWith('✔') || msg.startsWith('Código') ? 'dica' : 'erro'}>{msg}</p>}
+  </div>;
+}
+
+function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atualizar, trocar, projId, planta }: { prod: Prod; ativos: Pavimento[]; calc: Calc; arqDe: (b: Box) => Prim[]; marcs: cloud.Marcacao[]; chave: string | null; logado: boolean; atualizar: () => void; trocar: () => void; projId: string | null; planta: () => ReturnType<typeof plantaPortal> }) {
   const [pavV, setPavV] = useState(ativos[0]?.id ?? ''); const [tipoV, setTipoV] = useState<'Parede' | 'Laje'>('Parede');
   const sit = cloud.situacoes(marcs), atual = (c: string) => sit.get(c)?.atual?.etapa ?? null, fez = (c: string, e: cloud.Etapa) => !!sit.get(c)?.etapas.some(x => x.etapa === e);
   const P = prod.pecas, tot = P.length;
   const conta = (e: cloud.Etapa, l = P) => l.filter(p => fez(p.codigo, e)).length;
   const probs = P.filter(p => atual(p.codigo) === 'problema');
-  if (!logado) return <section className="card"><p>Para acompanhar a produção e a obra, entre com o seu e-mail e abra o projeto salvo na nuvem.</p></section>;
+  if (!logado) return <section className="mod acomp"><div className="lado"><section className="card"><p>Para acompanhar a produção e a obra, entre com o seu e-mail e abra o projeto salvo na nuvem.</p></section><CardPortal projId={projId} planta={planta} logado={false} /></div></section>;
   const pav = ativos.find(p => p.id === pavV) || ativos[0], q = quadroDe(pav), sg = prod.sg;
   const desenho = arqSvg(q, arqDe(pav.box)) + (tipoV === 'Parede'
     ? calc.ps.filter(p => p.pav === pav.id).map(p => { const c = corEtapa(atual(codigoParede(p, sg))); const [x1, y1, x2, y2] = p.o === 'H' ? [p.a, p.c, p.a + p.larg, p.c] : [p.c, p.a, p.c, p.a + p.larg]; return `<line x1="${q.X(x1)}" y1="${q.Y(y1)}" x2="${q.X(x2)}" y2="${q.Y(y2)}" stroke="${c}" stroke-width="${0.16 * q.k}" opacity=".9"><title>${codigoParede(p, sg)} · ${nomeEtapa(atual(codigoParede(p, sg)))}</title></line>`; }).join('')
@@ -1832,6 +1851,7 @@ function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atual
         {[...marcs].reverse().slice(0, 40).map((m, i) => <div key={i} className="dica">{new Date(m.em).toLocaleString('pt-BR')} · <b>{m.peca}</b> · {m.etapa === 'desfeita' ? 'desfez' : nomeEtapa(m.etapa)} · {m.por}{m.obs ? ` · ${m.obs}` : ''}</div>)}
         {!marcs.length && <p className="dica">Nenhuma marcação ainda.</p>}
       </div>
+      <CardPortal projId={projId} planta={planta} logado={logado} />
       {chave && <div className="card acoes"><h3>Chave da obra</h3>
         <p className="dica">O QR das etiquetas leva uma chave secreta: quem escaneia marca as peças desta obra sem login. Se uma etiqueta vazar, troque a chave e imprima as etiquetas de novo.</p>
         <button onClick={trocar}>Trocar chave da obra</button></div>}
