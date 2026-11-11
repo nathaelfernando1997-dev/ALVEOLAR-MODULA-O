@@ -722,24 +722,23 @@ export function desenhoFundacao(ob: OpBloco, oe: OpEstaca, nomes?: { bloco?: str
   t(RX, RY + fd * S10 / 2 + 5, `${qe.nEstr} N4 ø${oe.bitEstr.toFixed(1)} C=${i0(qe.cEstr * 100)}`, 1.9, 'TEXTO', 'middle');
 
   // ===================== BLOCO =====================
-  // N1 = estribos horizontais (deitados) empilhados na altura; N2 = estribos verticais (em pé), paralelos
+  // gaiola 4x4: N1 = estribos em pé na direção X, N2 = estribos em pé na direção Y (cruzados)
   const S25 = 0.5;   // 1:20 = 0,5 mm por cm
   const A = cmb(ob.armLado), AH = cmb(ob.armAlt), cb = (bl - A) / 2, cbf = (bh - AH) / 2, n = ob.barras;
-  const espH = n > 1 ? AH / (n - 1) : 0, espV = n > 1 ? A / (n - 1) : 0;
-  const nBit = ob.bitola.toFixed(1), Cb = i0(qb.comp * 100), espB = i0(espH), espBv = i0(espV);
+  const espV = n > 1 ? A / (n - 1) : 0;
+  const nBit = ob.bitola.toFixed(1), Cb = i0(qb.comp * 100), espBv = i0(espV);
   const pil = 15;   // coluna no canto das paredes (cm)
   const PX = 192, PY = 34;
   t(PX - 6, 14, nomes?.bloco ?? `B1 a B${ob.qtd}`, 2.6, 'TITULO'); t(PX - 6, 17.4, `1ø${i0(fu)} · ${ob.qtd} iguais`, 1.9);
   titulo(PX - 6, PY - 10, 'PLANTA', 'ESC 1:20');
   const W = bl * S25;
   r(PX, PY, W, W, 'CONCRETO', true);
-  // N1 (deitado) visto de cima: o quadrado; N2 (em pé) visto de cima: linhas
-  r(PX + cb * S25, PY + cb * S25, A * S25, A * S25, 'FERRO');
-  for (let i = 1; i < n - 1; i++) l(PX + cb * S25, PY + (cb + i * espV) * S25, PX + (cb + A) * S25, PY + (cb + i * espV) * S25, 'FERRO', 0.3);
+  // vistos de cima: N1 = linhas na direção X, N2 = linhas na direção Y (grade 4x4)
+  for (let i = 0; i < n; i++) { const p = (cb + i * espV) * S25; l(PX + cb * S25, PY + p, PX + (cb + A) * S25, PY + p, 'FERRO', 0.3); l(PX + p, PY + cb * S25, PX + p, PY + (cb + A) * S25, 'FERRO', 0.3); }
   circ(PX + W / 2, PY + W / 2, fu * S25 / 2, 'ESTACA');
   P.push({ k: 'r', x: PX + W / 2 - pil * S25 / 2, y: PY + W / 2 - pil * S25 / 2, w: pil * S25, h: pil * S25, c: 'CHAMADA', fill: true });
-  l(PX + cb * S25, PY + (cb + espV) * S25, PX - 5, PY - 3, 'CHAMADA', 0.12); t(PX - 5.5, PY - 2.4, 'N2', 1.8, 'CHAMADA', 'end');
-  l(PX + (cb + A) * S25, PY + (cb + A * 0.8) * S25, PX + W + 6, PY + W + 2, 'CHAMADA', 0.12); t(PX + W + 6.5, PY + W + 2.6, 'N1', 1.8, 'CHAMADA');
+  l(PX + (cb + A * 0.6) * S25, PY + cb * S25, PX - 5, PY - 3, 'CHAMADA', 0.12); t(PX - 5.5, PY - 2.4, `${n} N1 c/${espBv}`, 1.8, 'CHAMADA', 'end');
+  l(PX + (cb + A) * S25, PY + (cb + A * 0.8) * S25, PX + W + 6, PY + W + 2, 'CHAMADA', 0.12); t(PX + W + 6.5, PY + W + 2.6, `${n} N2 c/${espBv}`, 1.8, 'CHAMADA');
   cH(PX, PX + W, PY + W + 4, i0(bl), PY + W + 0.5);
   cV(PX + W + 4, PY, PY + W, i0(bl), PX + W + 0.5);
   // N1 desenhado embaixo da planta
@@ -748,7 +747,7 @@ export function desenhoFundacao(ob: OpBloco, oe: OpEstaca, nomes?: { bloco?: str
     t(x + w * S25 / 2, y + h * S25 + 2.6, i0(w), 1.8, 'TEXTO', 'middle'); t(x + w * S25 + 1.2, y + h * S25 / 2 + 0.7, i0(h), 1.8);
     t(x + w * S25 / 2, y + h * S25 + 6, `${qt} ${nn} ø${nBit} C=${Cb}`, 1.9, 'TEXTO', 'middle');
   };
-  est(PX + cb * S25, PY + W + 14, A, A, 'N1', n);
+  est(PX + cb * S25, PY + W + 14, A, AH, 'N1', n);
   // CORTE do bloco a 1:20
   const KX = PX + 50, KY = PY;
   titulo(KX - 6, KY - 10, 'CORTE', 'ESC 1:20');
@@ -759,14 +758,14 @@ export function desenhoFundacao(ob: OpBloco, oe: OpEstaca, nomes?: { bloco?: str
   r(KX, KY, W, H2, 'CONCRETO', true);
   const ew = fu * S25, ex = KX + W / 2 - ew / 2;
   r(ex, KY + H2, ew, 14, 'ESTACA', true);
-  // N2 (em pé, no plano do corte) = quadrado; N1 (deitados) = linhas horizontais c/15
+  // N1 no plano do corte = quadrado; N2 (do outro sentido) vistos de lado = linhas em pé
   const x0 = KX + cb * S25, y0 = KY + cbf * S25;
   r(x0, y0, A * S25, AH * S25, 'FERRO'); l(x0, y0, x0 + 2, y0 + 2, 'FERRO', 0.3);
-  for (let i = 1; i < n - 1; i++) l(x0, y0 + i * espH * S25, x0 + A * S25, y0 + i * espH * S25, 'FERRO', 0.3);
+  for (let i = 1; i < n - 1; i++) l(x0 + i * espV * S25, y0, x0 + i * espV * S25, y0 + AH * S25, 'FERRO', 0.3);
   // ferros da estaca entrando no bloco
   for (const sx of [-1, 1]) l(KX + W / 2 + sx * fd * S25 / 2, KY + (bh - nb) * S25, KX + W / 2 + sx * fd * S25 / 2, KY + H2 + 14, 'FERRO', 0.3);
-  t(KX + W + 2, KY + H2 * 0.45, `${n} N1 c/${espB}`, 1.8);
-  l(x0 + A * S25 * 0.25, y0 + AH * S25, KX - 6, KY + H2 + 6, 'CHAMADA', 0.12); t(KX - 6.5, KY + H2 + 6.6, 'N2', 1.8, 'CHAMADA', 'end');
+  l(x0 + A * S25, y0 + AH * S25 * 0.4, KX + W + 3, KY + H2 * 0.4, 'CHAMADA', 0.12); t(KX + W + 3.5, KY + H2 * 0.4 + 0.6, `${n} N1 c/${espBv}`, 1.8);
+  l(x0 + espV * S25, y0 + AH * S25 * 0.7, KX - 6, KY + H2 + 6, 'CHAMADA', 0.12); t(KX - 6.5, KY + H2 + 6.6, `${n} N2 c/${espBv}`, 1.8, 'CHAMADA', 'end');
   cV(KX - 4, KY, KY + H2, i0(bh), KX - 0.5);
   cV(KX - 8, y0, y0 + AH * S25, i0(AH), x0 - 0.5);
   if (nb > 0) cV(KX + W / 2 + 6, KY + (bh - nb) * S25, KY + H2, i0(nb));
@@ -774,7 +773,6 @@ export function desenhoFundacao(ob: OpBloco, oe: OpEstaca, nomes?: { bloco?: str
   t(KX + W + 6, KY + H2 + 5, `CA : -${i0(bh)}`, 1.8);
   // N2 desenhado ao lado do corte
   est(KX + W + 6, KY + H2 + 14, A, AH, 'N2', n);
-  t(KX + W / 2, KY + H2 + 20, `${n} N2 c/${espBv}`, 1.8, 'TEXTO', 'middle');
 
   // ===================== TABELAS =====================
   const tab = (X: number, Y: number, tit: string | null, cab: string[], ws: number[], lin: string[][]) => {
