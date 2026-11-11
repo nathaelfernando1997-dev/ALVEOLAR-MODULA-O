@@ -14,7 +14,7 @@ import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
-import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, blocoTecnico, dxfBloco, pesoBitola, ESTACA_PADRAO, quantEstaca, estacaTecnico, dxfEstaca } from './engine/fundacao.ts';
+import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, pesoBitola, ESTACA_PADRAO, quantEstaca, fundacaoTecnico, dxfFundacaoDetalhe } from './engine/fundacao.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
@@ -715,8 +715,8 @@ export default function App() {
             const eb = regras.esperaBorda ?? 0.2, ee = regras.esperaEspac ?? 1.2, es = esperasPaineis(psf, codF, eb, ee);
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
             const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box);
-            const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = blocoTecnico(ob), dbTela = blocoTecnico(ob, 'tela');
-            const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}), qtd: pts.length }, qe = quantEstaca(oe), deT = estacaTecnico(oe, ob), deTela = estacaTecnico(oe, ob, 'tela');
+            const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = '';
+            const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}), qtd: pts.length }, qe = quantEstaca(oe), dfT = fundacaoTecnico(ob, oe);
             const setEstaca = (k: keyof typeof ESTACA_PADRAO, v: number) => setRegras({ ...regras, estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), [k]: v } });
             const setBloco = (k: keyof typeof BLOCO_PADRAO, v: number) => setRegras({ ...regras, bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), [k]: v } });
             const n2 = (v: number) => v.toFixed(2).replace('.', ',');
@@ -772,11 +772,10 @@ export default function App() {
             const metade = Math.ceil(linhasTab.length / 2);
             const tabela = (l: typeof linhasTab) => <table className="tab-loc"><thead><tr><th>Ponto</th><th>Eixo</th><th>X (m)</th><th>Y (m)</th><th>Tipo</th></tr></thead><tbody>{l}</tbody></table>;
             const folhas = <div className={'folhas folhas-a3' + (verFund === 'folhas' ? '' : ' so-imp')}>
-              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qL.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k) }} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, 5)}</div>
-              <div className="folha a3"><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, 5)}</div>
-              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qE.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: svgEsperas(qE) }} /></div>{carimbo(`ESPERAS DOS PAINÉIS (${es.length}) · ${br(eb)} m das pontas · máx. ${br(ee)} m entre elas`, 3, 5)}</div>
-              <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: dbT }} /></div>{carimbo(`BLOCO DE COROAMENTO — ${ob.qtd} blocos`, 4, 5, 'Medidas em cm · ESC 1:10 impresso em A3 · locação nas folhas 1 e 2')}</div>
-              <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: deT }} /></div>{carimbo(`ESTACAS — ${oe.qtd} estacas ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m`, 5, 5, 'Medidas em cm · seção C-C ESC 1:5 · elevação sem escala')}</div>
+              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qL.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k) }} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, 4)}</div>
+              <div className="folha a3"><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, 4)}</div>
+              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qE.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: svgEsperas(qE) }} /></div>{carimbo(`ESPERAS DOS PAINÉIS (${es.length}) · ${br(eb)} m das pontas · máx. ${br(ee)} m entre elas`, 3, 4)}</div>
+              <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: dfT }} /></div>{carimbo(`BLOCOS E ESTACAS — ${ob.qtd} blocos ${Math.round(ob.lado * 100)}x${Math.round(ob.lado * 100)}x${Math.round(ob.alt * 100)} · estacas ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m`, 4, 4, 'Medidas em cm · estaca ESC 1:50 · seção 1:10 · bloco 1:20 (impresso em A3)')}</div>
             </div>;
             return <>
             <section className="mod noprint">
@@ -828,7 +827,7 @@ export default function App() {
                     {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)'], ['estaca', 'Estaca: diâmetro (m) — 0 = sem estaca']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
                       <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={ob[k]} onChange={e => setBloco(k, parseFloat(e.target.value) || 0)} /></label>)}
                   </div>
-                  <button onClick={() => baixar(base + '-bloco-coroamento.dxf', dxfBloco(ob), 'application/dxf')}>Baixar detalhe do bloco (DXF)</button>
+                  <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
                   <p className="dica">Gaiola: {ob.barras} estribos quadrados fechados em cada direção (N1 e N2), de {n2(ob.armLado * 100)} × {n2(ob.armAlt * 100)} cm, com gancho de {n2(ob.gancho * 100)} cm em cada ponta. Comprimento de cada estribo: {Math.round(qb.comp * 100)} cm.</p>
                 </div>
                 <div className="card acoes">
@@ -839,7 +838,7 @@ export default function App() {
                       <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={oe[k]} onChange={e => setEstaca(k, parseFloat(e.target.value) || 0)} /></label>)}
                   </div>
                   <p className="dica">{oe.barras} N3 ø{oe.bitLong.toFixed(1)} C={Math.round(oe.armComp * 100)} · {qe.nEstr} estribos N4 ø{oe.bitEstr.toFixed(1)} c/{Math.round(oe.espEstr * 100)} C={Math.round(qe.cEstr * 100)} (circular ø{Math.round(oe.armDiam * 100)}).</p>
-                  <button onClick={() => baixar(base + '-estaca.dxf', dxfEstaca(oe, ob), 'application/dxf')}>Baixar detalhe da estaca (DXF)</button>
+                  <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
                 </div>
                 <div className="card acoes">
                   <h3>Folhas para imprimir (A3 deitado)</h3>
@@ -853,9 +852,8 @@ export default function App() {
                 </div>
               </div>
               <div className="planta">
-                <div className="botoes">{([['pontos', 'Pontos de fundação'], ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['bloco', 'Bloco de coroamento'], ['estaca', 'Estaca'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
-                {verFund === 'bloco' && <div className="bloco-tela"><ZoomSvg vb="0 0 400 255"><g dangerouslySetInnerHTML={{ __html: dbTela }} /></ZoomSvg></div>}
-                {verFund === 'estaca' && <div className="bloco-tela"><ZoomSvg vb="0 0 400 255"><g dangerouslySetInnerHTML={{ __html: deTela }} /></ZoomSvg></div>}
+                <div className="botoes">{([['pontos', 'Pontos de fundação'], ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['bloco', 'Bloco e estaca'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
+                {(verFund === 'bloco' || verFund === 'estaca') && <div className="bloco-tela"><ZoomSvg vb="0 0 400 255"><g dangerouslySetInnerHTML={{ __html: dfT }} /></ZoomSvg></div>}
                 {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} />
                   {modoFund && verFund === 'pontos' && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(174,62,201,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
                     const el = (e.target as SVGElement).ownerSVGElement!; const pt = el.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;

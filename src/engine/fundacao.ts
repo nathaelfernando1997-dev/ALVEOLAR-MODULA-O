@@ -494,22 +494,26 @@ export function desenhoBloco(o: OpBloco & { nomes?: string }): Prim2[] {
   return P;
 }
 
-const CORES_CAD: Record<Cam, { tela: string; papel: string; dxf: number }> = {
-  CONCRETO: { tela: '#3b5bdb', papel: '#1c3fa0', dxf: 5 }, FERRO: { tela: '#ffd43b', papel: '#c92a2a', dxf: 2 }, 'FERRO-CORTE': { tela: '#ffd43b', papel: '#c92a2a', dxf: 2 },
-  TEXTO: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, COTA: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, TITULO: { tela: '#40c057', papel: '#2b8a3e', dxf: 3 },
-  ESTACA: { tela: '#868e96', papel: '#868e96', dxf: 8 }, NIVEL: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, TABELA: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, CHAMADA: { tela: '#f8f9fa', papel: '#333', dxf: 7 },
+const CORES_CAD: Record<Cam, { tela: string; papel: string; branco: string; dxf: number }> = {
+  CONCRETO: { tela: '#3b5bdb', papel: '#1c3fa0', branco: '#1a1aff', dxf: 5 }, FERRO: { tela: '#ffd43b', papel: '#c92a2a', branco: '#e6d000', dxf: 2 }, 'FERRO-CORTE': { tela: '#ffd43b', papel: '#c92a2a', branco: '#e6d000', dxf: 2 },
+  TEXTO: { tela: '#f8f9fa', papel: '#111', branco: '#111', dxf: 7 }, COTA: { tela: '#f8f9fa', papel: '#111', branco: '#111', dxf: 7 }, TITULO: { tela: '#40c057', papel: '#2b8a3e', branco: '#00b000', dxf: 3 },
+  ESTACA: { tela: '#868e96', papel: '#868e96', branco: '#1a1aff', dxf: 5 }, NIVEL: { tela: '#f8f9fa', papel: '#111', branco: '#111', dxf: 7 }, TABELA: { tela: '#f8f9fa', papel: '#111', branco: '#777', dxf: 8 }, CHAMADA: { tela: '#f8f9fa', papel: '#333', branco: '#666', dxf: 8 },
+};
+const PREENCHE: Record<'tela' | 'papel' | 'branco', { bloco: string; estaca: string; pilar: string }> = {
+  tela: { bloco: '#a68a64', estaca: '#868e96', pilar: '#495057' }, papel: { bloco: '#e9dfc9', estaca: '#ced4da', pilar: '#868e96' }, branco: { bloco: '#9c8a3a', estaca: '#b4b4b4', pilar: '#555' },
 };
 
 // SVG: tema "tela" = fundo preto como no Eberick; "papel" = fundo branco para imprimir
 export function blocoTecnico(o: OpBloco & { nomes?: string }, tema: 'tela' | 'papel' = 'papel'): string { return svgPrims(desenhoBloco(o), tema); }
-function svgPrims(P: Prim2[], tema: 'tela' | 'papel'): string {
+function svgPrims(P: Prim2[], tema: 'tela' | 'papel' | 'branco'): string {
   const cor = (c: Cam) => CORES_CAD[c][tema], f = (v: number) => v.toFixed(2);
   const out: string[] = [];
   if (tema === 'tela') out.push('<rect x="0" y="0" width="400" height="255" fill="#000"/>');
+  if (tema === 'branco') out.push('<rect x="0" y="0" width="400" height="255" fill="#fff"/>');
   for (const p of P) {
     if (p.k === 'l') out.push(`<line x1="${f(p.x1)}" y1="${f(p.y1)}" x2="${f(p.x2)}" y2="${f(p.y2)}" stroke="${cor(p.c)}" stroke-width="${p.w ?? 0.15}"${p.tr ? ' stroke-dasharray="2.5 0.8 0.5 0.8"' : ''}/>`);
-    else if (p.k === 'r') out.push(`<rect x="${f(p.x)}" y="${f(p.y)}" width="${f(p.w)}" height="${f(p.h)}" fill="${p.fill ? (p.c === 'CONCRETO' ? (tema === 'tela' ? '#a68a64' : '#e9dfc9') : '#868e96') : 'none'}"${p.fill && p.c === 'CONCRETO' && tema === 'tela' ? ' fill-opacity=".85"' : ''} stroke="${cor(p.c)}" stroke-width="${p.c === 'CONCRETO' ? 0.35 : 0.15}"/>`);
-    else if (p.k === 'c') out.push(`<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.r)}" fill="${p.fill ? cor(p.c) : 'none'}" stroke="${cor(p.c)}" stroke-width="0.2"${p.c === 'ESTACA' ? ' stroke-dasharray="1.2 0.6"' : ''}/>`);
+    else if (p.k === 'r') out.push(`<rect x="${f(p.x)}" y="${f(p.y)}" width="${f(p.w)}" height="${f(p.h)}" fill="${p.fill ? (p.c === 'CONCRETO' ? PREENCHE[tema].bloco : PREENCHE[tema].estaca) : 'none'}" stroke="${cor(p.c)}" stroke-width="${p.c === 'CONCRETO' || p.c === 'ESTACA' ? 0.3 : 0.15}"/>`);
+    else if (p.k === 'c') out.push(`<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.r)}" fill="${p.fill ? (p.c === 'ESTACA' ? PREENCHE[tema].estaca : cor(p.c)) : 'none'}" stroke="${cor(p.c)}" stroke-width="${p.c === 'FERRO' ? 0.35 : 0.25}"/>`);
     else if (p.k === 'p') out.push(`<polyline points="${p.pts.map(([x, y]) => `${f(x)},${f(y)}`).join(' ')}" fill="none" stroke="${cor(p.c)}" stroke-width="${p.w ?? 0.15}"/>`);
     else out.push(`<text x="${f(p.x)}" y="${f(p.y)}" font-family="Arial, Helvetica, sans-serif" font-size="${p.h}" text-anchor="${p.anc ?? 'start'}" fill="${cor(p.c)}"${p.rot ? ` transform="rotate(${p.rot} ${f(p.x)} ${f(p.y)})"` : ''}>${p.s.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>`);
   }
@@ -652,3 +656,165 @@ export function desenhoEstaca(o: OpEstaca, bloco: { lado: number; alt: number })
 }
 export const estacaTecnico = (o: OpEstaca, bloco: { lado: number; alt: number }, tema: 'tela' | 'papel' = 'papel') => svgPrims(desenhoEstaca(o, bloco), tema);
 export const dxfEstaca = (o: OpEstaca, bloco: { lado: number; alt: number }) => dxfPrims(desenhoEstaca(o, bloco));
+
+
+// ---------- folha da fundação: estaca + bloco juntos (padrão do detalhamento em AutoCAD) ----------
+export function desenhoFundacao(ob: OpBloco, oe: OpEstaca, nomes?: { bloco?: string; estaca?: string }): Prim2[] {
+  const P: Prim2[] = [];
+  const d1 = (v: number) => (Math.round(v * 10) / 10).toString().replace('.', ','), i0 = (v: number) => String(Math.round(v));
+  const l = (x1: number, y1: number, x2: number, y2: number, c: Cam, w?: number, tr?: boolean) => P.push({ k: 'l', x1, y1, x2, y2, c, w, tr });
+  const t = (x: number, y: number, s: string, h = 2, c: Cam = 'TEXTO', anc: 'start' | 'middle' | 'end' = 'start', rot = 0) => P.push({ k: 't', x, y, h, s, c, anc, rot });
+  const r = (x: number, y: number, w: number, h: number, c: Cam, fill = false) => P.push({ k: 'r', x, y, w, h, c, fill });
+  const circ = (x: number, y: number, rr: number, c: Cam, fill = false) => P.push({ k: 'c', x, y, r: rr, c, fill });
+  // cotas no estilo do AutoCAD: tracinhos a 45° e linhas de chamada
+  const tk = (x: number, y: number) => l(x - 0.7, y + 0.7, x + 0.7, y - 0.7, 'COTA', 0.2);
+  const cH = (x1: number, x2: number, y: number, s: string, de?: number) => { l(x1 - 1, y, x2 + 1, y, 'COTA', 0.12); tk(x1, y); tk(x2, y); if (de !== undefined) { l(x1, de, x1, y + (de < y ? 1 : -1), 'COTA', 0.1); l(x2, de, x2, y + (de < y ? 1 : -1), 'COTA', 0.1); } t((x1 + x2) / 2, y - 0.8, s, 1.8, 'COTA', 'middle'); };
+  const cV = (x: number, y1: number, y2: number, s: string, de?: number) => { l(x, y1 - 1, x, y2 + 1, 'COTA', 0.12); tk(x, y1); tk(x, y2); if (de !== undefined) { const dd = de > x ? 1 : -1; l(de, y1, x - dd, y1, 'COTA', 0.1); l(de, y2, x - dd, y2, 'COTA', 0.1); } t(x - 0.8, (y1 + y2) / 2, s, 1.8, 'COTA', 'middle', -90); };
+  const nivel = (x: number, y: number, s: string) => { l(x, y, x + 9, y, 'NIVEL', 0.12); l(x + 4, y, x + 4, y - 3, 'NIVEL', 0.12); l(x + 4, y - 3, x + 9, y - 3, 'NIVEL', 0.12); t(x + 5, y - 3.6, s, 1.8, 'NIVEL'); };
+  const titulo = (x: number, y: number, a: string, b: string) => { t(x, y, a, 1.9); t(x, y + 2.8, b, 1.9); };
+  const qb = quantBloco(ob), qe = quantEstaca(oe);
+
+  // ===================== ESTACA =====================
+  const e50 = 2, e20 = 5, e10 = 10;            // mm de papel por metro... (1:50 = 20 mm/m) -> uso mm por cm abaixo
+  void e50; void e20; void e10;
+  const S50 = 0.2, S20 = 0.5, S10 = 1;          // mm de papel por cm: 1:50, 1:20, 1:10
+  const cmb = (m: number) => m * 100;
+  const bl = cmb(ob.lado), bh = cmb(ob.alt), fu = cmb(oe.furo), fd = cmb(oe.armDiam), comp = cmb(oe.comp), arm = cmb(oe.armComp), nb = Math.min(cmb(oe.noBloco ?? 0), bh);
+  // CORTE da estaca a 1:50
+  const EX = 34, EY = 30;
+  t(8, 14, nomes?.estaca ?? `E1 a E${oe.qtd}`, 2.6, 'TITULO'); t(8, 17.4, `estaca ø${i0(fu)} · ${oe.qtd} iguais`, 1.9);
+  titulo(EX - 10, EY - 8, 'CORTE', 'ESC 1:50');
+  const cx = EX + bl * S50 / 2, yB0 = EY, yB1 = EY + bh * S50, yF = yB1 + comp * S50;
+  // bloco em cima e estaca
+  r(EX, yB0, bl * S50, bh * S50, 'CONCRETO', true);
+  r(cx - fu * S50 / 2, yB1, fu * S50, comp * S50, 'ESTACA', true);
+  // armadura da estaca: entra no bloco e desce
+  const yA0 = yB1 - nb * S50, yA1 = yA0 + arm * S50;
+  l(cx - fd * S50 / 2, yA0, cx - fd * S50 / 2, yA1, 'FERRO', 0.3); l(cx + fd * S50 / 2, yA0, cx + fd * S50 / 2, yA1, 'FERRO', 0.3);
+  // níveis e cotas
+  nivel(EX + bl * S50 + 3, yB0, '0'); nivel(EX + bl * S50 + 3, yB1, `-${i0(bh)}`); nivel(cx + fu * S50 / 2 + 3, yF, `-${i0(bh + comp)}`);
+  t(cx + fu * S50 / 2 + 3, yB1 + 6, `CA : -${i0(bh)}`, 1.8);
+  cV(EX - 10, yB1, yF, i0(comp), cx - fu * S50 / 2 - 0.5);
+  cV(EX - 5, yA0, yA1, i0(arm), cx - fd * S50 / 2 - 0.5);
+  cV(EX - 5, yA1, yF, i0(comp - arm + nb));
+  cV(EX + bl * S50 + 2, yA0, yB1, i0(nb), cx + fd * S50 / 2 + 0.5);
+  cH(cx - fu * S50 / 2, cx + fu * S50 / 2, yF + 5, i0(fu), yF + 0.5);
+  // barra longitudinal ao lado (em pé), com a chamada girada
+  const BX = EX + 26;
+  l(BX, yA0, BX, yA1, 'FERRO', 0.4);
+  cV(BX - 3, yA0, yA1, i0(arm));
+  t(BX + 2.6, (yA0 + yA1) / 2, `${oe.barras} N3 ø${oe.bitLong.toFixed(1)} C=${i0(arm)}`, 1.9, 'TEXTO', 'middle', -90);
+  // faixa dos estribos
+  const DX = BX + 14, espT = i0(oe.espEstr * 100);
+  cV(DX, yA0, yA1, i0(arm), DX - 3);
+  t(DX + 2.6, (yA0 + yA1) / 2, `${qe.nEstr} N4 c/${espT}`, 1.9, 'TEXTO', 'middle', -90);
+  // SEÇÃO a 1:10
+  const SX = DX + 30, SY = EY + 12;
+  titulo(SX - 10, EY - 8, 'SEÇÃO', 'ESC 1:10');
+  circ(SX, SY, fu * S10 / 2, 'ESTACA', true);
+  circ(SX, SY, fd * S10 / 2, 'FERRO');
+  for (let i = 0; i < oe.barras; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / oe.barras, rr = fd * S10 / 2 - 1; circ(SX + rr * Math.cos(a), SY + rr * Math.sin(a), 0.7, 'FERRO-CORTE', true); }
+  cV(SX - fu * S10 / 2 - 4, SY - fu * S10 / 2, SY + fu * S10 / 2, i0(fu), SX - 1);
+  // estribo circular
+  const RX = SX + 30, RY = SY;
+  circ(RX, RY, fd * S10 / 2, 'FERRO'); l(RX, RY - fd * S10 / 2, RX + 3, RY - fd * S10 / 2 - 2, 'FERRO', 0.35);
+  cV(RX - fd * S10 / 2 - 4, RY - fd * S10 / 2, RY + fd * S10 / 2, i0(fd), RX - 1);
+  t(RX, RY + fd * S10 / 2 + 5, `${qe.nEstr} N4 ø${oe.bitEstr.toFixed(1)} C=${i0(qe.cEstr * 100)}`, 1.9, 'TEXTO', 'middle');
+
+  // ===================== BLOCO =====================
+  // N1 = estribos horizontais (deitados) empilhados na altura; N2 = estribos verticais (em pé), paralelos
+  const S25 = 0.5;   // 1:20 = 0,5 mm por cm
+  const A = cmb(ob.armLado), AH = cmb(ob.armAlt), cb = (bl - A) / 2, cbf = (bh - AH) / 2, n = ob.barras;
+  const espH = n > 1 ? AH / (n - 1) : 0, espV = n > 1 ? A / (n - 1) : 0;
+  const nBit = ob.bitola.toFixed(1), Cb = i0(qb.comp * 100), espB = i0(espH), espBv = i0(espV);
+  const pil = 15;   // coluna no canto das paredes (cm)
+  const PX = 192, PY = 34;
+  t(PX - 6, 14, nomes?.bloco ?? `B1 a B${ob.qtd}`, 2.6, 'TITULO'); t(PX - 6, 17.4, `1ø${i0(fu)} · ${ob.qtd} iguais`, 1.9);
+  titulo(PX - 6, PY - 10, 'PLANTA', 'ESC 1:20');
+  const W = bl * S25;
+  r(PX, PY, W, W, 'CONCRETO', true);
+  // N1 (deitado) visto de cima: o quadrado; N2 (em pé) visto de cima: linhas
+  r(PX + cb * S25, PY + cb * S25, A * S25, A * S25, 'FERRO');
+  for (let i = 1; i < n - 1; i++) l(PX + cb * S25, PY + (cb + i * espV) * S25, PX + (cb + A) * S25, PY + (cb + i * espV) * S25, 'FERRO', 0.3);
+  circ(PX + W / 2, PY + W / 2, fu * S25 / 2, 'ESTACA');
+  P.push({ k: 'r', x: PX + W / 2 - pil * S25 / 2, y: PY + W / 2 - pil * S25 / 2, w: pil * S25, h: pil * S25, c: 'CHAMADA', fill: true });
+  l(PX + cb * S25, PY + (cb + espV) * S25, PX - 5, PY - 3, 'CHAMADA', 0.12); t(PX - 5.5, PY - 2.4, 'N2', 1.8, 'CHAMADA', 'end');
+  l(PX + (cb + A) * S25, PY + (cb + A * 0.8) * S25, PX + W + 6, PY + W + 2, 'CHAMADA', 0.12); t(PX + W + 6.5, PY + W + 2.6, 'N1', 1.8, 'CHAMADA');
+  cH(PX, PX + W, PY + W + 4, i0(bl), PY + W + 0.5);
+  cV(PX + W + 4, PY, PY + W, i0(bl), PX + W + 0.5);
+  // N1 desenhado embaixo da planta
+  const est = (x: number, y: number, w: number, h: number, nn: string, qt: number) => {
+    r(x, y, w * S25, h * S25, 'FERRO'); l(x, y, x + 2, y + 2, 'FERRO', 0.3);
+    t(x + w * S25 / 2, y + h * S25 + 2.6, i0(w), 1.8, 'TEXTO', 'middle'); t(x + w * S25 + 1.2, y + h * S25 / 2 + 0.7, i0(h), 1.8);
+    t(x + w * S25 / 2, y + h * S25 + 6, `${qt} ${nn} ø${nBit} C=${Cb}`, 1.9, 'TEXTO', 'middle');
+  };
+  est(PX + cb * S25, PY + W + 14, A, A, 'N1', n);
+  // CORTE do bloco a 1:20
+  const KX = PX + 50, KY = PY;
+  titulo(KX - 6, KY - 10, 'CORTE', 'ESC 1:20');
+  const H2 = bh * S25;
+  // pilar saindo em cima
+  r(KX + W / 2 - pil * S25 / 2, KY - 6, pil * S25, 6, 'CONCRETO');
+  l(KX - 4, KY, KX + W + 16, KY, 'NIVEL', 0.12); nivel(KX + W + 6, KY, '0');
+  r(KX, KY, W, H2, 'CONCRETO', true);
+  const ew = fu * S25, ex = KX + W / 2 - ew / 2;
+  r(ex, KY + H2, ew, 14, 'ESTACA', true);
+  // N2 (em pé, no plano do corte) = quadrado; N1 (deitados) = linhas horizontais c/15
+  const x0 = KX + cb * S25, y0 = KY + cbf * S25;
+  r(x0, y0, A * S25, AH * S25, 'FERRO'); l(x0, y0, x0 + 2, y0 + 2, 'FERRO', 0.3);
+  for (let i = 1; i < n - 1; i++) l(x0, y0 + i * espH * S25, x0 + A * S25, y0 + i * espH * S25, 'FERRO', 0.3);
+  // ferros da estaca entrando no bloco
+  for (const sx of [-1, 1]) l(KX + W / 2 + sx * fd * S25 / 2, KY + (bh - nb) * S25, KX + W / 2 + sx * fd * S25 / 2, KY + H2 + 14, 'FERRO', 0.3);
+  t(KX + W + 2, KY + H2 * 0.45, `${n} N1 c/${espB}`, 1.8);
+  l(x0 + A * S25 * 0.25, y0 + AH * S25, KX - 6, KY + H2 + 6, 'CHAMADA', 0.12); t(KX - 6.5, KY + H2 + 6.6, 'N2', 1.8, 'CHAMADA', 'end');
+  cV(KX - 4, KY, KY + H2, i0(bh), KX - 0.5);
+  cV(KX - 8, y0, y0 + AH * S25, i0(AH), x0 - 0.5);
+  if (nb > 0) cV(KX + W / 2 + 6, KY + (bh - nb) * S25, KY + H2, i0(nb));
+  nivel(KX + W + 6, KY + H2, `-${i0(bh)}`);
+  t(KX + W + 6, KY + H2 + 5, `CA : -${i0(bh)}`, 1.8);
+  // N2 desenhado ao lado do corte
+  est(KX + W + 6, KY + H2 + 14, A, AH, 'N2', n);
+  t(KX + W / 2, KY + H2 + 20, `${n} N2 c/${espBv}`, 1.8, 'TEXTO', 'middle');
+
+  // ===================== TABELAS =====================
+  const tab = (X: number, Y: number, tit: string | null, cab: string[], ws: number[], lin: string[][]) => {
+    const h = 3.2, W = ws.reduce((a, b) => a + b, 0), N = lin.length + 1 + (tit ? 1 : 0);
+    r(X, Y, W, h * N, 'TABELA');
+    let yy = Y;
+    if (tit) { t(X + W / 2, Y + 2.4, tit, 1.7, 'TABELA', 'middle'); l(X, Y + h, X + W, Y + h, 'TABELA'); yy += h; }
+    let x = X; cab.forEach((c, i) => { t(x + ws[i] / 2, yy + 2.4, c, 1.6, 'TABELA', 'middle'); x += ws[i]; if (i < cab.length - 1) l(x, yy, x, Y + h * N, 'TABELA'); });
+    lin.forEach((ln2, j) => { const y2 = yy + (j + 1) * h; l(X, y2, X + W, y2, 'TABELA'); let xx = X; ln2.forEach((c, i) => { t(xx + ws[i] / 2, y2 + 2.4, c, 1.6, 'TABELA', 'middle'); xx += ws[i]; }); });
+    return Y + h * N;
+  };
+  const TX = 312; let y = 14;
+  const qB = ob.qtd, qE = oe.qtd;
+  const linhas = [
+    ['CA50', '1', nBit, String(n * qB), Cb, i0(n * qB * qb.comp * 100)],
+    ['', '2', nBit, String(n * qB), Cb, i0(n * qB * qb.comp * 100)],
+    ['', '3', oe.bitLong.toFixed(1), String(oe.barras * qE), i0(arm), i0(oe.barras * qE * arm)],
+    ['CA60', '4', oe.bitEstr.toFixed(1), String(qe.nEstr * qE), i0(qe.cEstr * 100), i0(qe.nEstr * qE * qe.cEstr * 100)],
+  ];
+  y = tab(TX, y, null, ['AÇO', 'N', 'DIAM (mm)', 'QUANT', 'C.UNIT (cm)', 'C.TOTAL (cm)'], [11, 7, 13, 13, 17, 19], linhas) + 4;
+  // resumo por bitola
+  const porBit = new Map<string, { aco: string; m: number; kg: number }>();
+  const soma = (aco: string, bit: number, m: number) => { const k = bit.toFixed(1), v = porBit.get(k) || { aco, m: 0, kg: 0 }; v.m += m; v.kg += m * pesoBitola(bit); porBit.set(k, v); };
+  soma('CA50', ob.bitola, qb.metros); soma('CA50', oe.bitLong, qe.mLong * qE); soma('CA60', oe.bitEstr, qe.mEstr * qE);
+  const res = [...porBit.entries()].sort((a, b) => +a[0] - +b[0]);
+  t(TX + 40, y + 2, 'RESUMO DO AÇO', 1.8, 'TABELA', 'middle'); y += 4;
+  y = tab(TX, y, null, ['AÇO', 'DIAM (mm)', 'C.TOTAL (m)', 'PESO + 10% (kg)'], [14, 18, 22, 26], res.map(([k, v]) => [v.aco, k, d1(v.m), d1(v.kg * 1.1)])) + 2;
+  const pesoTotal = res.reduce((a, [, v]) => a + v.kg * 1.1, 0);
+  y = tab(TX, y, null, ['PESO TOTAL (kg)', ''], [32, 48], [['CA50 + CA60', d1(pesoTotal)]]) + 5;
+  const conc = qb.concTotal + qe.concTotal;
+  t(TX, y, `Volume de concreto = ${conc.toFixed(2).replace('.', ',')} m³ (blocos ${qb.concTotal.toFixed(2).replace('.', ',')} + estacas ${qe.concTotal.toFixed(2).replace('.', ',')})`, 1.7, 'TABELA'); y += 3.4;
+  t(TX, y, `Área de forma = ${qb.forma.toFixed(2).replace('.', ',')} m² (laterais dos blocos)`, 1.7, 'TABELA'); y += 3.4;
+  t(TX, y, `Barras de ${d1(ob.barra)} m: ø${nBit} ${qb.barras12} · ø${oe.bitLong.toFixed(1)} ${qe.barrasLong} · ø${oe.bitEstr.toFixed(1)} ${qe.barrasEstr}`, 1.7, 'TABELA'); y += 6;
+  t(TX, y, 'NOTAS', 1.9, 'TITULO'); y += 3.6;
+  [`Cobrimento do bloco ${d1(qb.cob * 100)} cm; estribos com gancho de ${d1((ob.gancho ?? 0) * 100)} cm.`,
+   `Furo da estaca ø${i0(fu)} com ${d1(oe.comp)} m a partir do fundo do bloco.`,
+   `Armadura da estaca entra ${i0(nb)} cm no bloco.`,
+   `Estribo da estaca circular ø${i0(fd)}, transpasse ${i0(oe.transpEstr * 100)} cm.`,
+   `Medidas em cm. Locação: planta de locação.`].forEach(s2 => { t(TX, y, s2, 1.7, 'TABELA'); y += 3.2; });
+  return P;
+}
+export const fundacaoTecnico = (ob: OpBloco, oe: OpEstaca) => svgPrims(desenhoFundacao(ob, oe), 'branco');
+export const dxfFundacaoDetalhe = (ob: OpBloco, oe: OpEstaca) => dxfPrims(desenhoFundacao(ob, oe));
