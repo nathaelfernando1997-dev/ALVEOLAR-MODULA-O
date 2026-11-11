@@ -312,8 +312,8 @@ export function csvEsperas(es: Espera[], ox = 0, oy = 0): string {
 
 // ---------- detalhamento do bloco de coroamento ----------
 // gaiola: n estribos quadrados fechados em cada direção (lado da armadura x altura da armadura), com gancho nas pontas
-export interface OpBloco { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho: number; qtd: number }
-export const BLOCO_PADRAO: Omit<OpBloco, 'qtd'> = { lado: 0.5, alt: 0.5, armLado: 0.45, armAlt: 0.45, barras: 4, bitola: 8.0, barra: 12, gancho: 0.08 };
+export interface OpBloco { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho: number; estaca: number; qtd: number }
+export const BLOCO_PADRAO: Omit<OpBloco, 'qtd'> = { lado: 0.5, alt: 0.5, armLado: 0.45, armAlt: 0.45, barras: 4, bitola: 8.0, barra: 12, gancho: 0.08, estaca: 0 };
 export const pesoBitola = (mm: number) => 0.006165 * mm * mm;   // kg/m (aço CA-50)
 
 export function quantBloco(o: OpBloco) {
@@ -374,4 +374,135 @@ export function blocoSvg(o: OpBloco): { svg: string; w: number; h: number } {
   tx(X2 + A * k / 2, Y2 + AH * k + 14, '(em cada direção: N1 e N2)', 2, 'middle', 0, '#555');
   const w = X2 + A * k + 25, h = Y0 + Math.max(L, H) + 14;
   return { svg: s.join(''), w, h };
+}
+
+// ---------- folha técnica do bloco (padrão de projeto estrutural) ----------
+// desenho em mm de papel, folha A3 (área útil 400 x 255), escala 1:10 (1 cm do bloco = 1 mm no papel)
+export function blocoTecnico(o: OpBloco & { nomes?: string }): string {
+  const E = 1;   // mm de papel por cm de bloco (1:10)
+  const cm = (m: number) => m * 100 * E;
+  const L = cm(o.lado), H = cm(o.alt), A = cm(o.armLado), AH = cm(o.armAlt), cb = (L - A) / 2, cbf = (H - AH) / 2;
+  const n = o.barras, esp = n > 1 ? A / (n - 1) : 0, fi = o.bitola, G = cm(o.gancho ?? 0);
+  const q = quantBloco(o), C = Math.round(q.comp * 100), d1 = (v: number) => (Math.round(v * 10) / 10).toString().replace('.', ',');
+  const bit = fi.toFixed(1).replace('.', ','), espT = Math.round((n > 1 ? o.armLado / (n - 1) : 0) * 100);
+  const s: string[] = [];
+  const PRETO = '#111', FERRO = '#c92a2a', COTA = '#1c4fa0', CONC = '#ece6d8';
+  const ln = (x1: number, y1: number, x2: number, y2: number, cor = PRETO, w = 0.25, dash = '') => s.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${cor}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''} stroke-linecap="round"/>`);
+  const tx = (x: number, y: number, t: string, h = 2.5, anc = 'start', rot = 0, cor = PRETO, peso = 'normal') => s.push(`<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-family="Arial, Helvetica, sans-serif" font-size="${h}" text-anchor="${anc}" fill="${cor}" font-weight="${peso}"${rot ? ` transform="rotate(${rot} ${x.toFixed(2)} ${y.toFixed(2)})"` : ''}>${t}</text>`);
+  const rect = (x: number, y: number, w: number, h: number, fill = 'none', cor = PRETO, sw = 0.35, dash = '') => s.push(`<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${fill}" stroke="${cor}" stroke-width="${sw}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`);
+  // cota com tracinho a 45°
+  const tick = (x: number, y: number) => ln(x - 0.9, y + 0.9, x + 0.9, y - 0.9, COTA, 0.3);
+  const cotaH = (x1: number, x2: number, y: number, t: string, ext0?: number) => {
+    ln(x1 - 1, y, x2 + 1, y, COTA, 0.18); tick(x1, y); tick(x2, y);
+    if (ext0 !== undefined) { ln(x1, ext0, x1, y + 1, COTA, 0.12); ln(x2, ext0, x2, y + 1, COTA, 0.12); }
+    tx((x1 + x2) / 2, y - 0.8, t, 2.2, 'middle', 0, COTA);
+  };
+  const cotaV = (x: number, y1: number, y2: number, t: string, ext0?: number) => {
+    ln(x, y1 - 1, x, y2 + 1, COTA, 0.18); tick(x, y1); tick(x, y2);
+    if (ext0 !== undefined) { ln(ext0, y1, x - 1, y1, COTA, 0.12); ln(ext0, y2, x - 1, y2, COTA, 0.12); }
+    tx(x - 0.8, (y1 + y2) / 2, t, 2.2, 'middle', -90, COTA);
+  };
+  const titulo = (x: number, y: number, t: string, esc = 'ESC 1:10') => { tx(x, y, t, 3.2, 'start', 0, PRETO, 'bold'); ln(x, y + 0.9, x + t.length * 2.1, y + 0.9, PRETO, 0.3); tx(x, y + 4.2, esc, 2.2); };
+  const chamada = (x: number, y: number, x2: number, y2: number, t: string, anc = 'start') => { ln(x, y, x2, y2, PRETO, 0.15); s.push(`<circle cx="${x}" cy="${y}" r="0.45" fill="${PRETO}"/>`); tx(x2 + (anc === 'start' ? 0.8 : -0.8), y2 + 0.8, t, 2.2, anc); };
+  const nivel = (x: number, y: number, t: string) => { s.push(`<polygon points="${x},${y} ${x - 1.4},${y - 2.2} ${x + 1.4},${y - 2.2}" fill="none" stroke="${PRETO}" stroke-width="0.2"/>`); ln(x - 4, y, x + 4, y, PRETO, 0.15); tx(x + 2, y - 2.6, t, 2.1); };
+  const nome = o.nomes || `B1 a B${o.qtd}`;
+
+  // ===== PLANTA =====
+  const PX = 22, PY = 36;
+  tx(8, 14, `${nome}`, 3.4, 'start', 0, '#2b8a3e', 'bold');
+  tx(8, 18.5, `${o.qtd} blocos iguais · ${d1(o.lado * 100)} x ${d1(o.lado * 100)} x ${d1(o.alt * 100)} cm`, 2.4);
+  titulo(PX, PY - 8, 'PLANTA');
+  rect(PX, PY, L, L, CONC, PRETO, 0.45);
+  if (o.estaca) { const r = cm(o.estaca) / 2; s.push(`<circle cx="${PX + L / 2}" cy="${PY + L / 2}" r="${r}" fill="none" stroke="${PRETO}" stroke-width="0.25" stroke-dasharray="1.5 0.8"/>`); }
+  for (let i = 0; i < n; i++) {
+    const p = cb + i * esp;
+    ln(PX + cb, PY + p, PX + cb + A, PY + p, FERRO, 0.6);                    // N1 (direção x)
+    ln(PX + p, PY + cb, PX + p, PY + cb + A, FERRO, 0.6, '1.6 0.7');         // N2 (direção y), embaixo
+  }
+  chamada(PX + cb + A * 0.8, PY + cb, PX + L + 6, PY - 3, `${n} N1 ø${bit} c/${espT}`);
+  chamada(PX + cb + A, PY + cb + A * 0.75, PX + L + 6, PY + L + 3, `${n} N2 ø${bit} c/${espT}`);
+  cotaH(PX, PX + L, PY + L + 8, d1(o.lado * 100), PY + L + 1);
+  cotaH(PX + cb, PX + cb + A, PY + L + 4.5, d1(o.armLado * 100));
+  cotaV(PX - 8, PY, PY + L, d1(o.lado * 100), PX - 1);
+  for (let i = 0; i < n - 1; i++) cotaV(PX - 4, PY + cb + i * esp, PY + cb + (i + 1) * esp, String(espT));
+  // linhas de corte
+  const corte = (x1: number, y1: number, x2: number, y2: number, l: string, horiz: boolean) => {
+    ln(x1, y1, x2, y2, PRETO, 0.2, '4 1 1 1');
+    for (const [x, y] of [[x1, y1], [x2, y2]]) { ln(x, y, horiz ? x : x, horiz ? y - 0 : y, PRETO, 0.5); tx(horiz ? x : x, horiz ? y - 1.5 : y, l, 2.6, 'middle', 0, PRETO, 'bold'); }
+  };
+  corte(PX - 13, PY + L / 2 + 6, PX + L + 4, PY + L / 2 + 6, 'A', true);
+  corte(PX + L / 2 + 6, PY - 4, PX + L / 2 + 6, PY + L + 14, 'B', false);
+
+  // ===== CORTES =====
+  const desenhaCorte = (X: number, Y: number, t: string, plano: 'N1' | 'N2') => {
+    titulo(X, Y - 8, t);
+    const outro = plano === 'N1' ? 'N2' : 'N1';
+    rect(X, Y, L, H, CONC, PRETO, 0.45);
+    if (o.estaca) { const r = cm(o.estaca) / 2; ln(X + L / 2 - r, Y + H, X + L / 2 - r, Y + H + 14, PRETO, 0.3); ln(X + L / 2 + r, Y + H, X + L / 2 + r, Y + H + 14, PRETO, 0.3); ln(X + L / 2 - r - 2, Y + H + 14, X + L / 2 + r + 2, Y + H + 14, PRETO, 0.2, '1 1'); tx(X + L / 2, Y + H + 18, `estaca ø${Math.round(o.estaca * 100)}`, 2.1, 'middle'); }
+    const x0 = X + cb, y0 = Y + cbf;
+    // estribo no plano do corte, com gancho no canto de cima à esquerda
+    rect(x0, y0, A, AH, 'none', FERRO, 0.6);
+    ln(x0, y0, x0 + 3.5, y0 + 3.5, FERRO, 0.6); ln(x0, y0, x0 + 4, y0 + 1.5, FERRO, 0.6);
+    // barras do outro sentido, cortadas (fundo e topo)
+    for (let i = 0; i < n; i++) for (const yy of [y0 + AH - 0.9, y0 + 0.9]) s.push(`<circle cx="${(x0 + i * esp).toFixed(2)}" cy="${yy.toFixed(2)}" r="0.55" fill="${FERRO}"/>`);
+    chamada(x0 + A * 0.45, y0 + AH, X + L + 6, Y + H + 4, `${n} N${plano.slice(1)} ø${bit} c/${espT} C=${C}`);
+    chamada(x0 + A, y0 + 0.9, X + L + 6, Y - 3, `${n} ${outro} (cortadas)`);
+    cotaH(X, X + L, Y + H + 9, d1(o.lado * 100), Y + H + 1);
+    cotaH(x0, x0 + A, Y + H + 5.5, d1(o.armLado * 100));
+    cotaV(X - 4, y0, y0 + AH, d1(o.armAlt * 100));
+    cotaV(X - 8, Y, Y + H, d1(o.alt * 100), X - 1);
+    if (cbf > 0.05) { cotaV(X + L + 3, y0 + AH, Y + H, d1(cbf)); cotaV(X + L + 3, Y, y0, d1(cbf)); }
+    nivel(X + L + 30, Y, '0'); nivel(X + L + 30, Y + H, `-${Math.round(o.alt * 100)}`);
+  };
+  desenhaCorte(118, PY, 'CORTE A-A', 'N1');
+  desenhaCorte(222, PY, 'CORTE B-B', 'N2');
+
+  // ===== DETALHE DAS ARMADURAS =====
+  const DX = 318, DY = PY;
+  titulo(DX, DY - 8, 'ARMADURAS', 'ESC 1:10');
+  const estribo = (X: number, Y: number, nn: string) => {
+    rect(X, Y, A, AH, 'none', FERRO, 0.6);
+    ln(X, Y, X + Math.min(G, 8) * 0.7, Y + Math.min(G, 8) * 0.7, FERRO, 0.6); ln(X, Y, X + Math.min(G, 8) * 0.95, Y + Math.min(G, 8) * 0.3, FERRO, 0.6);
+    tx(X + A / 2, Y - 1.2, d1(o.armLado * 100), 2.2, 'middle'); tx(X + A / 2, Y + AH + 3, d1(o.armLado * 100), 2.2, 'middle');
+    tx(X - 1.2, Y + AH / 2 + 0.8, d1(o.armAlt * 100), 2.2, 'end'); tx(X + A + 1.2, Y + AH / 2 + 0.8, d1(o.armAlt * 100), 2.2, 'start');
+    if (G) tx(X + 6.5, Y + 6.5, `gancho ${d1(G)}`, 1.8, 'start', 0, '#555');
+    tx(X + A / 2, Y + AH + 8, `${n} ${nn} ø${bit} C=${C}`, 2.6, 'middle', 0, PRETO, 'bold');
+  };
+  estribo(DX + 6, DY + 2, 'N1');
+  estribo(DX + 6, DY + AH + 22, 'N2');
+
+  // ===== TABELAS =====
+  const tabela = (X: number, Y: number, tit: string, cab: string[], ws: number[], linhas: string[][], neg: number[] = []) => {
+    const h = 5, W = ws.reduce((a, b) => a + b, 0);
+    rect(X, Y, W, h * (linhas.length + 2), 'none', PRETO, 0.3);
+    tx(X + W / 2, Y + 3.6, tit, 2.5, 'middle', 0, PRETO, 'bold'); ln(X, Y + h, X + W, Y + h, PRETO, 0.25);
+    let x = X; cab.forEach((c, i) => { tx(x + ws[i] / 2, Y + h + 3.5, c, 2.1, 'middle', 0, PRETO, 'bold'); x += ws[i]; if (i < cab.length - 1) ln(x, Y + h, x, Y + h * (linhas.length + 2), PRETO, 0.15); });
+    ln(X, Y + 2 * h, X + W, Y + 2 * h, PRETO, 0.25);
+    linhas.forEach((l, j) => { let xx = X; const yy = Y + (j + 2) * h; if (j) ln(X, yy, X + W, yy, PRETO, 0.1); l.forEach((c, i) => { tx(xx + ws[i] / 2, yy + 3.5, c, 2.1, 'middle', 0, PRETO, neg.includes(j) ? 'bold' : 'normal'); xx += ws[i]; }); });
+  };
+  const TY = 150;
+  tabela(8, TY, 'RELAÇÃO DO AÇO - POR BLOCO', ['POS', 'AÇO', 'ø (mm)', 'QUANT', 'C.UNIT (cm)', 'C.TOTAL (cm)'], [12, 14, 14, 14, 22, 24],
+    [['N1', 'CA-50', bit, String(n), String(C), String(n * C)], ['N2', 'CA-50', bit, String(n), String(C), String(n * C)]]);
+  const kg = q.kg, kg10 = kg * 1.1;
+  tabela(8, TY + 26, `RELAÇÃO DO AÇO - ${o.qtd} BLOCOS`, ['POS', 'ø (mm)', 'QUANT', 'C.UNIT (cm)', 'C.TOTAL (m)'], [12, 16, 20, 26, 26],
+    [['N1', bit, String(n * o.qtd), String(C), d1(q.metros / 2)], ['N2', bit, String(n * o.qtd), String(C), d1(q.metros / 2)]]);
+  tabela(118, TY, 'RESUMO DO AÇO', ['AÇO', 'ø (mm)', 'C.TOTAL (m)', 'PESO + 10% (kg)', `BARRAS ${d1(o.barra)} m`], [16, 16, 24, 28, 26],
+    [['CA-50', bit, d1(q.metros), d1(kg10), String(q.barras12)], ['', '', '', `peso sem perda: ${d1(kg)}`, '']], [0]);
+  tabela(118, TY + 26, 'CONSUMO', ['ITEM', 'POR BLOCO', `TOTAL (${o.qtd})`], [40, 30, 40],
+    [['Concreto (m³)', q.conc.toFixed(3).replace('.', ','), q.concTotal.toFixed(2).replace('.', ',')], ['Forma - laterais (m²)', (4 * o.lado * o.alt).toFixed(2).replace('.', ','), q.forma.toFixed(2).replace('.', ',')], ['Aço CA-50 (kg)', (kg / o.qtd).toFixed(2).replace('.', ','), d1(kg)]]);
+  // notas
+  const NX = 240, NY = TY + 3;
+  tx(NX, NY, 'NOTAS', 2.8, 'start', 0, PRETO, 'bold');
+  const notas = [
+    `1. Medidas em centímetros e níveis em centímetros, salvo indicação.`,
+    `2. Cobrimento: ${d1(q.cob * 100)} cm nas laterais e ${d1(q.cobFundo * 100)} cm no fundo e no topo.`,
+    `3. Estribos N1 (direção X) e N2 (direção Y) quadrados fechados de ${d1(o.armLado * 100)} x ${d1(o.armAlt * 100)},`,
+    `    com gancho de ${d1(G)} cm em cada ponta, amarrados formando a gaiola.`,
+    `4. Comprimento dos estribos pelas medidas externas, com os ganchos.`,
+    `5. Concreto (fck), aço e ligação com a estaca conforme o projeto estrutural.`,
+    `6. Locação dos blocos: planta de locação (folhas 1 e 2).`,
+    `7. Plano de corte: ${q.porBarra} estribos por barra de ${d1(o.barra)} m (sobra ${q.sobra.toFixed(2).replace('.', ',')} m).`,
+  ];
+  notas.forEach((t, i) => tx(NX, NY + 5 + i * 4.2, t, 2.2));
+  return s.join('');
 }

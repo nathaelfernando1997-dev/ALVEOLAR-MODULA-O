@@ -14,7 +14,7 @@ import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
-import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, blocoSvg, pesoBitola } from './engine/fundacao.ts';
+import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, blocoTecnico, pesoBitola } from './engine/fundacao.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
@@ -715,7 +715,7 @@ export default function App() {
             const eb = regras.esperaBorda ?? 0.2, ee = regras.esperaEspac ?? 1.2, es = esperasPaineis(psf, codF, eb, ee);
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
             const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box);
-            const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), db = blocoSvg(ob);
+            const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = blocoTecnico(ob);
             const setBloco = (k: keyof typeof BLOCO_PADRAO, v: number) => setRegras({ ...regras, bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), [k]: v } });
             const n2 = (v: number) => v.toFixed(2).replace('.', ',');
             const tabBloco = <div className="bloco-tabs">
@@ -764,7 +764,7 @@ export default function App() {
               const t = tirar(modoFund); setAj({ ...aj, ...t, fundExtra: [...t.fundExtra, { pav: pf.id, ...noEixo(x, y) }] }); setModoFund('mover');
             };
             const dicaModo = modoFund === 'add' ? 'Clique na planta onde quer o ponto (ele encosta no eixo da parede mais perto).' : modoFund === 'rem' ? 'Clique no ponto que quer tirar.' : modoFund === 'origem' ? 'Clique no ponto que será a origem.' : modoFund === 'mover' ? 'Clique no ponto que quer mover.' : modoFund ? 'Agora clique no lugar novo do ponto.' : '';
-            const carimbo = (titulo: string, n: number, tot: number) => <div className="carimbo"><div><b>{titulo}</b><br />{projNome || base} · {pf.nome}</div><div>Origem: {origemDesc}<br />Medidas em metros · sem escala: use as cotas</div><div>{new Date().toLocaleDateString('pt-BR')}<br />Folha {n}/{tot}</div></div>;
+            const carimbo = (titulo: string, n: number, tot: number, obs?: string) => <div className="carimbo"><div><b>{titulo}</b><br />{projNome || base} · {pf.nome}</div><div>{obs ?? <>Origem: {origemDesc}<br />Medidas em metros · sem escala: use as cotas</>}</div><div>{new Date().toLocaleDateString('pt-BR')}<br />Folha {n}/{tot}</div></div>;
             const qL = quadroDe(pf, 6), qE = quadroDe(pf, 1.4);
             const linhasTab = loc.pts.map(p => <tr key={p.n}><td>B{p.n}</td><td>{p.eixo}</td><td>{br(p.X)}</td><td>{br(p.Y)}</td><td>{p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</td></tr>);
             const metade = Math.ceil(linhasTab.length / 2);
@@ -773,11 +773,7 @@ export default function App() {
               <div className="folha a3"><div className="desenho-a3"><svg viewBox={qL.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k) }} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, 4)}</div>
               <div className="folha a3"><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, 4)}</div>
               <div className="folha a3"><div className="desenho-a3"><svg viewBox={qE.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: svgEsperas(qE) }} /></div>{carimbo(`ESPERAS DOS PAINÉIS (${es.length}) · ${br(eb)} m das pontas · máx. ${br(ee)} m entre elas`, 3, 4)}</div>
-              <div className="folha a3"><div className="desenho-a3 bloco-folha"><h2>Detalhamento do bloco de coroamento — {ob.qtd} blocos (B1 a B{ob.qtd})</h2>
-                <svg viewBox={`0 0 ${db.w} ${db.h}`} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: db.svg }} />
-                {tabBloco}
-                <p className="nota">Medidas em cm, salvo indicação. Comprimento dos estribos pelas medidas externas, com os dois ganchos. Concreto, aço e cobrimento conforme o projeto estrutural. Locação dos blocos: folhas 1 e 2.</p>
-              </div>{carimbo('BLOCO DE COROAMENTO', 4, 4)}</div>
+              <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: dbT }} /></div>{carimbo(`BLOCO DE COROAMENTO — ${ob.qtd} blocos`, 4, 4, 'Medidas em cm · ESC 1:10 impresso em A3 · locação nas folhas 1 e 2')}</div>
             </div>;
             return <>
             <section className="mod noprint">
@@ -826,7 +822,7 @@ export default function App() {
                   <h3>Bloco de coroamento</h3>
                   <p><b>{ob.qtd} blocos</b> (um em cada ponto) · {n2(qb.concTotal)} m³ · {n2(qb.kg)} kg de aço · {qb.barras12} barras</p>
                   <div className="grade">
-                    {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
+                    {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)'], ['estaca', 'Estaca: diâmetro (m) — 0 = sem estaca']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
                       <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={ob[k]} onChange={e => setBloco(k, parseFloat(e.target.value) || 0)} /></label>)}
                   </div>
                   <p className="dica">Gaiola: {ob.barras} estribos quadrados fechados em cada direção (N1 e N2), de {n2(ob.armLado * 100)} × {n2(ob.armAlt * 100)} cm, com gancho de {n2(ob.gancho * 100)} cm em cada ponta. Comprimento de cada estribo: {Math.round(qb.comp * 100)} cm.</p>
@@ -844,7 +840,7 @@ export default function App() {
               </div>
               <div className="planta">
                 <div className="botoes">{([['pontos', 'Pontos de fundação'], ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['bloco', 'Bloco de coroamento'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
-                {verFund === 'bloco' && <div className="bloco-tela"><svg viewBox={`0 0 ${db.w} ${db.h}`} dangerouslySetInnerHTML={{ __html: db.svg }} />{tabBloco}</div>}
+                {verFund === 'bloco' && <div className="bloco-tela"><svg viewBox="0 0 400 255" dangerouslySetInnerHTML={{ __html: dbT }} /></div>}
                 {verFund !== 'folhas' && verFund !== 'bloco' && <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} />
                   {modoFund && verFund === 'pontos' && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(174,62,201,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
                     const el = (e.target as SVGElement).ownerSVGElement!; const pt = el.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
