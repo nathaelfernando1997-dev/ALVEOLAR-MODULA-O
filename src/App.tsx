@@ -14,7 +14,7 @@ import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
-import { pontosFundacao, dxfFundacao, csvFundacao } from './engine/fundacao.ts';
+import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao } from './engine/fundacao.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
@@ -78,6 +78,7 @@ function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
 
 export default function App() {
   const [aba, setAbaEstado] = useState<Aba>('arquivo');
+  const [verFund, setVerFund] = useState<'pontos' | 'locacao'>('pontos');
   // aba atual também num ref: o carregamento (que demora) só troca de aba se o usuário não tiver saído dela
   const abaRef = useRef<Aba>('arquivo');
   const setAba = (a: Aba) => { abaRef.current = a; setAbaEstado(a); };
@@ -703,8 +704,8 @@ export default function App() {
             // planta de fundação: paredes do pavimento mais baixo (térreo)
             const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), pts = pontosFundacao(tf, calc.ps.filter(p => p.pav === pf.id), regras.fundEspac ?? 0);
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
-            const base = nome.replace(/\.dxf$/i, ''), q = quadroDe(pf);
-            const svg = arqSvg(q, arqDe(pf.box)) +
+            const base = nome.replace(/\.dxf$/i, ''), loc = locacao(pts), q = quadroDe(pf, verFund === 'locacao' ? 6 : 1.4);
+            const svg = verFund === 'locacao' ? arqSvg(q, arqDe(pf.box)) + svgLocacao(loc, q.X, q.Y, q.k) : arqSvg(q, arqDe(pf.box)) +
               tf.map(t => t.o === 'H' ? `<line x1="${q.X(t.s)}" y1="${q.Y(t.c)}" x2="${q.X(t.e)}" y2="${q.Y(t.c)}" stroke="#c92a2a" stroke-width="${t.esp * q.k}" opacity=".35"/>` : `<line x1="${q.X(t.c)}" y1="${q.Y(t.s)}" x2="${q.X(t.c)}" y2="${q.Y(t.e)}" stroke="#c92a2a" stroke-width="${t.esp * q.k}" opacity=".35"/>`).join('') +
               pts.map(p => `<circle cx="${q.X(p.x)}" cy="${q.Y(p.y)}" r="${0.25 * q.k}" fill="none" stroke="#1971c2" stroke-width="3"/><rect x="${q.X(p.x) - p.esp * q.k / 2}" y="${q.Y(p.y) - p.esp * q.k / 2}" width="${p.esp * q.k}" height="${p.esp * q.k}" fill="${p.tipo === 'intermediário' ? '#e67700' : '#2b8a3e'}"/><text x="${q.X(p.x) + 20}" y="${q.Y(p.y) - 20}" font-size="${0.16 * q.k}" fill="#1971c2" font-weight="bold">B${p.n}</text>`).join('');
             return <section className="mod">
@@ -717,15 +718,21 @@ export default function App() {
                     <input type="number" step="0.1" value={regras.fundEspac ?? 0} onChange={e => setRegras({ ...regras, fundEspac: parseFloat(e.target.value) || 0 })} /></label>
                   <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqDe(pf.box)), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
                   <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
+                  <h3>Planta de locação</h3>
+                  <p className="dica">Eixos numerados (1, 2, 3… na vertical) e com letras (A, B, C… na horizontal), cotas parciais e acumuladas a partir da origem (eixo 1 / eixo A, canto de baixo à esquerda) e a coordenada de cada ponto.</p>
+                  <button onClick={() => baixar(base + '-locacao.dxf', dxfLocacao(pf, loc, arqDe(pf.box)), 'application/dxf')}>Baixar planta de locação (DXF)</button>
+                  <button onClick={() => baixar(base + '-locacao.csv', csvLocacao(loc), 'text/csv')}>Baixar coordenadas da locação (CSV)</button>
                   <p className="dica">O DXF está em metros, nas mesmas coordenadas do projeto, com cotas entre os pontos e a tabela de coordenadas. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
                 </div>
                 <div className="card acoes">
                   <h3>Pontos</h3>
-                  {pts.map(p => <div key={p.n} className="dica">B{p.n} · X {p.x.toFixed(3).replace('.', ',')} · Y {p.y.toFixed(3).replace('.', ',')} · {p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</div>)}
+                  <p className="dica">Coordenadas a partir da origem (eixo 1 / eixo A).</p>
+                  {loc.pts.map(p => <div key={p.n} className="dica">B{p.n} · eixo {p.eixo} · X {p.X.toFixed(2).replace('.', ',')} · Y {p.Y.toFixed(2).replace('.', ',')} · {p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</div>)}
                 </div>
               </div>
               <div className="planta">
-                <ZoomSvg vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} /></ZoomSvg>
+                <div className="botoes"><button className={verFund === 'pontos' ? 'on' : ''} onClick={() => setVerFund('pontos')}>Pontos de fundação</button><button className={verFund === 'locacao' ? 'on' : ''} onClick={() => setVerFund('locacao')}>Planta de locação</button></div>
+                <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} /></ZoomSvg>
                 <p className="dica">Pontos de fundação nas paredes do {pf.nome.toLowerCase()}: verde = canto, encontro, ponta ou coluna · laranja = intermediário pelo espaçamento. Mudou as paredes, a planta acompanha.</p>
               </div>
             </section>;
