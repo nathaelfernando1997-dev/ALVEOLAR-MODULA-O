@@ -24,7 +24,7 @@ import { Login } from './Login.tsx';
 import qrcode from 'qrcode-generator';
 import type { Projeto, Config, Pasta } from './db.ts';
 
-type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'orcamento';
+type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
 const baixar = (nome: string, conteudo: string, tipo: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
@@ -436,7 +436,7 @@ export default function App() {
       montadas={Object.values(montagem).filter(m => m.status === 'montada').length} total={prod?.pecas.length ?? 0}
       sair={() => { setQrAtivo(false); history.replaceState(null, '', location.pathname); }} />;
   }
-  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['orcamento', '10. Orçamento']];
+  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['fundacao', '10. Fundação'], ['orcamento', '11. Orçamento']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
     <div className="app">
@@ -698,6 +698,39 @@ export default function App() {
           </section>
         )}
 
+        {aba === 'fundacao' && leitura && (
+          ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos.</p></section> : (() => {
+            // planta de fundação: paredes do pavimento mais baixo (térreo)
+            const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), pts = pontosFundacao(tf, calc.ps.filter(p => p.pav === pf.id), regras.fundEspac ?? 0);
+            const cont = (t: string) => pts.filter(p => p.tipo === t).length;
+            const base = nome.replace(/\.dxf$/i, ''), q = quadroDe(pf);
+            const svg = arqSvg(q, arqDe(pf.box)) +
+              tf.map(t => t.o === 'H' ? `<line x1="${q.X(t.s)}" y1="${q.Y(t.c)}" x2="${q.X(t.e)}" y2="${q.Y(t.c)}" stroke="#c92a2a" stroke-width="${t.esp * q.k}" opacity=".35"/>` : `<line x1="${q.X(t.c)}" y1="${q.Y(t.s)}" x2="${q.X(t.c)}" y2="${q.Y(t.e)}" stroke="#c92a2a" stroke-width="${t.esp * q.k}" opacity=".35"/>`).join('') +
+              pts.map(p => `<circle cx="${q.X(p.x)}" cy="${q.Y(p.y)}" r="${0.25 * q.k}" fill="none" stroke="#1971c2" stroke-width="3"/><rect x="${q.X(p.x) - p.esp * q.k / 2}" y="${q.Y(p.y) - p.esp * q.k / 2}" width="${p.esp * q.k}" height="${p.esp * q.k}" fill="${p.tipo === 'intermediário' ? '#e67700' : '#2b8a3e'}"/><text x="${q.X(p.x) + 20}" y="${q.Y(p.y) - 20}" font-size="${0.16 * q.k}" fill="#1971c2" font-weight="bold">B${p.n}</text>`).join('');
+            return <section className="mod">
+              <div className="lado">
+                <div className="card acoes">
+                  <h3>Planta de fundação (para o Eberick)</h3>
+                  <p>{pf.nome}: <b>{pts.length} pontos</b></p>
+                  <p className="dica">{cont('L')} cantos (L) · {cont('T')} encontros (T) · {cont('X')} cruzamentos · {cont('ponta')} pontas · {cont('coluna')} colunas no meio da parede{cont('emenda') ? ` · ${cont('emenda')} emendas` : ''}{cont('intermediário') ? ` · ${cont('intermediário')} intermediários (laranja)` : ''}</p>
+                  <label>Espaçamento máximo entre pontos ao longo da parede (m) — 0 = só cantos, encontros, pontas e colunas
+                    <input type="number" step="0.1" value={regras.fundEspac ?? 0} onChange={e => setRegras({ ...regras, fundEspac: parseFloat(e.target.value) || 0 })} /></label>
+                  <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqDe(pf.box)), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
+                  <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
+                  <p className="dica">O DXF está em metros, nas mesmas coordenadas do projeto, com cotas entre os pontos e a tabela de coordenadas. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
+                </div>
+                <div className="card acoes">
+                  <h3>Pontos</h3>
+                  {pts.map(p => <div key={p.n} className="dica">B{p.n} · X {p.x.toFixed(3).replace('.', ',')} · Y {p.y.toFixed(3).replace('.', ',')} · {p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</div>)}
+                </div>
+              </div>
+              <div className="planta">
+                <ZoomSvg vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} /></ZoomSvg>
+                <p className="dica">Pontos de fundação nas paredes do {pf.nome.toLowerCase()}: verde = canto, encontro, ponta ou coluna · laranja = intermediário pelo espaçamento. Mudou as paredes, a planta acompanha.</p>
+              </div>
+            </section>;
+          })()
+        )}
         {aba === 'vigas' && leitura && (
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos.</p></section> :
           <section className="mod">
@@ -750,23 +783,6 @@ export default function App() {
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
-            {ativos.length > 0 && (() => {
-              // planta de fundação: paredes do pavimento mais baixo (térreo)
-              const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), pts = pontosFundacao(tf, calc.ps.filter(p => p.pav === pf.id), regras.fundEspac ?? 0);
-              const cont = (t: string) => pts.filter(p => p.tipo === t).length;
-              const base = nome.replace(/\.dxf$/i, '');
-              return <div className="card noprint">
-                <h3>Planta de fundação (para o Eberick)</h3>
-                <p>{pf.nome}: <b>{pts.length} pontos</b> · {cont('L')} cantos (L) · {cont('T')} encontros (T) · {cont('X')} cruzamentos · {cont('ponta')} pontas · {cont('coluna')} colunas no meio da parede{cont('emenda') ? ` · ${cont('emenda')} emendas` : ''}{cont('intermediário') ? ` · ${cont('intermediário')} intermediários` : ''}</p>
-                <label>Espaçamento máximo entre pontos ao longo da parede (m) — 0 = só cantos, encontros, pontas e colunas
-                  <input type="number" step="0.1" value={regras.fundEspac ?? 0} onChange={e => setRegras({ ...regras, fundEspac: parseFloat(e.target.value) || 0 })} /></label>
-                <div className="botoes">
-                  <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqDe(pf.box)), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
-                  <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
-                </div>
-                <p className="dica">O DXF está em metros, nas mesmas coordenadas do projeto. Camadas: PILAR (quadrado da espessura da parede), PONTO-CENTRO (cruz), BLOCO (círculo), NOME-BLOCO, EIXO-PAREDE, PAREDE, COTA, ARQUITETURA e TABELA. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
-              </div>;
-            })()}
             {prod && (() => {
               const revs = aj.revisoes || [], atual = retrato(calc, prod.sg), base = revs.find(r => r.n === revBase);
               const dif = base ? compararRev(base.pecas, atual) : null;
