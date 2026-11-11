@@ -3,7 +3,7 @@ import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
 import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
-import { plantaSvg, vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
+import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
@@ -79,6 +79,8 @@ function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
 export default function App() {
   const [aba, setAbaEstado] = useState<Aba>('arquivo');
   const [verFund, setVerFund] = useState<'pontos' | 'locacao' | 'esperas' | 'bloco' | 'estaca' | 'folhas'>('pontos');
+  const [papelFund, setPapelFund] = useState<'a3' | 'a2'>('a2');
+  const [parteFund, setParteFund] = useState<'todas' | 'plantas' | 'detalhe'>('todas');
   const [modoFund, setModoFund] = useState<null | 'add' | 'rem' | 'mover' | 'origem' | { x: number; y: number }>(null);
   // aba atual também num ref: o carregamento (que demora) só troca de aba se o usuário não tiver saído dela
   const abaRef = useRef<Aba>('arquivo');
@@ -772,10 +774,10 @@ export default function App() {
             const metade = Math.ceil(linhasTab.length / 2);
             const tabela = (l: typeof linhasTab) => <table className="tab-loc"><thead><tr><th>Ponto</th><th>Eixo</th><th>X (m)</th><th>Y (m)</th><th>Tipo</th></tr></thead><tbody>{l}</tbody></table>;
             const folhas = <div className={'folhas folhas-a3' + (verFund === 'folhas' ? '' : ' so-imp')}>
-              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qL.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k) }} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, 4)}</div>
-              <div className="folha a3"><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, 4)}</div>
-              <div className="folha a3"><div className="desenho-a3"><svg viewBox={qE.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: svgEsperas(qE) }} /></div>{carimbo(`ESPERAS DOS PAINÉIS (${es.length}) · ${br(eb)} m das pontas · máx. ${br(ee)} m entre elas`, 3, 4)}</div>
-              <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: dfT }} /></div>{carimbo(`BLOCOS E ESTACAS — ${ob.qtd} blocos ${Math.round(ob.lado * 100)}x${Math.round(ob.lado * 100)}x${Math.round(ob.alt * 100)} · estacas ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m`, 4, 4, 'Medidas em cm · estaca ESC 1:50 · seção 1:10 · bloco 1:20 (impresso em A3)')}</div>
+              {parteFund !== 'detalhe' && <><div className={`folha ${papelFund}`}><div className="desenho-a3"><SvgFolha vb={qL.vb} html={arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k)} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, 4)}</div>
+              <div className={`folha ${papelFund}`}><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, 4)}</div>
+              <div className={`folha ${papelFund}`}><div className="desenho-a3"><SvgFolha vb={qE.vb} html={svgEsperas(qE)} /></div>{carimbo(`ESPERAS DOS PAINÉIS (${es.length}) · ${br(eb)} m das pontas · máx. ${br(ee)} m entre elas`, 3, 4)}</div></>}
+              {parteFund !== 'plantas' && <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: dfT }} /></div>{carimbo(`BLOCOS E ESTACAS — ${ob.qtd} blocos ${Math.round(ob.lado * 100)}x${Math.round(ob.lado * 100)}x${Math.round(ob.alt * 100)} · estacas ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m`, 4, 4, 'Medidas em cm · estaca ESC 1:50 · seção 1:10 · bloco 1:20 (impresso em A3)')}</div>}
             </div>;
             return <>
             <section className="mod noprint">
@@ -841,9 +843,11 @@ export default function App() {
                   <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
                 </div>
                 <div className="card acoes">
-                  <h3>Folhas para imprimir (A3 deitado)</h3>
-                  <p className="dica">Locação, tabela de coordenadas, esperas, bloco e estaca, com carimbo. Na impressão escolha <b>A3</b> e <i>Salvar como PDF</i> (ou mande para a gráfica).</p>
-                  <button onClick={() => { setVerFund('folhas'); setTimeout(() => window.print(), 300); }}>Imprimir / salvar PDF</button>
+                  <h3>Folhas para imprimir</h3>
+                  <label>Tamanho da folha (locação, coordenadas e esperas)<select value={papelFund} onChange={e => setPapelFund(e.target.value as 'a3' | 'a2')}><option value="a2">A2 deitado</option><option value="a3">A3 deitado</option></select></label>
+                  <p className="dica">Locação, tabela de coordenadas, esperas, bloco e estaca, com carimbo. O detalhe do bloco e da estaca sai sempre em A3 (escalas 1:50, 1:20 e 1:10). Na impressão escolha o papel <b>A2</b> ou <b>A3</b> e <i>Salvar como PDF</i> (ou mande para a gráfica).</p>
+                  <button onClick={() => { setVerFund('folhas'); setParteFund('plantas'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir locação, coordenadas e esperas ({papelFund.toUpperCase()})</button>
+                  <button onClick={() => { setVerFund('folhas'); setParteFund('detalhe'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir detalhe do bloco e da estaca (A3)</button>
                 </div>
                 <div className="card acoes">
                   <h3>Pontos</h3>
@@ -1510,6 +1514,15 @@ function Etiquetas({ prod, ativos, nome, qrBase }: { prod: Prod; ativos: Pavimen
   </div>)}</div>;
 }
 const ESC_LAJE = 12, ESC_PAREDE = 12;   // vistas de produção das lajes: 12 mm por metro (mais peças por folha, letras do mesmo tamanho)
+
+// planta comprida em pé numa folha deitada: gira 90° para ocupar a folha toda
+function girar(vb: string, html: string): { vb: string; html: string } {
+  const [x, y, w, h] = vb.split(/[ ,]+/).map(Number);
+  if (!(h > w * 1.15)) return { vb, html };
+  return { vb: `0 0 ${h} ${w}`, html: `<g transform="translate(0 ${w}) rotate(-90) translate(${-x} ${-y})">${html}</g>` };
+}
+function SvgFolha({ vb, html }: { vb: string; html: string }) { const g = girar(vb, html); return <svg viewBox={g.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: g.html }} />; }
+
 function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, rev }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod; rev?: { base: Revisao; dif: ReturnType<typeof compararRev> } }) {
   type F = { key: string; tit: string; body: JSX.Element; rod: string };
   const F: F[] = [];
@@ -1525,11 +1538,11 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
     const q = quadroDe(pav);
     if (ps.length) {
       add(pav.id + 'p', `PLANTA DE MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
-        <div className="desenho" dangerouslySetInnerHTML={{ __html: plantaSvg(leitura, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arqDe(pav.box)) }} />,
+        <div className="desenho"><SvgFolha vb={q.vb} html={plantaConteudo(leitura, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arqDe(pav.box), q)} /></div>,
         '■ vermelho: número do painel · azul: cota da parede (painel = cota − desconto) · rosa: porta / janela');
       const ordem = prod.ordens.get(pav.id)!;
       add(pav.id + 's', `SEQUÊNCIA DE MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
-        <div className="desenho"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + sequenciaConteudo(ps, ordem, q) }} /></div>,
+        <div className="desenho"><SvgFolha vb={q.vb} html={arqSvg(q, arqDe(pav.box)) + sequenciaConteudo(ps, ordem, q)} /></div>,
         'Círculo azul = ordem de montagem (começa num canto e segue sempre encostando em peça já montada, fechando os cantos) · vermelho = número da peça · conferir prumo e travamento a cada canto fechado');
       const info = (p: Painel) => prod.infos.get(p.num)!;
       const paginas = paginarVistas(ps, p => p.larg, p => p.H + 0.45 + (0.35 + 0.26) * fPar + Math.ceil((p.aviso || '').length * fPar / (18 * (p.larg + 0.6))) * 0.13 * fPar, 3, ESC_PAREDE);
@@ -1542,7 +1555,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
     }
     const VG = calc.vigas.filter(v => v.pav === pav.id);
     if (VG.length) add(pav.id + 'g', `VIGAS E TRELIÇAS — ${pav.nome.toUpperCase()}`,
-      <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: arqSvg(q, arqDe(pav.box)) + vigasConteudo(VG, q) }} />
+      <div className="desenho lajes"><SvgFolha vb={q.vb} html={arqSvg(q, arqDe(pav.box)) + vigasConteudo(VG, q)} />
         <div className="tvigas">{VG.map(v => <p key={v.id}><b>{v.tipo === 'trelica' ? 'T' : 'V'}{v.n}</b> ({v.tipo === 'trelica' ? 'treliça' : v.obrigatoria ? 'obrigatória' : 'recomendada'}, {br(v.b - v.a)} m): {v.motivo} <i>{v.ideia}</i>{v.rebaixos.length ? ` Rebaixo: ${v.rebaixos.map(r => `${r.painel} (${br(r.de)}→${br(r.para)})`).join(', ')}.` : ''}</p>)}</div></div>,
       'Sugestões para o engenheiro conferir e dimensionar · vermelho = viga obrigatória · laranja = recomendada · roxo = treliça de reforço da laje');
     const P = calc.pl.filter(p => p.pav === pav.id);
@@ -1552,7 +1565,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
       const LJ = calc.lajes.filter(a => a.pav === pav.id);
       const desenhoLaje = DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(LJ, P, q, TRf.filter(t => TPf.some(x => x.t === t.n)));
       add(pav.id + 'l', `MODULAÇÃO DA LAJE SOBRE O ${pav.nome.toUpperCase()}`,
-        <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: desenhoLaje }} />
+        <div className="desenho lajes"><SvgFolha vb={q.vb} html={desenhoLaje} />
           <div className="tlajes">{emBlocos(P, LINHAS_TLAJE).map((B, bi, BB) => <table className="tlaje" key={bi}><thead><tr><th>Painel</th><th>Comp.</th><th>Larg.</th><th>m²</th></tr></thead><tbody>
             {B.map(p => <tr key={p.num}><td>L{p.num}{p.dente ? '*' : ''}</td><td>{br(p.comp)}</td><td>{br(p.larg)}</td><td>{br(areaLaje(p))}</td></tr>)}
             {bi === BB.length - 1 && <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + areaLaje(p), 0))}</td></tr>}
@@ -1560,7 +1573,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
         'Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · * = painel com dente (recorte no canto) · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça');
       const ES = escoras(LJ, regras.escoraMax ?? 1.5);
       if (ES.linhas.length) add(pav.id + 'e', `ESCORAMENTO DA LAJE SOBRE O ${pav.nome.toUpperCase()}`,
-        <div className="desenho"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(LJ, P, q) + escorasConteudo(ES.linhas, ES.vaos, q) }} /></div>,
+        <div className="desenho"><SvgFolha vb={q.vb} html={DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(LJ, P, q) + escorasConteudo(ES.linhas, ES.vaos, q)} /></div>,
         `Verde tracejado = linha de escora (pontaletes com travessa), perpendicular ao vão, a no máximo ${br(regras.escoraMax ?? 1.5)} m uma da outra e das paredes · cota = distância entre linhas · conferir com o fabricante e o engenheiro · retirar só após a cura do capeamento`);
       if (novo) {
         const trDe = (p: PainelLaje) => TRf.map(t => ({ ...t, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) }));
@@ -1577,7 +1590,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
         const T0 = TPf.slice(0, LINHAS_TREL), resto = TPf.length > LINHAS_TREL ? emBlocos(TPf.slice(LINHAS_TREL), LINHAS_TREL_CONT) : [];
         const nf = 1 + Math.ceil(resto.length / 2);
         add(pav.id + 't', `TRELIÇAS DE REFORÇO NA LAJE SOBRE O ${pav.nome.toUpperCase()}${nf > 1 ? ` — 1/${nf}` : ''}`,
-          <div className="desenho lajes"><svg viewBox={q.vb} dangerouslySetInnerHTML={{ __html: desenhoLaje }} /><TabelaTrelicas TP={T0} TR={TRf} curta /></div>,
+          <div className="desenho lajes"><SvgFolha vb={q.vb} html={desenhoLaje} /><TabelaTrelicas TP={T0} TR={TRf} curta /></div>,
           'Treliça embaixo de cada parede do pavimento de cima que não tem parede embaixo · distâncias medidas na planta a partir da borda do painel');
         for (let f = 0; f * 2 < resto.length; f++) add(pav.id + 't' + (f + 1), `TRELIÇAS DE REFORÇO NA LAJE SOBRE O ${pav.nome.toUpperCase()} — ${f + 2}/${nf} (continuação da tabela)`,
           <div className="desenho lajes cont">{resto.slice(f * 2, f * 2 + 2).map((B, i) => <TabelaTrelicas key={i} TP={B} TR={TRf} curta />)}</div>,

@@ -214,3 +214,9 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .bloco-tabs { display: flex; gap: 8mm; align-items: flex-start; flex-wrap: wrap; margin-top: 4mm; }
 .bloco-tela { background: #fff; padding: 0; }
 .bloco-tela svg { width: 100%; height: auto; }
+@page a2 { size: 594mm 420mm; margin: 0; }
+.folha.a2 { width: 594mm; height: 420mm; page: a2; padding: 14mm; }
+.folha.a2 .carimbo { font-size: 12pt; }
+.folha.a2 .carimbo > div:first-child { font-size: 15pt; }
+.folha.a2 .tab-loc { font-size: 12pt; }
+.folha.a2 .desenho-a3.tabelas h2 { font-size: 22pt; }
