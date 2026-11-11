@@ -24,7 +24,7 @@ import { Login } from './Login.tsx';
 import qrcode from 'qrcode-generator';
 import type { Projeto, Config, Pasta } from './db.ts';
 
-type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento';
+type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento' | 'acompanhamento';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
 const baixar = (nome: string, conteudo: string, tipo: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
@@ -416,12 +416,17 @@ export default function App() {
   const [revBase, setRevBase] = useState<number | null>(null);
   const [notaRev, setNotaRev] = useState('');
   // QR da etiqueta: ?obra=<projeto>&peca=<código> abre a peça no celular para marcar a montagem
-  const qr = useMemo(() => { const u = new URLSearchParams(location.search); const o = u.get('obra'), pc = u.get('peca'); return o && pc ? { obra: o, peca: pc } : null; }, []);
+  const qr = useMemo(() => { const u = new URLSearchParams(location.search); const o = u.get('obra'), pc = u.get('peca'), k = u.get('k'); return o && pc ? { obra: o, peca: pc, k } : null; }, []);
   const [qrAtivo, setQrAtivo] = useState(!!qr);
   const [montagem, setMontagem] = useState<Record<string, cloud.Marca>>({});
   useEffect(() => { if (qr && qrAtivo && (sess || !cloud.nuvemConfigurada) && projId !== qr.obra) abrirProjeto(qr.obra); }, [sess?.user.id]);
   useEffect(() => { if (projId && sess && cloud.nuvemConfigurada) cloud.lerMontagem(projId).then(setMontagem).catch(() => setMontagem({})); }, [projId, sess?.user.id]);
-  const qrBase = cloud.nuvemConfigurada && sess && projId ? `${location.origin}/?obra=${projId}&peca=` : '';
+  // chave da obra: vai no QR para marcar a peça sem login (null = SQL das marcações ainda não rodado)
+  const [chaveQR, setChaveQR] = useState<string | null>(null);
+  const [marcs, setMarcs] = useState<cloud.Marcacao[]>([]);
+  useEffect(() => { setChaveQR(null); setMarcs([]); if (projId && sess && cloud.nuvemConfigurada) { cloud.chaveObra(projId).then(setChaveQR); cloud.lerMarcacoes(projId).then(setMarcs); } }, [projId, sess?.user.id]);
+  useEffect(() => { if (!projId || !sess || aba !== 'acompanhamento') return; const t = setInterval(() => cloud.lerMarcacoes(projId).then(setMarcs), 30000); return () => clearInterval(t); }, [projId, sess?.user.id, aba]);
+  const qrBase = cloud.nuvemConfigurada && sess && projId ? (chaveQR ? `${location.origin}/?obra=${projId}&k=${chaveQR}&peca=` : `${location.origin}/?obra=${projId}&peca=`) : '';
 
   const cortes = useMemo(() => dxf ? lerCortes(dxf, pavs.filter(p => p.corte)) : [], [dxf, pavs]);
   const avisos = useMemo(() => conferir(cortes, ativos, quadro, regras, calc.ps), [cortes, pavs, quadro, regras, calc]);
@@ -429,6 +434,8 @@ export default function App() {
   const arqDe = (box: Box): Prim[] => leitura ? leitura.prims.filter(p => p.pts.every(q => q[0] > box.x0 - 0.6 && q[0] < box.x1 + 0.6 && q[1] > box.y0 - 0.6 && q[1] < box.y1 + 0.6)) : [];
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
+  // QR com a chave da obra: tela de marcação sem login
+  if (qr?.k && cloud.nuvemConfigurada) return <PecaQR obra={qr.obra} chave={qr.k} peca={qr.peca} />;
   if (cloud.nuvemConfigurada && (!checou || !sess || recuperando)) return <Login carregando={!checou} recuperando={recuperando} fimRecuperacao={() => setRecuperando(false)} />;
   if (qr && qrAtivo) {
     const pc = prod?.pecas.find(x => x.codigo === qr.peca);
@@ -440,7 +447,7 @@ export default function App() {
       montadas={Object.values(montagem).filter(m => m.status === 'montada').length} total={prod?.pecas.length ?? 0}
       sair={() => { setQrAtivo(false); history.replaceState(null, '', location.pathname); }} />;
   }
-  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['fundacao', '10. Fundação'], ['orcamento', '11. Orçamento']];
+  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['fundacao', '10. Fundação'], ['orcamento', '11. Orçamento'], ['acompanhamento', '12. Produção e obra']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
     <div className="app">
@@ -702,6 +709,11 @@ export default function App() {
           </section>
         )}
 
+        {aba === 'acompanhamento' && leitura && prod && (
+          <Acompanhamento prod={prod} ativos={ativos} calc={calc} arqDe={arqDe} marcs={marcs} chave={chaveQR} logado={!!(sess && projId && cloud.nuvemConfigurada)}
+            atualizar={() => projId && cloud.lerMarcacoes(projId).then(setMarcs)}
+            trocar={async () => { if (projId && confirm('Trocar a chave da obra? As etiquetas impressas param de funcionar e precisam ser impressas de novo.')) setChaveQR(await cloud.chaveObra(projId, true)); }} />
+        )}
         {aba === 'fundacao' && leitura && (
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos.</p></section> : (() => {
             // planta de fundação: paredes do pavimento mais baixo (térreo)
@@ -1736,6 +1748,103 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
 }
 
 // tela do celular aberta pelo QR da etiqueta: a peça, o desenho dela e o botão para marcar a montagem
+
+// ---------- marcação pelo QR, sem login ----------
+const ETAPAS: { k: cloud.Etapa; t: string; cor: string; ic: string }[] = [
+  { k: 'concretada', t: 'Concretada', cor: '#1971c2', ic: '🧱' },
+  { k: 'carregada', t: 'Carregada', cor: '#f08c00', ic: '🚚' },
+  { k: 'montada', t: 'Montada', cor: '#2f9e44', ic: '🏗' },
+];
+const corEtapa = (e?: cloud.Etapa | null) => e === 'problema' ? '#e03131' : ETAPAS.find(x => x.k === e)?.cor ?? '#adb5bd';
+const nomeEtapa = (e?: cloud.Etapa | null) => e === 'problema' ? 'Problema' : ETAPAS.find(x => x.k === e)?.t ?? 'Sem marcação';
+
+function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: string }) {
+  const [nome, setNome] = useState(() => { try { return localStorage.getItem('alv-nome') || ''; } catch { return ''; } });
+  const [nomeOk, setNomeOk] = useState(!!nome);
+  const [info, setInfo] = useState<{ obra: string; hist: cloud.Marcacao[] } | null>(null);
+  const [erro, setErro] = useState(''); const [msg, setMsg] = useState(''); const [obs, setObs] = useState(''); const [salvando, setSalvando] = useState(false);
+  const carregar = () => cloud.situacaoPeca(obra, chave, peca).then(setInfo).catch(e => setErro((e as Error).message));
+  useEffect(() => { carregar(); }, []);
+  const st = info ? cloud.situacoes(info.hist).get(peca) : undefined, feitas = new Set(st?.etapas.map(e => e.etapa));
+  const marcar = async (e: cloud.Etapa, o: string | null = null) => {
+    setSalvando(true); setMsg('');
+    try { await cloud.marcarPeca(obra, chave, peca, e, o, nome.trim()); setMsg(e === 'desfeita' ? 'Última marcação desfeita.' : `Salvo: ${nomeEtapa(e)}.`); setObs(''); await carregar(); }
+    catch (x) { setMsg((x as Error).message); }
+    setSalvando(false);
+  };
+  return <div className="celular qr">
+    <div className="cel-topo"><b>{peca}</b><span>{info?.obra ?? ''}</span></div>
+    {erro ? <p className="erro">{erro}</p> : !info ? <p>Abrindo…</p> : !nomeOk ? <div className="qr-nome">
+      <p>Antes da primeira marcação, escreva seu nome (fica guardado neste celular):</p>
+      <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex.: Carlos – produção" />
+      <button className="cel-ok" disabled={!nome.trim()} onClick={() => { try { localStorage.setItem('alv-nome', nome.trim()); } catch { /* sem armazenamento */ } setNomeOk(true); }}>Continuar</button>
+    </div> : <>
+      <div className="cel-status" style={{ borderColor: corEtapa(st?.atual?.etapa), color: corEtapa(st?.atual?.etapa) }}>
+        Situação: <b>{nomeEtapa(st?.atual?.etapa)}</b>{st?.atual ? ` · ${new Date(st.atual.em).toLocaleString('pt-BR')} · ${st.atual.por ?? ''}` : ''}{st?.atual?.obs ? ` · ${st.atual.obs}` : ''}
+      </div>
+      {ETAPAS.map(e => <button key={e.k} className="qr-bt" style={{ background: e.cor }} disabled={salvando} onClick={() => marcar(e.k)}>{e.ic} {e.t}{feitas.has(e.k) ? ' ✔' : ''}</button>)}
+      <textarea placeholder="Problema? (avaria, trinca, medida errada, falta…)" value={obs} onChange={e => setObs(e.target.value)} />
+      <button className="cel-prob" disabled={salvando || !obs.trim()} onClick={() => marcar('problema', obs.trim())}>⚠ Registrar problema</button>
+      {st?.atual && <button disabled={salvando} onClick={() => marcar('desfeita')}>↶ Desfazer a última marcação</button>}
+      {msg && <p className="qr-msg">{msg}</p>}
+      {!!st?.etapas.length && <div className="qr-hist"><b>Histórico</b>{st.etapas.map((h, i) => <div key={i}>{nomeEtapa(h.etapa)} · {new Date(h.em).toLocaleString('pt-BR')} · {h.por}{h.obs ? ` · ${h.obs}` : ''}</div>)}</div>}
+      <p className="dica">Marcando como <b>{nome}</b> · <a href="#" onClick={e => { e.preventDefault(); setNomeOk(false); }}>trocar nome</a></p>
+    </>}
+  </div>;
+}
+
+function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atualizar, trocar }: { prod: Prod; ativos: Pavimento[]; calc: Calc; arqDe: (b: Box) => Prim[]; marcs: cloud.Marcacao[]; chave: string | null; logado: boolean; atualizar: () => void; trocar: () => void }) {
+  const [pavV, setPavV] = useState(ativos[0]?.id ?? ''); const [tipoV, setTipoV] = useState<'Parede' | 'Laje'>('Parede');
+  const sit = cloud.situacoes(marcs), atual = (c: string) => sit.get(c)?.atual?.etapa ?? null, fez = (c: string, e: cloud.Etapa) => !!sit.get(c)?.etapas.some(x => x.etapa === e);
+  const P = prod.pecas, tot = P.length;
+  const conta = (e: cloud.Etapa, l = P) => l.filter(p => fez(p.codigo, e)).length;
+  const probs = P.filter(p => atual(p.codigo) === 'problema');
+  if (!logado) return <section className="card"><p>Para acompanhar a produção e a obra, entre com o seu e-mail e abra o projeto salvo na nuvem.</p></section>;
+  const pav = ativos.find(p => p.id === pavV) || ativos[0], q = quadroDe(pav), sg = prod.sg;
+  const desenho = arqSvg(q, arqDe(pav.box)) + (tipoV === 'Parede'
+    ? calc.ps.filter(p => p.pav === pav.id).map(p => { const c = corEtapa(atual(codigoParede(p, sg))); const [x1, y1, x2, y2] = p.o === 'H' ? [p.a, p.c, p.a + p.larg, p.c] : [p.c, p.a, p.c, p.a + p.larg]; return `<line x1="${q.X(x1)}" y1="${q.Y(y1)}" x2="${q.X(x2)}" y2="${q.Y(y2)}" stroke="${c}" stroke-width="${0.16 * q.k}" opacity=".9"><title>${codigoParede(p, sg)} · ${nomeEtapa(atual(codigoParede(p, sg)))}</title></line>`; }).join('')
+    : calc.pl.filter(p => p.pav === pav.id).map(p => { const c = corEtapa(atual(codigoLaje(p, sg))); return `<rect x="${q.X(p.x0)}" y="${q.Y(p.y1)}" width="${(p.x1 - p.x0) * q.k}" height="${(p.y1 - p.y0) * q.k}" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="3"><title>${codigoLaje(p, sg)} · ${nomeEtapa(atual(codigoLaje(p, sg)))}</title></rect><text x="${q.X((p.x0 + p.x1) / 2)}" y="${q.Y((p.y0 + p.y1) / 2)}" font-size="${0.18 * q.k}" text-anchor="middle">L${p.num}</text>`; }).join(''));
+  const cargas = [...new Set(P.map(p => p.carreta ?? 0))].sort((a, b) => a - b);
+  return <section className="mod acomp">
+    <div className="lado">
+      <div className="card acoes">
+        <h3>Produção e obra (marcado pelo QR)</h3>
+        {!chave && <p className="erro">A marcação sem login ainda não está ligada: falta rodar o SQL das marcações no Supabase.</p>}
+        {[...ETAPAS.map(e => ({ t: e.t, cor: e.cor, n: conta(e.k) })), { t: 'Com problema', cor: '#e03131', n: probs.length }].map(x => <div key={x.t} className="acomp-barra">
+          <span>{x.t}</span><b>{x.n} de {tot}</b><div><i style={{ width: `${tot ? (100 * x.n) / tot : 0}%`, background: x.cor }} /></div></div>)}
+        <button onClick={atualizar}>Atualizar agora</button>
+        <p className="dica">Atualiza sozinho a cada 30 segundos.</p>
+      </div>
+      <div className="card acoes">
+        <h3>Por pavimento</h3>
+        <table className="tab-acomp"><thead><tr><th></th><th>Peças</th><th>Concr.</th><th>Carreg.</th><th>Mont.</th></tr></thead><tbody>
+          {ativos.map(pv => { const l = P.filter(p => p.pav === pv.id); return l.length ? <tr key={pv.id}><td>{pv.nome}</td><td>{l.length}</td><td>{conta('concretada', l)}</td><td>{conta('carregada', l)}</td><td>{conta('montada', l)}</td></tr> : null; })}
+        </tbody></table>
+        <h3>Por carreta</h3>
+        <table className="tab-acomp"><thead><tr><th>Carreta</th><th>Peças</th><th>Concr.</th><th>Carreg.</th><th></th></tr></thead><tbody>
+          {cargas.map(c => { const l = P.filter(p => (p.carreta ?? 0) === c), pronta = conta('concretada', l) === l.length, foi = conta('carregada', l) === l.length; return <tr key={c}><td>{c}</td><td>{l.length}</td><td>{conta('concretada', l)}</td><td>{conta('carregada', l)}</td><td>{foi ? '🚚 saiu' : pronta ? '✔ pronta para carregar' : ''}</td></tr>; })}
+        </tbody></table>
+      </div>
+      {probs.length > 0 && <div className="card acoes"><h3>Peças com problema ({probs.length})</h3>
+        {probs.map(p => { const a = sit.get(p.codigo)!.atual!; return <p key={p.id} className="erro">{p.codigo}: {a.obs} ({new Date(a.em).toLocaleString('pt-BR')} · {a.por})</p>; })}</div>}
+      <div className="card acoes">
+        <h3>Últimas marcações</h3>
+        {[...marcs].reverse().slice(0, 40).map((m, i) => <div key={i} className="dica">{new Date(m.em).toLocaleString('pt-BR')} · <b>{m.peca}</b> · {m.etapa === 'desfeita' ? 'desfez' : nomeEtapa(m.etapa)} · {m.por}{m.obs ? ` · ${m.obs}` : ''}</div>)}
+        {!marcs.length && <p className="dica">Nenhuma marcação ainda.</p>}
+      </div>
+      {chave && <div className="card acoes"><h3>Chave da obra</h3>
+        <p className="dica">O QR das etiquetas leva uma chave secreta: quem escaneia marca as peças desta obra sem login. Se uma etiqueta vazar, troque a chave e imprima as etiquetas de novo.</p>
+        <button onClick={trocar}>Trocar chave da obra</button></div>}
+    </div>
+    <div className="planta">
+      <div className="botoes">{ativos.map(pv => <button key={pv.id} className={pav.id === pv.id ? 'on' : ''} onClick={() => setPavV(pv.id)}>{pv.nome}</button>)}
+        <button className={tipoV === 'Parede' ? 'on' : ''} onClick={() => setTipoV('Parede')}>Paredes</button><button className={tipoV === 'Laje' ? 'on' : ''} onClick={() => setTipoV('Laje')}>Lajes</button></div>
+      <ZoomSvg key={pav.id + tipoV} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: desenho }} /></ZoomSvg>
+      <p className="dica">{[...ETAPAS.map(e => `${e.t}: ${e.cor === '#1971c2' ? 'azul' : e.cor === '#f08c00' ? 'laranja' : 'verde'}`), 'problema: vermelho', 'sem marcação: cinza'].join(' · ')} · passe o mouse na peça para ver o código.</p>
+    </div>
+  </section>;
+}
+
 function PecaCelular({ codigo, pc, obra, pav, desenho, carregando, erro, marca, marcar, montadas, total, sair }: {
   codigo: string; pc?: PecaProd; obra: string; pav: string; desenho: string; carregando: boolean; erro: string; marca?: cloud.Marca;
   marcar: (m: { status: 'montada' | 'problema'; obs?: string } | null) => Promise<void>; montadas: number; total: number; sair: () => void }) {

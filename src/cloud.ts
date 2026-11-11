@@ -93,3 +93,35 @@ export async function marcarMontagem(id: string, codigo: string, m: Marca | null
   if (error) throw error;
   return atual;
 }
+
+// ---------- marcação das peças pelo QR, sem login (supabase/marcacoes.sql) ----------
+export type Etapa = 'concretada' | 'carregada' | 'montada' | 'problema' | 'desfeita';
+export interface Marcacao { peca: string; etapa: Etapa; obs: string | null; por: string | null; em: string }
+// chave da obra (só o dono); null = SQL das marcações ainda não rodado
+export async function chaveObra(projeto: string, trocar = false): Promise<string | null> {
+  if (!sb) return null;
+  const { data, error } = await sb.rpc('obra_chave', { p_projeto: projeto, p_trocar: trocar });
+  if (error) return null;
+  return data as string;
+}
+export async function marcarPeca(projeto: string, chave: string, peca: string, etapa: Etapa, obs: string | null, por: string) {
+  const { error } = await sb!.rpc('marcar_peca', { p_projeto: projeto, p_chave: chave, p_peca: peca, p_etapa: etapa, p_obs: obs, p_por: por });
+  if (error) throw new Error(/inválida|trocada/.test(error.message) ? 'Etiqueta inválida ou a chave da obra foi trocada. Use a etiqueta nova.' : 'Não salvou: ' + error.message);
+}
+export async function situacaoPeca(projeto: string, chave: string, peca: string): Promise<{ obra: string; hist: Marcacao[] }> {
+  const { data, error } = await sb!.rpc('situacao_peca', { p_projeto: projeto, p_chave: chave, p_peca: peca });
+  if (error) throw new Error(/inválida|trocada/.test(error.message) ? 'Etiqueta inválida ou a chave da obra foi trocada. Use a etiqueta nova.' : error.message);
+  const rows = (data || []) as { obra: string; etapa: Etapa | null; obs: string | null; por: string | null; em: string | null }[];
+  return { obra: rows[0]?.obra ?? '', hist: rows.filter(r => r.etapa).map(r => ({ peca, etapa: r.etapa!, obs: r.obs, por: r.por, em: r.em! })) };
+}
+export async function lerMarcacoes(projeto: string): Promise<Marcacao[]> {
+  const { data, error } = await sb!.from('pecas_marcacao').select('peca,etapa,obs,por,em').eq('projeto', projeto).order('em');
+  if (error) return [];
+  return (data || []) as Marcacao[];
+}
+// situação atual de cada peça a partir do histórico ("desfeita" cancela a marcação anterior)
+export function situacoes(hist: Marcacao[]): Map<string, { etapas: Marcacao[]; atual: Marcacao | null }> {
+  const m = new Map<string, Marcacao[]>();
+  for (const h of hist) { const l = m.get(h.peca) || []; if (h.etapa === 'desfeita') l.pop(); else l.push(h); m.set(h.peca, l); }
+  return new Map([...m].map(([k, l]) => [k, { etapas: l, atual: l[l.length - 1] ?? null }]));
+}

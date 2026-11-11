@@ -220,3 +220,14 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .folha.a2 .carimbo > div:first-child { font-size: 15pt; }
 .folha.a2 .tab-loc { font-size: 12pt; }
 .folha.a2 .desenho-a3.tabelas h2 { font-size: 22pt; }
+.celular.qr .qr-bt { color: #fff; font-size: 20px; font-weight: 700; padding: 16px; border: none; border-radius: 10px; width: 100%; margin: 6px 0; }
+.celular.qr .qr-bt:disabled { opacity: .6; }
+.celular.qr .cel-status { border: 2px solid; border-radius: 8px; padding: 10px; margin: 8px 0; font-size: 15px; }
+.celular.qr .qr-hist { font-size: 13px; background: #f8f9fa; border-radius: 8px; padding: 8px; margin-top: 10px; }
+.celular.qr .qr-msg { font-weight: 700; }
+.celular.qr .qr-nome input { font-size: 18px; padding: 10px; width: 100%; box-sizing: border-box; margin: 8px 0; }
+.acomp-barra { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 6px 0; font-size: 14px; }
+.acomp-barra div { grid-column: 1 / -1; height: 10px; background: #e9ecef; border-radius: 5px; overflow: hidden; }
+.acomp-barra i { display: block; height: 100%; }
+.tab-acomp { border-collapse: collapse; font-size: 13px; width: 100%; }
+.tab-acomp th, .tab-acomp td { border-bottom: 1px solid #dee2e6; padding: 3px 5px; text-align: left; }
