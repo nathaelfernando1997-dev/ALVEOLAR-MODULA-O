@@ -14,6 +14,7 @@ import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
+import { pontosFundacao, dxfFundacao, csvFundacao } from './engine/fundacao.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
@@ -749,6 +750,23 @@ export default function App() {
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
+            {ativos.length > 0 && (() => {
+              // planta de fundação: paredes do pavimento mais baixo (térreo)
+              const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), pts = pontosFundacao(tf, calc.ps.filter(p => p.pav === pf.id), regras.fundEspac ?? 0);
+              const cont = (t: string) => pts.filter(p => p.tipo === t).length;
+              const base = nome.replace(/\.dxf$/i, '');
+              return <div className="card noprint">
+                <h3>Planta de fundação (para o Eberick)</h3>
+                <p>{pf.nome}: <b>{pts.length} pontos</b> · {cont('L')} cantos (L) · {cont('T')} encontros (T) · {cont('X')} cruzamentos · {cont('ponta')} pontas · {cont('coluna')} colunas no meio da parede{cont('emenda') ? ` · ${cont('emenda')} emendas` : ''}{cont('intermediário') ? ` · ${cont('intermediário')} intermediários` : ''}</p>
+                <label>Espaçamento máximo entre pontos ao longo da parede (m) — 0 = só cantos, encontros, pontas e colunas
+                  <input type="number" step="0.1" value={regras.fundEspac ?? 0} onChange={e => setRegras({ ...regras, fundEspac: parseFloat(e.target.value) || 0 })} /></label>
+                <div className="botoes">
+                  <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqDe(pf.box)), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
+                  <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
+                </div>
+                <p className="dica">O DXF está em metros, nas mesmas coordenadas do projeto. Camadas: PILAR (quadrado da espessura da parede), PONTO-CENTRO (cruz), BLOCO (círculo), NOME-BLOCO, EIXO-PAREDE, PAREDE, COTA, ARQUITETURA e TABELA. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
+              </div>;
+            })()}
             {prod && (() => {
               const revs = aj.revisoes || [], atual = retrato(calc, prod.sg), base = revs.find(r => r.n === revBase);
               const dif = base ? compararRev(base.pecas, atual) : null;

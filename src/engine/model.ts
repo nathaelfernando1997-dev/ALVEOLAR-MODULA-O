@@ -5,6 +5,7 @@ import type { Dxf, Pt, Prim } from './dxf.ts';
 // ---------------- configuração ----------------
 export interface Regras {
   larguraMax: number;      // 3,50
+  fundEspac?: number;      // planta de fundação: espaçamento máximo entre pontos ao longo da parede (0 = só cantos, encontros, pontas e colunas)
   larguraExcecao?: number; // painel acima da largura máxima, até esta medida, é fabricado por exceção (só aviso na conferência)
   coluna: number;          // 0,15 entre painéis
   folga: number;           // 0,05 tirado de cada painel
