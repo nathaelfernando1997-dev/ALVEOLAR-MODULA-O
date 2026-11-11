@@ -7,6 +7,7 @@ export interface Regras {
   larguraMax: number;      // 3,50
   fundEspac?: number;
   bloco?: { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho?: number; estaca?: number };   // bloco de coroamento (m, mm na bitola)
+  estaca?: { furo: number; comp: number; armDiam: number; armComp: number; barras: number; bitLong: number; bitEstr: number; espEstr: number; transpEstr: number; barra: number };   // estaca escavada
   esperaBorda?: number;    // esperas dos painéis na fundação: distância da ponta do painel (m)
   esperaEspac?: number;    // esperas: espaçamento máximo entre elas (m)      // planta de fundação: espaçamento máximo entre pontos ao longo da parede (0 = só cantos, encontros, pontas e colunas)
   larguraExcecao?: number; // painel acima da largura máxima, até esta medida, é fabricado por exceção (só aviso na conferência)
