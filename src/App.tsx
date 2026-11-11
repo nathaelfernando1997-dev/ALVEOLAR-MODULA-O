@@ -14,7 +14,7 @@ import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
-import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, blocoTecnico, pesoBitola } from './engine/fundacao.ts';
+import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, blocoTecnico, dxfBloco, pesoBitola } from './engine/fundacao.ts';
 import { ZoomSvg } from './Zoom.tsx';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
@@ -715,7 +715,7 @@ export default function App() {
             const eb = regras.esperaBorda ?? 0.2, ee = regras.esperaEspac ?? 1.2, es = esperasPaineis(psf, codF, eb, ee);
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
             const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box);
-            const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = blocoTecnico(ob);
+            const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = blocoTecnico(ob), dbTela = blocoTecnico(ob, 'tela');
             const setBloco = (k: keyof typeof BLOCO_PADRAO, v: number) => setRegras({ ...regras, bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), [k]: v } });
             const n2 = (v: number) => v.toFixed(2).replace('.', ',');
             const tabBloco = <div className="bloco-tabs">
@@ -825,6 +825,7 @@ export default function App() {
                     {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)'], ['estaca', 'Estaca: diâmetro (m) — 0 = sem estaca']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
                       <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={ob[k]} onChange={e => setBloco(k, parseFloat(e.target.value) || 0)} /></label>)}
                   </div>
+                  <button onClick={() => baixar(base + '-bloco-coroamento.dxf', dxfBloco(ob), 'application/dxf')}>Baixar detalhe do bloco (DXF)</button>
                   <p className="dica">Gaiola: {ob.barras} estribos quadrados fechados em cada direção (N1 e N2), de {n2(ob.armLado * 100)} × {n2(ob.armAlt * 100)} cm, com gancho de {n2(ob.gancho * 100)} cm em cada ponta. Comprimento de cada estribo: {Math.round(qb.comp * 100)} cm.</p>
                 </div>
                 <div className="card acoes">
@@ -840,7 +841,7 @@ export default function App() {
               </div>
               <div className="planta">
                 <div className="botoes">{([['pontos', 'Pontos de fundação'], ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['bloco', 'Bloco de coroamento'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
-                {verFund === 'bloco' && <div className="bloco-tela"><svg viewBox="0 0 400 255" dangerouslySetInnerHTML={{ __html: dbT }} /></div>}
+                {verFund === 'bloco' && <div className="bloco-tela"><svg viewBox="0 0 400 255" dangerouslySetInnerHTML={{ __html: dbTela }} /></div>}
                 {verFund !== 'folhas' && verFund !== 'bloco' && <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} />
                   {modoFund && verFund === 'pontos' && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(174,62,201,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
                     const el = (e.target as SVGElement).ownerSVGElement!; const pt = el.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;

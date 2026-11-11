@@ -313,7 +313,7 @@ export function csvEsperas(es: Espera[], ox = 0, oy = 0): string {
 // ---------- detalhamento do bloco de coroamento ----------
 // gaiola: n estribos quadrados fechados em cada direção (lado da armadura x altura da armadura), com gancho nas pontas
 export interface OpBloco { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho: number; estaca: number; qtd: number }
-export const BLOCO_PADRAO: Omit<OpBloco, 'qtd'> = { lado: 0.5, alt: 0.5, armLado: 0.45, armAlt: 0.45, barras: 4, bitola: 8.0, barra: 12, gancho: 0.08, estaca: 0 };
+export const BLOCO_PADRAO: Omit<OpBloco, 'qtd'> = { lado: 0.5, alt: 0.5, armLado: 0.44, armAlt: 0.44, barras: 4, bitola: 8.0, barra: 12, gancho: 0.08, estaca: 0 };
 export const pesoBitola = (mm: number) => 0.006165 * mm * mm;   // kg/m (aço CA-50)
 
 export function quantBloco(o: OpBloco) {
@@ -376,133 +376,153 @@ export function blocoSvg(o: OpBloco): { svg: string; w: number; h: number } {
   return { svg: s.join(''), w, h };
 }
 
-// ---------- folha técnica do bloco (padrão de projeto estrutural) ----------
-// desenho em mm de papel, folha A3 (área útil 400 x 255), escala 1:10 (1 cm do bloco = 1 mm no papel)
-export function blocoTecnico(o: OpBloco & { nomes?: string }): string {
-  const E = 1;   // mm de papel por cm de bloco (1:10)
-  const cm = (m: number) => m * 100 * E;
+// ---------- folha técnica do bloco (no padrão do detalhamento do Eberick) ----------
+// unidades: mm de papel com o bloco em 1:10 (1 mm de papel = 1 cm do bloco); y para baixo
+type Cam = 'CONCRETO' | 'FERRO' | 'FERRO-CORTE' | 'TEXTO' | 'COTA' | 'TITULO' | 'ESTACA' | 'NIVEL' | 'TABELA' | 'CHAMADA';
+type Prim2 = { k: 'l'; x1: number; y1: number; x2: number; y2: number; c: Cam; w?: number; tr?: boolean }
+  | { k: 'r'; x: number; y: number; w: number; h: number; c: Cam; fill?: boolean }
+  | { k: 'c'; x: number; y: number; r: number; c: Cam; fill?: boolean }
+  | { k: 'p'; pts: [number, number][]; c: Cam; w?: number }
+  | { k: 't'; x: number; y: number; h: number; s: string; c: Cam; anc?: 'start' | 'middle' | 'end'; rot?: number; neg?: boolean };
+
+export function desenhoBloco(o: OpBloco & { nomes?: string }): Prim2[] {
+  const P: Prim2[] = [];
+  const S = 2;   // escala 1:5 (2 mm de papel por cm)
+  const cm = (m: number) => m * 100 * S;
   const L = cm(o.lado), H = cm(o.alt), A = cm(o.armLado), AH = cm(o.armAlt), cb = (L - A) / 2, cbf = (H - AH) / 2;
-  const n = o.barras, esp = n > 1 ? A / (n - 1) : 0, fi = o.bitola, G = cm(o.gancho ?? 0);
+  const n = o.barras, esp = n > 1 ? A / (n - 1) : 0, G = cm(o.gancho ?? 0);
   const q = quantBloco(o), C = Math.round(q.comp * 100), d1 = (v: number) => (Math.round(v * 10) / 10).toString().replace('.', ',');
-  const bit = fi.toFixed(1).replace('.', ','), espT = Math.round((n > 1 ? o.armLado / (n - 1) : 0) * 100);
-  const s: string[] = [];
-  const PRETO = '#111', FERRO = '#c92a2a', COTA = '#1c4fa0', CONC = '#ece6d8';
-  const ln = (x1: number, y1: number, x2: number, y2: number, cor = PRETO, w = 0.25, dash = '') => s.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${cor}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''} stroke-linecap="round"/>`);
-  const tx = (x: number, y: number, t: string, h = 2.5, anc = 'start', rot = 0, cor = PRETO, peso = 'normal') => s.push(`<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-family="Arial, Helvetica, sans-serif" font-size="${h}" text-anchor="${anc}" fill="${cor}" font-weight="${peso}"${rot ? ` transform="rotate(${rot} ${x.toFixed(2)} ${y.toFixed(2)})"` : ''}>${t}</text>`);
-  const rect = (x: number, y: number, w: number, h: number, fill = 'none', cor = PRETO, sw = 0.35, dash = '') => s.push(`<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${fill}" stroke="${cor}" stroke-width="${sw}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`);
-  // cota com tracinho a 45°
-  const tick = (x: number, y: number) => ln(x - 0.9, y + 0.9, x + 0.9, y - 0.9, COTA, 0.3);
-  const cotaH = (x1: number, x2: number, y: number, t: string, ext0?: number) => {
-    ln(x1 - 1, y, x2 + 1, y, COTA, 0.18); tick(x1, y); tick(x2, y);
-    if (ext0 !== undefined) { ln(x1, ext0, x1, y + 1, COTA, 0.12); ln(x2, ext0, x2, y + 1, COTA, 0.12); }
-    tx((x1 + x2) / 2, y - 0.8, t, 2.2, 'middle', 0, COTA);
+  const bit = o.bitola.toFixed(1), espT = Math.round(esp / S);
+  const l = (x1: number, y1: number, x2: number, y2: number, c: Cam, w?: number, tr?: boolean) => P.push({ k: 'l', x1, y1, x2, y2, c, w, tr });
+  const t = (x: number, y: number, s: string, h = 2.2, c: Cam = 'TEXTO', anc: 'start' | 'middle' | 'end' = 'start', rot = 0, neg = false) => P.push({ k: 't', x, y, h, s, c, anc, rot, neg });
+  const r = (x: number, y: number, w: number, h: number, c: Cam, fill = false) => P.push({ k: 'r', x, y, w, h, c, fill });
+  // cota no estilo do Eberick: linha, tracinhos a 45° e texto em cima
+  const tk = (x: number, y: number) => l(x - 0.8, y + 0.8, x + 0.8, y - 0.8, 'COTA');
+  const cH = (x1: number, x2: number, y: number, s: string, de?: number) => { l(x1 - 1, y, x2 + 1, y, 'COTA'); tk(x1, y); tk(x2, y); if (de !== undefined) { l(x1, de, x1, y + 1, 'COTA'); l(x2, de, x2, y + 1, 'COTA'); } t((x1 + x2) / 2, y - 0.7, s, 2, 'COTA', 'middle'); };
+  const cV = (x: number, y1: number, y2: number, s: string, de?: number) => { l(x, y1 - 1, x, y2 + 1, 'COTA'); tk(x, y1); tk(x, y2); if (de !== undefined) { l(de, y1, x - 1, y1, 'COTA'); l(de, y2, x - 1, y2, 'COTA'); } t(x - 0.7, (y1 + y2) / 2, s, 2, 'COTA', 'middle', -90); };
+  const cham = (x: number, y: number, x2: number, y2: number, s: string, anc: 'start' | 'end' = 'end') => { l(x, y, x2, y2, 'CHAMADA'); l(x2, y2, x2 + (anc === 'end' ? -5 : 5), y2, 'CHAMADA'); t(x2 + (anc === 'end' ? -5.5 : 5.5), y2 + 0.8, s, 2.1, 'TEXTO', anc); };
+  const nivel = (x: number, y: number, s: string) => { P.push({ k: 'p', pts: [[x, y], [x - 1.3, y - 2], [x + 1.3, y - 2], [x, y]], c: 'NIVEL' }); l(x - 1.8, y - 2, x + 1.8, y - 2, 'NIVEL'); t(x, y - 2.8, s, 2, 'NIVEL', 'middle'); };
+  const titulo = (x: number, y: number, a: string, b: string) => { t(x, y, a, 2.4, 'TEXTO'); t(x, y + 3.2, b, 2.2, 'TEXTO'); };
+  // desenho da barra (estribo) com as medidas e a chamada embaixo
+  const barra = (x: number, y: number, nn: string, k = 0.55) => {
+    const a = A * k, h = AH * k;
+    P.push({ k: 'p', pts: [[x, y], [x + a, y], [x + a, y + h], [x, y + h], [x, y]], c: 'FERRO', w: 0.5 });
+    if (G) { l(x, y, x + 3, y + 3, 'FERRO', 0.5); l(x, y, x + 3.4, y + 1.2, 'FERRO', 0.5); }
+    t(x + a / 2, y - 0.8, d1(o.armLado * 100), 2, 'TEXTO', 'middle'); t(x + a / 2, y + h + 2.8, d1(o.armLado * 100), 2, 'TEXTO', 'middle');
+    t(x - 0.8, y + h / 2 + 0.7, d1(o.armAlt * 100), 2, 'TEXTO', 'end'); t(x + a + 0.8, y + h / 2 + 0.7, d1(o.armAlt * 100), 2, 'TEXTO');
+    t(x + a / 2, y + h + 6.5, `${n} ${nn} ø${bit} c/${espT} C=${C}`, 2.1, 'TEXTO', 'middle');
   };
-  const cotaV = (x: number, y1: number, y2: number, t: string, ext0?: number) => {
-    ln(x, y1 - 1, x, y2 + 1, COTA, 0.18); tick(x, y1); tick(x, y2);
-    if (ext0 !== undefined) { ln(ext0, y1, x - 1, y1, COTA, 0.12); ln(ext0, y2, x - 1, y2, COTA, 0.12); }
-    tx(x - 0.8, (y1 + y2) / 2, t, 2.2, 'middle', -90, COTA);
-  };
-  const titulo = (x: number, y: number, t: string, esc = 'ESC 1:10') => { tx(x, y, t, 3.2, 'start', 0, PRETO, 'bold'); ln(x, y + 0.9, x + t.length * 2.1, y + 0.9, PRETO, 0.3); tx(x, y + 4.2, esc, 2.2); };
-  const chamada = (x: number, y: number, x2: number, y2: number, t: string, anc = 'start') => { ln(x, y, x2, y2, PRETO, 0.15); s.push(`<circle cx="${x}" cy="${y}" r="0.45" fill="${PRETO}"/>`); tx(x2 + (anc === 'start' ? 0.8 : -0.8), y2 + 0.8, t, 2.2, anc); };
-  const nivel = (x: number, y: number, t: string) => { s.push(`<polygon points="${x},${y} ${x - 1.4},${y - 2.2} ${x + 1.4},${y - 2.2}" fill="none" stroke="${PRETO}" stroke-width="0.2"/>`); ln(x - 4, y, x + 4, y, PRETO, 0.15); tx(x + 2, y - 2.6, t, 2.1); };
   const nome = o.nomes || `B1 a B${o.qtd}`;
 
   // ===== PLANTA =====
-  const PX = 22, PY = 36;
-  tx(8, 14, `${nome}`, 3.4, 'start', 0, '#2b8a3e', 'bold');
-  tx(8, 18.5, `${o.qtd} blocos iguais · ${d1(o.lado * 100)} x ${d1(o.lado * 100)} x ${d1(o.alt * 100)} cm`, 2.4);
-  titulo(PX, PY - 8, 'PLANTA');
-  rect(PX, PY, L, L, CONC, PRETO, 0.45);
-  if (o.estaca) { const r = cm(o.estaca) / 2; s.push(`<circle cx="${PX + L / 2}" cy="${PY + L / 2}" r="${r}" fill="none" stroke="${PRETO}" stroke-width="0.25" stroke-dasharray="1.5 0.8"/>`); }
-  for (let i = 0; i < n; i++) {
-    const p = cb + i * esp;
-    ln(PX + cb, PY + p, PX + cb + A, PY + p, FERRO, 0.6);                    // N1 (direção x)
-    ln(PX + p, PY + cb, PX + p, PY + cb + A, FERRO, 0.6, '1.6 0.7');         // N2 (direção y), embaixo
-  }
-  chamada(PX + cb + A * 0.8, PY + cb, PX + L + 6, PY - 3, `${n} N1 ø${bit} c/${espT}`);
-  chamada(PX + cb + A, PY + cb + A * 0.75, PX + L + 6, PY + L + 3, `${n} N2 ø${bit} c/${espT}`);
-  cotaH(PX, PX + L, PY + L + 8, d1(o.lado * 100), PY + L + 1);
-  cotaH(PX + cb, PX + cb + A, PY + L + 4.5, d1(o.armLado * 100));
-  cotaV(PX - 8, PY, PY + L, d1(o.lado * 100), PX - 1);
-  for (let i = 0; i < n - 1; i++) cotaV(PX - 4, PY + cb + i * esp, PY + cb + (i + 1) * esp, String(espT));
-  // linhas de corte
-  const corte = (x1: number, y1: number, x2: number, y2: number, l: string, horiz: boolean) => {
-    ln(x1, y1, x2, y2, PRETO, 0.2, '4 1 1 1');
-    for (const [x, y] of [[x1, y1], [x2, y2]]) { ln(x, y, horiz ? x : x, horiz ? y - 0 : y, PRETO, 0.5); tx(horiz ? x : x, horiz ? y - 1.5 : y, l, 2.6, 'middle', 0, PRETO, 'bold'); }
-  };
-  corte(PX - 13, PY + L / 2 + 6, PX + L + 4, PY + L / 2 + 6, 'A', true);
-  corte(PX + L / 2 + 6, PY - 4, PX + L / 2 + 6, PY + L + 14, 'B', false);
+  const PX = 24, PY = 32;
+  t(6, 9, nome, 2.8, 'TITULO'); t(6, 12.6, `${d1(o.lado * 100)}x${d1(o.lado * 100)}x${d1(o.alt * 100)} (${o.qtd} blocos)`, 2.2, 'TEXTO');
+  titulo(6, 17, 'PLANTA', 'ESC 1:5');
+  r(PX, PY, L, L, 'CONCRETO', true);
+  if (o.estaca) P.push({ k: 'c', x: PX + L / 2, y: PY + L / 2, r: cm(o.estaca) / 2, c: 'ESTACA' });
+  for (let i = 0; i < n; i++) { const p = cb + i * esp; l(PX + cb, PY + p, PX + cb + A, PY + p, 'FERRO', 0.45); l(PX + p, PY + cb, PX + p, PY + cb + A, 'FERRO', 0.45); }
+  cham(PX + cb + 2 * esp, PY + cb, PX - 2, PY - 5, 'N1');
+  cham(PX + cb + A, PY + cb + 2 * esp, PX + L + 6, PY + L + 4, 'N2', 'start');
+  t(PX + L / 2 + 0.5, PY - 3, 'B', 2.2, 'TEXTO', 'middle'); t(PX - 9, PY + L / 2 + 0.7, 'A', 2.2, 'TEXTO', 'end'); t(PX + L + 10, PY + L / 2 + 0.7, 'A', 2.2, 'TEXTO', 'start'); t(PX + L / 2 + 0.5, PY + L + 12, 'B', 2.2, 'TEXTO', 'middle');
+  l(PX - 8, PY + L / 2, PX + L + 9, PY + L / 2, 'CHAMADA', 0.15, true); l(PX + L / 2, PY - 2, PX + L / 2, PY + L + 10, 'CHAMADA', 0.15, true);
+  cH(PX, PX + L, PY + L + 6, d1(o.lado * 100), PY + L + 1);
+  cV(PX + L + 6, PY, PY + L, d1(o.lado * 100), PX + L + 1);
+  for (let i = 0; i < n - 1; i++) cV(PX - 4, PY + cb + i * esp, PY + cb + (i + 1) * esp, String(espT));
+  barra(PX + 4, PY + L + 24, 'N1', 0.5);
+  barra(PX + 66, PY + L + 24, 'N2', 0.5);
+  t(PX - 18, PY + L + 18, 'ARMADURAS  ESC 1:10', 2.4, 'TEXTO');
 
   // ===== CORTES =====
-  const desenhaCorte = (X: number, Y: number, t: string, plano: 'N1' | 'N2') => {
-    titulo(X, Y - 8, t);
-    const outro = plano === 'N1' ? 'N2' : 'N1';
-    rect(X, Y, L, H, CONC, PRETO, 0.45);
-    if (o.estaca) { const r = cm(o.estaca) / 2; ln(X + L / 2 - r, Y + H, X + L / 2 - r, Y + H + 14, PRETO, 0.3); ln(X + L / 2 + r, Y + H, X + L / 2 + r, Y + H + 14, PRETO, 0.3); ln(X + L / 2 - r - 2, Y + H + 14, X + L / 2 + r + 2, Y + H + 14, PRETO, 0.2, '1 1'); tx(X + L / 2, Y + H + 18, `estaca ø${Math.round(o.estaca * 100)}`, 2.1, 'middle'); }
+  const corte = (X: number, Y: number, tt: string, nn: 'N1' | 'N2') => {
+    titulo(X - 16, Y - 13, tt, 'ESC 1:5');
+    const outro = nn === 'N1' ? 'N2' : 'N1';
+    // linha do nível do topo, tracejada, passando pelo bloco
+    l(X - 14, Y, X + L + 22, Y, 'NIVEL', 0.15, true); nivel(X + L + 14, Y, '0');
+    r(X, Y, L, H, 'CONCRETO', true);
+    if (o.estaca) { const e = cm(o.estaca); r(X + L / 2 - e / 2, Y + H, e, 16, 'ESTACA', true); }
     const x0 = X + cb, y0 = Y + cbf;
-    // estribo no plano do corte, com gancho no canto de cima à esquerda
-    rect(x0, y0, A, AH, 'none', FERRO, 0.6);
-    ln(x0, y0, x0 + 3.5, y0 + 3.5, FERRO, 0.6); ln(x0, y0, x0 + 4, y0 + 1.5, FERRO, 0.6);
-    // barras do outro sentido, cortadas (fundo e topo)
-    for (let i = 0; i < n; i++) for (const yy of [y0 + AH - 0.9, y0 + 0.9]) s.push(`<circle cx="${(x0 + i * esp).toFixed(2)}" cy="${yy.toFixed(2)}" r="0.55" fill="${FERRO}"/>`);
-    chamada(x0 + A * 0.45, y0 + AH, X + L + 6, Y + H + 4, `${n} N${plano.slice(1)} ø${bit} c/${espT} C=${C}`);
-    chamada(x0 + A, y0 + 0.9, X + L + 6, Y - 3, `${n} ${outro} (cortadas)`);
-    cotaH(X, X + L, Y + H + 9, d1(o.lado * 100), Y + H + 1);
-    cotaH(x0, x0 + A, Y + H + 5.5, d1(o.armLado * 100));
-    cotaV(X - 4, y0, y0 + AH, d1(o.armAlt * 100));
-    cotaV(X - 8, Y, Y + H, d1(o.alt * 100), X - 1);
-    if (cbf > 0.05) { cotaV(X + L + 3, y0 + AH, Y + H, d1(cbf)); cotaV(X + L + 3, Y, y0, d1(cbf)); }
-    nivel(X + L + 30, Y, '0'); nivel(X + L + 30, Y + H, `-${Math.round(o.alt * 100)}`);
+    P.push({ k: 'p', pts: [[x0, y0], [x0 + A, y0], [x0 + A, y0 + AH], [x0, y0 + AH], [x0, y0]], c: 'FERRO', w: 0.5 });
+    if (G) { l(x0, y0, x0 + 3, y0 + 3, 'FERRO', 0.5); l(x0, y0, x0 + 3.4, y0 + 1.2, 'FERRO', 0.5); }
+    for (let i = 0; i < n; i++) for (const yy of [y0 + 1.2, y0 + AH - 1.2]) P.push({ k: 'c', x: x0 + i * esp, y: yy, r: 0.8, c: 'FERRO-CORTE', fill: true });
+    cham(x0, y0 + AH * 0.3, X - 4, Y + 10, nn);
+    cham(x0 + esp, y0 + AH - 1.2, X - 4, Y + H + 4, outro);
+    cH(X, X + L, Y + H + (o.estaca ? 20 : 6), d1(o.lado * 100), Y + H + 1);
+    cV(X + L + 5, Y, Y + H, d1(o.alt * 100), X + L + 1);
+    cV(X - 10, y0, y0 + AH, d1(o.armAlt * 100));
+    nivel(X + L + 14, Y + H, `-${Math.round(o.alt * 100)}`);
   };
-  desenhaCorte(118, PY, 'CORTE A-A', 'N1');
-  desenhaCorte(222, PY, 'CORTE B-B', 'N2');
+  corte(158, PY, 'CORTE A-A', 'N1');
+  corte(282, PY, 'CORTE B-B', 'N2');
 
-  // ===== DETALHE DAS ARMADURAS =====
-  const DX = 318, DY = PY;
-  titulo(DX, DY - 8, 'ARMADURAS', 'ESC 1:10');
-  const estribo = (X: number, Y: number, nn: string) => {
-    rect(X, Y, A, AH, 'none', FERRO, 0.6);
-    ln(X, Y, X + Math.min(G, 8) * 0.7, Y + Math.min(G, 8) * 0.7, FERRO, 0.6); ln(X, Y, X + Math.min(G, 8) * 0.95, Y + Math.min(G, 8) * 0.3, FERRO, 0.6);
-    tx(X + A / 2, Y - 1.2, d1(o.armLado * 100), 2.2, 'middle'); tx(X + A / 2, Y + AH + 3, d1(o.armLado * 100), 2.2, 'middle');
-    tx(X - 1.2, Y + AH / 2 + 0.8, d1(o.armAlt * 100), 2.2, 'end'); tx(X + A + 1.2, Y + AH / 2 + 0.8, d1(o.armAlt * 100), 2.2, 'start');
-    if (G) tx(X + 6.5, Y + 6.5, `gancho ${d1(G)}`, 1.8, 'start', 0, '#555');
-    tx(X + A / 2, Y + AH + 8, `${n} ${nn} ø${bit} C=${C}`, 2.6, 'middle', 0, PRETO, 'bold');
+  // ===== TABELAS (padrão Eberick) =====
+  const tab = (X: number, Y: number, tit: string, cab: string[], ws: number[], lin: string[][]) => {
+    const h = 3.6, W = ws.reduce((a, b) => a + b, 0), N = lin.length + 2;
+    r(X, Y, W, h * N, 'TABELA');
+    t(X + W / 2, Y + 2.7, tit, 2, 'TABELA', 'middle'); l(X, Y + h, X + W, Y + h, 'TABELA');
+    let x = X; cab.forEach((c, i) => { t(x + ws[i] / 2, Y + h + 2.7, c, 1.8, 'TABELA', 'middle'); x += ws[i]; if (i < cab.length - 1) l(x, Y + h, x, Y + h * N, 'TABELA'); });
+    lin.forEach((ln2, j) => { const yy = Y + (j + 2) * h; l(X, yy, X + W, yy, 'TABELA'); let xx = X; ln2.forEach((c, i) => { t(xx + ws[i] / 2, yy + 2.7, c, 1.8, 'TABELA', 'middle'); xx += ws[i]; }); });
+    return Y + h * N;
   };
-  estribo(DX + 6, DY + 2, 'N1');
-  estribo(DX + 6, DY + AH + 22, 'N2');
+  const TX = 160;
+  let y = PY + L + 18;
+  y = tab(TX, y, 'ARMADURA - POR BLOCO', ['N', 'ø (mm)', 'QUANT', 'C.UNIT (cm)', 'C.TOTAL (cm)'], [10, 16, 16, 24, 26],
+    [['1', bit, String(n), String(C), String(n * C)], ['2', bit, String(n), String(C), String(n * C)]]) + 5;
+  y = tab(TX, y, `ARMADURA - ${o.qtd} BLOCOS`, ['N', 'ø (mm)', 'QUANT', 'C.UNIT (cm)', 'C.TOTAL (m)'], [10, 16, 16, 24, 26],
+    [['1', bit, String(n * o.qtd), String(C), d1(q.metros / 2)], ['2', bit, String(n * o.qtd), String(C), d1(q.metros / 2)]]) + 5;
+  y = tab(TX, y, 'RESUMO DO AÇO', ['AÇO', 'ø (mm)', 'C.TOTAL (m)', 'PESO+10% (kg)', `BARRAS ${d1(o.barra)}m`], [12, 14, 20, 24, 22],
+    [['CA50', bit, d1(q.metros), d1(q.kg * 1.1), String(q.barras12)]]) + 5;
+  const yNotas = PY + L + 18;
+  y = tab(TX, y, 'CONSUMO', ['ITEM', 'POR BLOCO', `TOTAL (${o.qtd})`], [36, 28, 28],
+    [['Concreto (m³)', q.conc.toFixed(3).replace('.', ','), q.concTotal.toFixed(2).replace('.', ',')], ['Forma (m²)', (4 * o.lado * o.alt).toFixed(2).replace('.', ','), q.forma.toFixed(2).replace('.', ',')], ['Aço CA50 (kg)', (q.kg / o.qtd).toFixed(2).replace('.', ','), d1(q.kg)]]) + 7;
+  t(TX + 112, yNotas + 3, 'NOTAS', 2.2, 'TITULO');
+  [`Cobrimento: ${d1(q.cob * 100)} cm (laterais), ${d1(q.cobFundo * 100)} cm (fundo e topo).`,
+   `N1 e N2: estribos quadrados fechados ${d1(o.armLado * 100)}x${d1(o.armAlt * 100)},`,
+   `gancho de ${d1(G / S)} cm em cada ponta, formando a gaiola.`,
+   `Plano de corte: ${q.porBarra} estribos por barra de ${d1(o.barra)} m.`,
+   `Concreto e aço conforme o projeto estrutural.`,
+   `Medidas em cm. Locação: planta de locação.`].forEach((s2, i) => t(TX + 112, yNotas + 7 + i * 3.3, s2, 1.9));
+  return P;
+}
 
-  // ===== TABELAS =====
-  const tabela = (X: number, Y: number, tit: string, cab: string[], ws: number[], linhas: string[][], neg: number[] = []) => {
-    const h = 5, W = ws.reduce((a, b) => a + b, 0);
-    rect(X, Y, W, h * (linhas.length + 2), 'none', PRETO, 0.3);
-    tx(X + W / 2, Y + 3.6, tit, 2.5, 'middle', 0, PRETO, 'bold'); ln(X, Y + h, X + W, Y + h, PRETO, 0.25);
-    let x = X; cab.forEach((c, i) => { tx(x + ws[i] / 2, Y + h + 3.5, c, 2.1, 'middle', 0, PRETO, 'bold'); x += ws[i]; if (i < cab.length - 1) ln(x, Y + h, x, Y + h * (linhas.length + 2), PRETO, 0.15); });
-    ln(X, Y + 2 * h, X + W, Y + 2 * h, PRETO, 0.25);
-    linhas.forEach((l, j) => { let xx = X; const yy = Y + (j + 2) * h; if (j) ln(X, yy, X + W, yy, PRETO, 0.1); l.forEach((c, i) => { tx(xx + ws[i] / 2, yy + 3.5, c, 2.1, 'middle', 0, PRETO, neg.includes(j) ? 'bold' : 'normal'); xx += ws[i]; }); });
-  };
-  const TY = 150;
-  tabela(8, TY, 'RELAÇÃO DO AÇO - POR BLOCO', ['POS', 'AÇO', 'ø (mm)', 'QUANT', 'C.UNIT (cm)', 'C.TOTAL (cm)'], [12, 14, 14, 14, 22, 24],
-    [['N1', 'CA-50', bit, String(n), String(C), String(n * C)], ['N2', 'CA-50', bit, String(n), String(C), String(n * C)]]);
-  const kg = q.kg, kg10 = kg * 1.1;
-  tabela(8, TY + 26, `RELAÇÃO DO AÇO - ${o.qtd} BLOCOS`, ['POS', 'ø (mm)', 'QUANT', 'C.UNIT (cm)', 'C.TOTAL (m)'], [12, 16, 20, 26, 26],
-    [['N1', bit, String(n * o.qtd), String(C), d1(q.metros / 2)], ['N2', bit, String(n * o.qtd), String(C), d1(q.metros / 2)]]);
-  tabela(118, TY, 'RESUMO DO AÇO', ['AÇO', 'ø (mm)', 'C.TOTAL (m)', 'PESO + 10% (kg)', `BARRAS ${d1(o.barra)} m`], [16, 16, 24, 28, 26],
-    [['CA-50', bit, d1(q.metros), d1(kg10), String(q.barras12)], ['', '', '', `peso sem perda: ${d1(kg)}`, '']], [0]);
-  tabela(118, TY + 26, 'CONSUMO', ['ITEM', 'POR BLOCO', `TOTAL (${o.qtd})`], [40, 30, 40],
-    [['Concreto (m³)', q.conc.toFixed(3).replace('.', ','), q.concTotal.toFixed(2).replace('.', ',')], ['Forma - laterais (m²)', (4 * o.lado * o.alt).toFixed(2).replace('.', ','), q.forma.toFixed(2).replace('.', ',')], ['Aço CA-50 (kg)', (kg / o.qtd).toFixed(2).replace('.', ','), d1(kg)]]);
-  // notas
-  const NX = 240, NY = TY + 3;
-  tx(NX, NY, 'NOTAS', 2.8, 'start', 0, PRETO, 'bold');
-  const notas = [
-    `1. Medidas em centímetros e níveis em centímetros, salvo indicação.`,
-    `2. Cobrimento: ${d1(q.cob * 100)} cm nas laterais e ${d1(q.cobFundo * 100)} cm no fundo e no topo.`,
-    `3. Estribos N1 (direção X) e N2 (direção Y) quadrados fechados de ${d1(o.armLado * 100)} x ${d1(o.armAlt * 100)},`,
-    `    com gancho de ${d1(G)} cm em cada ponta, amarrados formando a gaiola.`,
-    `4. Comprimento dos estribos pelas medidas externas, com os ganchos.`,
-    `5. Concreto (fck), aço e ligação com a estaca conforme o projeto estrutural.`,
-    `6. Locação dos blocos: planta de locação (folhas 1 e 2).`,
-    `7. Plano de corte: ${q.porBarra} estribos por barra de ${d1(o.barra)} m (sobra ${q.sobra.toFixed(2).replace('.', ',')} m).`,
-  ];
-  notas.forEach((t, i) => tx(NX, NY + 5 + i * 4.2, t, 2.2));
-  return s.join('');
+const CORES_CAD: Record<Cam, { tela: string; papel: string; dxf: number }> = {
+  CONCRETO: { tela: '#3b5bdb', papel: '#1c3fa0', dxf: 5 }, FERRO: { tela: '#ffd43b', papel: '#c92a2a', dxf: 2 }, 'FERRO-CORTE': { tela: '#ffd43b', papel: '#c92a2a', dxf: 2 },
+  TEXTO: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, COTA: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, TITULO: { tela: '#40c057', papel: '#2b8a3e', dxf: 3 },
+  ESTACA: { tela: '#868e96', papel: '#868e96', dxf: 8 }, NIVEL: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, TABELA: { tela: '#f8f9fa', papel: '#111', dxf: 7 }, CHAMADA: { tela: '#f8f9fa', papel: '#333', dxf: 7 },
+};
+
+// SVG: tema "tela" = fundo preto como no Eberick; "papel" = fundo branco para imprimir
+export function blocoTecnico(o: OpBloco & { nomes?: string }, tema: 'tela' | 'papel' = 'papel'): string {
+  const P = desenhoBloco(o), cor = (c: Cam) => CORES_CAD[c][tema], f = (v: number) => v.toFixed(2);
+  const out: string[] = [];
+  if (tema === 'tela') out.push('<rect x="0" y="0" width="400" height="255" fill="#000"/>');
+  for (const p of P) {
+    if (p.k === 'l') out.push(`<line x1="${f(p.x1)}" y1="${f(p.y1)}" x2="${f(p.x2)}" y2="${f(p.y2)}" stroke="${cor(p.c)}" stroke-width="${p.w ?? 0.15}"${p.tr ? ' stroke-dasharray="2.5 0.8 0.5 0.8"' : ''}/>`);
+    else if (p.k === 'r') out.push(`<rect x="${f(p.x)}" y="${f(p.y)}" width="${f(p.w)}" height="${f(p.h)}" fill="${p.fill ? (p.c === 'CONCRETO' ? (tema === 'tela' ? '#a68a64' : '#e9dfc9') : '#868e96') : 'none'}"${p.fill && p.c === 'CONCRETO' && tema === 'tela' ? ' fill-opacity=".85"' : ''} stroke="${cor(p.c)}" stroke-width="${p.c === 'CONCRETO' ? 0.35 : 0.15}"/>`);
+    else if (p.k === 'c') out.push(`<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.r)}" fill="${p.fill ? cor(p.c) : 'none'}" stroke="${cor(p.c)}" stroke-width="0.2"${p.c === 'ESTACA' ? ' stroke-dasharray="1.2 0.6"' : ''}/>`);
+    else if (p.k === 'p') out.push(`<polyline points="${p.pts.map(([x, y]) => `${f(x)},${f(y)}`).join(' ')}" fill="none" stroke="${cor(p.c)}" stroke-width="${p.w ?? 0.15}"/>`);
+    else out.push(`<text x="${f(p.x)}" y="${f(p.y)}" font-family="Arial, Helvetica, sans-serif" font-size="${p.h}" text-anchor="${p.anc ?? 'start'}" fill="${cor(p.c)}"${p.rot ? ` transform="rotate(${p.rot} ${f(p.x)} ${f(p.y)})"` : ''}>${p.s.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>`);
+  }
+  return out.join('');
+}
+
+// DXF (R12) do detalhe do bloco: em cm, no tamanho real do bloco (plotar a 1:5)
+export function dxfBloco(o: OpBloco & { nomes?: string }): string {
+  // desenho em mm de papel a 1:5 -> cm reais (divide por 2)
+  const P = desenhoBloco(o).map(p => ({ ...p })), K = 0.5, Y = (y: number) => -y * K, X = (x: number) => x * K, out: string[] = [];
+  const tx = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ø/g, '%%c').replace(/[^\x20-\x7e]/g, '');
+  const hdr = ['0', 'SECTION', '2', 'TABLES', '0', 'TABLE', '2', 'LTYPE', '70', '1', '0', 'LTYPE', '2', 'CENTER', '70', '0', '3', 'Center', '72', '65', '73', '4', '40', '4.0', '49', '2.5', '49', '-0.8', '49', '0.5', '49', '-0.8', '0', 'ENDTAB', '0', 'ENDSEC'];
+  const ln = (c: Cam, x1: number, y1: number, x2: number, y2: number, tr = false) => out.push('0', 'LINE', '8', c, ...(tr ? ['6', 'CENTER'] : []), '62', String(CORES_CAD[c].dxf), '10', X(x1).toFixed(3), '20', Y(y1).toFixed(3), '11', X(x2).toFixed(3), '21', Y(y2).toFixed(3));
+  for (const p of P) {
+    if (p.k === 'l') ln(p.c, p.x1, p.y1, p.x2, p.y2, p.tr);
+    else if (p.k === 'r') { ln(p.c, p.x, p.y, p.x + p.w, p.y); ln(p.c, p.x + p.w, p.y, p.x + p.w, p.y + p.h); ln(p.c, p.x + p.w, p.y + p.h, p.x, p.y + p.h); ln(p.c, p.x, p.y + p.h, p.x, p.y); }
+    else if (p.k === 'c') out.push('0', 'CIRCLE', '8', p.c, '62', String(CORES_CAD[p.c].dxf), '10', X(p.x).toFixed(3), '20', Y(p.y).toFixed(3), '40', (p.r * K).toFixed(3));
+    else if (p.k === 'p') for (let i = 0; i < p.pts.length - 1; i++) ln(p.c, p.pts[i][0], p.pts[i][1], p.pts[i + 1][0], p.pts[i + 1][1]);
+    else {
+      const a = p.anc === 'middle' ? '1' : p.anc === 'end' ? '2' : '0';
+      out.push('0', 'TEXT', '8', p.c, '62', String(CORES_CAD[p.c].dxf), '10', X(p.x).toFixed(3), '20', Y(p.y).toFixed(3), '40', (p.h * 0.75 * K).toFixed(3), '1', tx(p.s));
+      if (p.rot) out.push('50', String(-p.rot));
+      if (a !== '0') out.push('72', a, '11', X(p.x).toFixed(3), '21', Y(p.y).toFixed(3));
+    }
+  }
+  return [...hdr, '0', 'SECTION', '2', 'ENTITIES', ...out, '0', 'ENDSEC', '0', 'EOF'].join('\r\n');
 }
