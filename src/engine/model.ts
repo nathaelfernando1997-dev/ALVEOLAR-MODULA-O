@@ -370,6 +370,9 @@ export interface Ajustes {
   alturaPainel?: Record<string, number>;   // altura manual de um painel só (chave = trecho@início do painel), ex.: parede que baixa para a viga da sacada
   vaoTipo: Record<string, string>;         // `${trecho}@${posição}` -> tag (ex.: P04) ou "livre"
   vaoCentro?: string[];                    // vãos (mesma chave) centralizados na parede (ex.: janelas dos banheiros)
+  vaoPos?: Record<string, number>;         // vão movido: distância (m) do começo da parede (face) até o vão
+  paredesManuais?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number; esp?: number }[];   // paredes desenhadas no sistema
+  revisoes?: { n: number; em: string; nota: string; pecas: { k: string; cod: string; d: string }[] }[];   // revisões salvas (para comparar)
   vigasManuais?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }[];   // vigas desenhadas no sistema (apoio da laje, como a LINHA DE PISO)
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
@@ -545,6 +548,8 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     if (inteiro) { w = Math.max(w, v.b - v.a); }
     return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt, key };   // mesmo topo do recorte (porta = boneca + altura)
   }
+  // paredes desenhadas no sistema (o desenho não tinha a parede)
+  for (const m of aj.paredesManuais || []) if (m.pav === pav.id) out.push(montar(pav, m.o, m.c, m.a, m.b, [], m.esp ?? 0.14));
   // ajustes: excluir e juntar
   let res = out.filter(t => t.e - t.s >= r.minParede && !aj.excluir.includes(t.id));
   const proximo = (t: Trecho) => res.filter(x => x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05 && x.s > t.s).sort((a, b) => a.s - b.s)[0];
@@ -636,8 +641,9 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     }
   }
   // janela marcada para centralizar: fica no meio da parede (de face a face)
-  for (const t of res) for (const v of t.vaos) if (v.key && aj.vaoCentro?.includes(v.key)) {
-    const d = (t.s + t.e) / 2 - (v.x0 + v.x1) / 2;
+  for (const t of res) for (const v of t.vaos) if (v.key && (aj.vaoCentro?.includes(v.key) || aj.vaoPos?.[v.key] != null)) {
+    const pos = v.key ? aj.vaoPos?.[v.key] : undefined;
+    const d = pos != null ? t.s + pos - v.x0 : (t.s + t.e) / 2 - (v.x0 + v.x1) / 2;
     if (Math.abs(d) > 0.005) { v.a += d; v.b += d; v.x0 += d; v.x1 += d; }
   }
   return res;
@@ -737,7 +743,7 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
           else if (w < o.w - 1e-6) aviso = `${o.tipo}: recorte reduzido para caber as bonecas`;
           let dl = Math.min(Math.max(o.x0 - pa, bl), larg - w - bl);
           // janela centralizada: fica no meio da peça (as mesmas sobras dos dois lados)
-          if (o.key && aj.vaoCentro?.includes(o.key) && !toda && larg - w >= 2 * bl - 1e-6) dl = (larg - w) / 2;
+          if (o.key && aj.vaoCentro?.includes(o.key) && aj.vaoPos?.[o.key] == null && !toda && larg - w >= 2 * bl - 1e-6) dl = (larg - w) / 2;
           if (dl < bl - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${bl * 100} cm`; }
           let base = o.base, h = o.h;
           if (base < r.boneca && !o.continua) { h -= r.boneca - base; base = r.boneca; }

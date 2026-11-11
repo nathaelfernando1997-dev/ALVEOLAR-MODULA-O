@@ -182,3 +182,9 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .celular .cel-ok { background: #0a8a2c; color: #fff; border: none; }
 .celular .cel-prob { background: #c4501c; color: #fff; border: none; }
 .celular textarea { font-size: 16px; min-height: 60px; }
+.desfazer { display: flex; gap: 6px; margin: 6px 0; }
+.desfazer button { flex: 1; }
+.revisoes input { flex: 1; min-width: 220px; }
+.alteracoes { font-size: 9pt; }
+.folha .alteracoes { font-size: 7.5pt; width: 100%; }
+.folha .alteracoes table { width: 100%; }

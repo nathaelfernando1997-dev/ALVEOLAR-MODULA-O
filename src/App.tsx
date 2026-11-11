@@ -89,16 +89,30 @@ export default function App() {
   const [pavs, setPavs] = useState<Pavimento[]>([]);
   const [quadro, setQuadro] = useState<Esquadria[]>([]);
   const [regras, setRegras] = useState<Regras>(REGRAS_PADRAO);
-  const [aj, setAj] = useState<Ajustes>(AJUSTES_VAZIOS);
+  const [aj, setAjBase] = useState<Ajustes>(AJUSTES_VAZIOS);
+  // desfazer / refazer: cada mudança de ajuste guarda o estado anterior (até 60 passos)
+  const hist = useRef<{ antes: Ajustes[]; depois: Ajustes[] }>({ antes: [], depois: [] });
+  const ajRef = useRef(aj); ajRef.current = aj;
+  const [, setVerHist] = useState(0);
+  const setAj = (n: Ajustes) => { const h = hist.current, atual = ajRef.current; if (atual === n) return; h.antes = [...h.antes.slice(-59), atual]; h.depois = []; ajRef.current = n; setAjBase(n); setVerHist(v => v + 1); };
+  const desfazer = () => { const h = hist.current, prev = h.antes.pop(); if (!prev) return; h.depois = [ajRef.current, ...h.depois]; ajRef.current = prev; setAjBase(prev); setVerHist(v => v + 1); };
+  const refazer = () => { const h = hist.current, prox = h.depois.shift(); if (!prox) return; h.antes = [...h.antes, ajRef.current]; ajRef.current = prox; setAjBase(prox); setVerHist(v => v + 1); };
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (!(e.ctrlKey || e.metaKey) || /INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement)?.tagName)) return;
+      if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); desfazer(); } else if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) { e.preventDefault(); refazer(); } };
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+  });
   const [pavSel, setPavSel] = useState('');
   const [sel, setSel] = useState<{ trecho: string } | null>(null);
   const [vaoSel, setVaoSel] = useState<string | null>(null);
   const [ambSel, setAmbSel] = useState<string | null>(null);
   const [lajeSel, setLajeSel] = useState<string | null>(null);   // painel de laje clicado (chaveLaje)
-  const [modoViga, setModoViga] = useState<{ x: number; y: number } | null | 'ok'>(null);   // adicionar viga: null = desligado, 'ok' = esperando o 1º clique
+  const [modoViga, setModoViga] = useState<{ x: number; y: number } | null | 'ok'>(null);
+  const [modoParede, setModoParede] = useState<{ x: number; y: number } | null | 'ok'>(null);   // desenhar parede (2 cliques)   // adicionar viga: null = desligado, 'ok' = esperando o 1º clique
   const [cortando, setCortando] = useState<{ trecho: string; coluna: boolean } | null>(null);
   const [vigaSel, setVigaSel] = useState<string | null>(null);
   const [projId, setProjId] = useState<string | null>(null);
+  useEffect(() => { hist.current = { antes: [], depois: [] }; setVerHist(v => v + 1); }, [projId, nome]);   // outro projeto: histórico novo
   const [pasta, setPasta] = useState<Pasta>('modulacao');            // pasta mostrada na aba Arquivo
   const [projPasta, setProjPasta] = useState<Pasta>('modulacao');    // pasta do projeto aberto
   const [projNome, setProjNome] = useState('');
@@ -394,6 +408,8 @@ export default function App() {
   }, [leitura, pavs, quadro, regras, aj]);
   const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
   const [modoImp, setModoImp] = useState<'folhas' | 'etiquetas'>('folhas');
+  const [revBase, setRevBase] = useState<number | null>(null);
+  const [notaRev, setNotaRev] = useState('');
   // QR da etiqueta: ?obra=<projeto>&peca=<código> abre a peça no celular para marcar a montagem
   const qr = useMemo(() => { const u = new URLSearchParams(location.search); const o = u.get('obra'), pc = u.get('peca'); return o && pc ? { obra: o, peca: pc } : null; }, []);
   const [qrAtivo, setQrAtivo] = useState(!!qr);
@@ -607,6 +623,7 @@ export default function App() {
           <section className="mod">
             <div className="lado">
               <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setSel(null); setVaoSel(null); setAmbSel(null); setLajeSel(null); }}>{p.nome}</button>)}</div>
+              <div className="desfazer"><button disabled={!hist.current.antes.length} onClick={desfazer} title="Ctrl+Z">↶ Desfazer{hist.current.antes.length ? ` (${hist.current.antes.length})` : ''}</button><button disabled={!hist.current.depois.length} onClick={refazer} title="Ctrl+Y">↷ Refazer</button></div>
               {aba === 'modulacao'
                 ? <Acoes pav={pavAtual} sel={sel} vaoSel={vaoSel} calc={calc} aj={aj} setAj={setAj} quadro={quadro} regras={regras} cortando={cortando} setCortando={setCortando} limpar={() => { setSel(null); setVaoSel(null); setCortando(null); }} />
                 : <>
@@ -619,6 +636,13 @@ export default function App() {
                   </div>
                   <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />
                 </>}
+              {aba === 'modulacao' && <div className="card acoes">
+                <h3>Paredes desenhadas</h3>
+                <button className={modoParede ? 'on' : ''} onClick={() => { setModoParede(modoParede ? null : 'ok'); setSel(null); setVaoSel(null); }}>{modoParede ? (modoParede === 'ok' ? 'Clique no começo da parede… (clique aqui para parar)' : 'Clique no fim da parede…') : 'Desenhar parede (clique no começo e no fim)'}</button>
+                <p className="dica">Para parede que o desenho não tem. Os pontos encostam no eixo das paredes perto (até 20 cm) e a parede vai até a face delas. Para apagar uma parede do desenho: clique nela e use "Não modular esta parede".</p>
+                {(aj.paredesManuais || []).filter(m => m.pav === pavAtual.id).map((m, i) => <div key={i} className="corte-item">{m.o === 'H' ? 'horizontal' : 'vertical'} · {br(m.b - m.a)} m
+                  <button onClick={() => setAj({ ...aj, paredesManuais: (aj.paredesManuais || []).filter(x => x !== m) })}>apagar</button></div>)}
+              </div>}
               {aba === 'modulacao' && <div className="card acoes">
                 <h3>Janelas</h3>
                 {(() => {
@@ -634,13 +658,26 @@ export default function App() {
                 })()}
               </div>}
               <details><summary>Desfazer ajustes</summary>
-                <button onClick={() => { if (confirm('Apagar todos os ajustes manuais deste projeto?')) setAj(AJUSTES_VAZIOS); }}>Apagar todos os ajustes</button>
+                <button onClick={() => { if (confirm('Apagar todos os ajustes manuais deste projeto?')) setAj({ ...AJUSTES_VAZIOS, revisoes: aj.revisoes }); }}>Apagar todos os ajustes (as revisões salvas ficam)</button>
               </details>
             </div>
             {aba === 'modulacao'
               ? <PlantaParedes L={leitura} pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} sel={sel} vaoSel={vaoSel} cortando={cortando}
                   onCorte={(t, along) => { const tr = calc.ts.find(x => x.id === t); if (!tr || !cortando) return; const d = Math.round((along - tr.s) * 100) / 100; const k = cortando.coluna ? 'colunas' : 'cortes'; const m = { ...(aj[k] || {}) }; m[t] = [...(m[t] || []), d].sort((a, b) => a - b); setAj({ ...aj, [k]: m }); setCortando(null); }}
-                  onPainel={t => { setSel({ trecho: t }); setVaoSel(null); }} onVao={k => { setVaoSel(k); setSel(null); setCortando(null); }} />
+                  onPainel={t => { setSel({ trecho: t }); setVaoSel(null); }} onVao={k => { setVaoSel(k); setSel(null); setCortando(null); }}
+                  modoParede={modoParede} onPonto={(x, y) => {
+                    if (modoParede === 'ok' || modoParede === null) { setModoParede({ x, y }); return; }
+                    const dx = x - modoParede.x, dy = y - modoParede.y, o: 'H' | 'V' = Math.abs(dx) >= Math.abs(dy) ? 'H' : 'V';
+                    const r2 = (v: number) => Math.round(v * 100) / 100;
+                    const c = o === 'H' ? (y + modoParede.y) / 2 : (x + modoParede.x) / 2;
+                    let a = o === 'H' ? Math.min(x, modoParede.x) : Math.min(y, modoParede.y), b = o === 'H' ? Math.max(x, modoParede.x) : Math.max(y, modoParede.y);
+                    // ponta no eixo de uma parede: a nova parede começa/termina na face dela
+                    const perp = calc.ts.filter(t => t.pav === pavAtual.id && t.o !== o);
+                    const pa = perp.find(t => Math.abs(t.c - a) < 0.005), pb = perp.find(t => Math.abs(t.c - b) < 0.005);
+                    if (pa) a += pa.esp / 2; if (pb) b -= pb.esp / 2;
+                    if (b - a > 0.2) setAj({ ...aj, paredesManuais: [...(aj.paredesManuais || []), { pav: pavAtual.id, o, c: r2(c), a: r2(a), b: r2(b), esp: 0.14 }] });
+                    setModoParede('ok');
+                  }} />
               : <PlantaLajes pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} ambSel={ambSel} lajeSel={lajeSel} onAmb={id => { setAmbSel(id); setLajeSel(null); }} onLaje={p => { setAmbSel(p.amb); setLajeSel(chaveLaje(p)); }}
                   vigas={(aj.vigasManuais || []).filter(v => v.pav === pavAtual.id)} modoViga={modoViga}
                   onPonto={(x, y) => {
@@ -706,6 +743,19 @@ export default function App() {
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
               </div>
             </div>
+            {prod && (() => {
+              const revs = aj.revisoes || [], atual = retrato(calc, prod.sg), base = revs.find(r => r.n === revBase);
+              const dif = base ? compararRev(base.pecas, atual) : null;
+              return <div className="card noprint revisoes"><h3>Revisões</h3>
+                <p className="dica">Salve uma revisão sempre que mandar para a fábrica. Depois, escolha uma revisão para ver o que mudou desde ela (sai também uma folha no PDF).</p>
+                <div className="botoes"><input placeholder="Nota (ex.: enviada para a fábrica)" value={notaRev} onChange={e => setNotaRev(e.target.value)} />
+                  <button onClick={() => { const n = (revs[revs.length - 1]?.n ?? 0) + 1; setAj({ ...aj, revisoes: [...revs, { n, em: new Date().toISOString(), nota: notaRev.trim(), pecas: atual }] }); setNotaRev(''); }}>Salvar revisão {(revs[revs.length - 1]?.n ?? 0) + 1}</button></div>
+                {revs.map(r => <div key={r.n} className="corte-item"><b>Rev. {r.n}</b> · {new Date(r.em).toLocaleString('pt-BR')}{r.nota ? ` · ${r.nota}` : ''} · {r.pecas.length} peças
+                  <button className={revBase === r.n ? 'on' : ''} onClick={() => setRevBase(revBase === r.n ? null : r.n)}>{revBase === r.n ? 'comparando' : 'comparar com esta'}</button>
+                  <button onClick={() => { if (confirm(`Apagar a revisão ${r.n}?`)) { setAj({ ...aj, revisoes: revs.filter(x => x !== r) }); if (revBase === r.n) setRevBase(null); } }}>apagar</button></div>)}
+                {dif && <TabelaAlteracoes dif={dif} />}
+              </div>;
+            })()}
             {prod && qrBase && <div className="card noprint"><h3>Montagem na obra (marcada pelo QR das etiquetas)</h3>
               <p><b>{Object.values(montagem).filter(m => m.status === 'montada').length}</b> de {prod.pecas.length} peças montadas · <b>{Object.values(montagem).filter(m => m.status === 'problema').length}</b> com problema <button onClick={() => projId && cloud.lerMontagem(projId).then(setMontagem)}>Atualizar</button></p>
               {Object.entries(montagem).filter(([, m]) => m.status === 'problema').map(([c, m]) => <p key={c} className="erro">{c}: {m.obs || 'problema'} ({new Date(m.em).toLocaleString('pt-BR')} · {m.por})</p>)}
@@ -714,7 +764,8 @@ export default function App() {
             {!qrBase && prod && <p className="dica noprint">O QR das etiquetas (marcar a montagem pelo celular) aparece com o projeto salvo na nuvem e o login feito.</p>}
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
             {modoImp === 'etiquetas' && prod ? <Etiquetas prod={prod} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
-              : prod ? <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod} />
+              : prod ? <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod}
+                  rev={(() => { const b = (aj.revisoes || []).find(r => r.n === revBase); return b ? { base: b, dif: compararRev(b.pecas, retrato(calc, prod.sg)) } : undefined; })()} />
               : <p className="dica">As folhas de produção usam o cálculo atual (aba Regras).</p>}
           </section>
         )}
@@ -888,9 +939,10 @@ function Miniatura({ prims, box }: { prims: Prim[]; box: Box }) {
 }
 
 // tela de paredes no layout da planta baixa, com áreas clicáveis por cima
-function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPainel, onVao }: {
+function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPainel, onVao, modoParede = null, onPonto }: {
   L: Leitura; pav: Pavimento; calc: Calc; arq: Prim[]; sel: { trecho: string } | null; vaoSel: string | null;
   cortando: { trecho: string; coluna: boolean } | null; onCorte: (t: string, along: number) => void; onPainel: (t: string) => void; onVao: (k: string) => void;
+  modoParede?: { x: number; y: number } | null | 'ok'; onPonto?: (x: number, y: number) => void;
 }) {
   const q = quadroDe(pav);
   const ps = calc.ps.filter(p => p.pav === pav.id), ts = calc.ts.filter(t => t.pav === pav.id);
@@ -925,6 +977,17 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
           const on = vaoSel === key;
           return <rect key={key} className="hit" x={q.X(x)} y={q.Y(y + h)} width={w * q.k} height={h * q.k} fill={on ? 'rgba(204,0,204,.35)' : v.tag ? 'rgba(204,0,204,.08)' : 'rgba(255,170,0,.25)'} stroke={v.tag ? '#c0c' : '#e80'} strokeWidth={2} strokeDasharray={v.tag ? '' : '8 5'} onClick={() => onVao(key)}><title>{v.tag ? `${v.tag}` : 'vão sem etiqueta — clique para definir'}</title></rect>;
         }))}
+        {modoParede && typeof modoParede === 'object' && <circle cx={q.X(modoParede.x)} cy={q.Y(modoParede.y)} r={10} fill="#0a8a2c" />}
+        {modoParede && onPonto && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(10,138,44,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
+          const svg = (e.target as SVGElement).ownerSVGElement!; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+          const v = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+          let x = q.iX(v.x), y = q.iY(v.y);
+          const vx = ts.filter(t => t.o === 'V').map(t => t.c).sort((a, b) => Math.abs(a - x) - Math.abs(b - x))[0];
+          const hy = ts.filter(t => t.o === 'H').map(t => t.c).sort((a, b) => Math.abs(a - y) - Math.abs(b - y))[0];
+          if (vx !== undefined && Math.abs(vx - x) < 0.2) x = vx;
+          if (hy !== undefined && Math.abs(hy - y) < 0.2) y = hy;
+          onPonto(x, y);
+        }} />}
       </ZoomSvg>
       <p className="dica">{cortando ? 'Clique no ponto da parede selecionada onde ela deve ser dividida.' : 'Roda do mouse ou + / − para zoom, arraste para mover. Clique numa parede para ajustar. Os vãos em laranja não têm etiqueta no projeto: clique para dizer se é porta, janela ou vão livre.'}</p>
     </div>
@@ -1040,7 +1103,19 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
       <label>O que é este vão?<select value={atual ?? ''} onChange={e => { const v = { ...aj.vaoTipo }; if (e.target.value) v[vaoSel] = e.target.value; else delete v[vaoSel]; setAj({ ...aj, vaoTipo: v }); }}>
         <option value="">(automático pela etiqueta)</option><option value="livre">vão livre (sem painel)</option>{quadro.map(q => <option key={q.tag} value={q.tag}>{q.tag} — {br(q.larg)} × {br(q.alt)}</option>)}
       </select></label>
-      <label className="chk"><input type="checkbox" checked={(aj.vaoCentro || []).includes(vaoSel)} onChange={e => setAj({ ...aj, vaoCentro: e.target.checked ? [...(aj.vaoCentro || []), vaoSel] : (aj.vaoCentro || []).filter(x => x !== vaoSel) })} /> Centralizar esta janela/porta na parede (de face a face)</label>
+      {(() => {
+        const t = calc.ts.find(x => x.vaos.some(v => v.key === vaoSel)); const v = t?.vaos.find(x => x.key === vaoSel);
+        if (!t || !v) return null;
+        const pos = aj.vaoPos?.[vaoSel];
+        return <>
+          <p className="dica">Parede de {br(t.e - t.s)} m (de face a face). O vão está a <b>{br(v.x0 - t.s)} m</b> do começo da parede ({t.o === 'H' ? 'ponta da esquerda' : 'ponta de baixo'} na planta) e a <b>{br(t.e - v.x1)} m</b> do fim. Largura do vão com o acréscimo: {br(v.x1 - v.x0)} m.</p>
+          <label>Mover: distância do começo da parede até o vão (m)
+            <input type="number" step="0.01" key={vaoSel + (pos ?? '')} defaultValue={(pos ?? v.x0 - t.s).toFixed(2)} onBlur={e => { const n = parseFloat(e.target.value.replace(',', '.')); if (!isFinite(n) || Math.abs(n - (v.x0 - t.s)) < 0.005) return; const m = { ...(aj.vaoPos || {}) }; m[vaoSel] = Math.max(0, Math.min(n, t.e - t.s - (v.x1 - v.x0))); setAj({ ...aj, vaoPos: m, vaoCentro: (aj.vaoCentro || []).filter(x => x !== vaoSel) }); }} />
+          </label>
+          {pos != null && <button onClick={() => { const m = { ...(aj.vaoPos || {}) }; delete m[vaoSel]; setAj({ ...aj, vaoPos: m }); }}>Voltar o vão para a posição do projeto</button>}
+        </>;
+      })()}
+      <label className="chk"><input type="checkbox" checked={(aj.vaoCentro || []).includes(vaoSel)} onChange={e => { const m = { ...(aj.vaoPos || {}) }; if (e.target.checked) delete m[vaoSel]; setAj({ ...aj, vaoPos: m, vaoCentro: e.target.checked ? [...(aj.vaoCentro || []), vaoSel] : (aj.vaoCentro || []).filter(x => x !== vaoSel) }); }} /> Centralizar esta janela/porta na parede (de face a face)</label>
       <button onClick={limpar}>Fechar</button></div>;
   }
   if (!t) return <div className="card acoes"><p>Clique numa parede ou num vão na planta.</p>
@@ -1145,6 +1220,32 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: Laj
   </div>;
 }
 
+// revisões: retrato das peças (chave estável pela posição) para comparar uma versão com a outra
+type Revisao = NonNullable<Ajustes['revisoes']>[number];
+function retrato(calc: Calc, sg: Map<string, string>): Revisao['pecas'] {
+  return [
+    ...calc.ps.map(p => ({ k: 'P|' + (p.chave ?? `${p.trecho}@${p.a.toFixed(2)}`), cod: codigoParede(p, sg),
+      d: `${br(p.larg)} × ${p.chanfro ? `${br(p.chanfro.ha)}/${br(p.chanfro.hb)}` : br(p.H)}${p.recortes.length ? ' · ' + p.recortes.map(r => `${r.tipo} ${br(r.w)}x${br(r.h)} a ${br(r.dl)}`).join(', ') : ''}` })),
+    ...calc.pl.map(p => ({ k: 'L|' + chaveLaje(p), cod: codigoLaje(p, sg), d: `${br(p.comp)} × ${br(p.larg)}${p.dente ? ' (dente)' : ''}` })),
+  ];
+}
+function compararRev(base: Revisao['pecas'], atual: Revisao['pecas']) {
+  const B = new Map(base.map(x => [x.k, x])), A = new Map(atual.map(x => [x.k, x]));
+  const novas = atual.filter(x => !B.has(x.k)), removidas = base.filter(x => !A.has(x.k));
+  const mudaram = atual.filter(x => B.has(x.k) && B.get(x.k)!.d !== x.d).map(x => ({ cod: x.cod, antes: B.get(x.k)!.d, depois: x.d, codAntes: B.get(x.k)!.cod }));
+  const renum = atual.filter(x => B.has(x.k) && B.get(x.k)!.d === x.d && B.get(x.k)!.cod !== x.cod).map(x => ({ de: B.get(x.k)!.cod, para: x.cod }));
+  return { novas, removidas, mudaram, renum };
+}
+function TabelaAlteracoes({ dif }: { dif: ReturnType<typeof compararRev> }) {
+  return <div className="alteracoes">
+    <p><b>{dif.mudaram.length}</b> peça(s) mudaram · <b>{dif.novas.length}</b> nova(s) · <b>{dif.removidas.length}</b> deixaram de existir · {dif.renum.length} só mudaram de número</p>
+    {dif.mudaram.length > 0 && <table className="tlaje rom"><thead><tr><th>Peça</th><th>Antes</th><th>Agora</th></tr></thead><tbody>
+      {dif.mudaram.map((m, i) => <tr key={i}><td><b>{m.cod}</b>{m.codAntes !== m.cod ? ` (era ${m.codAntes})` : ''}</td><td>{m.antes}</td><td><b>{m.depois}</b></td></tr>)}</tbody></table>}
+    {dif.novas.length > 0 && <p><b>Novas:</b> {dif.novas.map(x => `${x.cod} (${x.d})`).join(' · ')}</p>}
+    {dif.removidas.length > 0 && <p><b>Deixaram de existir:</b> {dif.removidas.map(x => `${x.cod} (${x.d})`).join(' · ')}</p>}
+    {dif.renum.length > 0 && <p className="dica"><b>Só o número mudou:</b> {dif.renum.map(x => `${x.de} → ${x.para}`).join(' · ')}</p>}
+  </div>;
+}
 // dados de produção de todas as peças: etiqueta, ordem de montagem, vizinhos, face, peso e posição na carreta
 export interface PecaProd { id: string; tipo: 'Parede' | 'Laje'; pav: string; num: number; codigo: string; desc: string; a: number; b: number; area: number; peso: number;
   ordem: number; ordemPav?: number; esq?: string; dir?: string; face?: string; aberturas?: string; carreta?: number; pilha?: number; pos?: number; nPilha?: number }
@@ -1223,11 +1324,12 @@ function Etiquetas({ prod, ativos, nome, qrBase }: { prod: Prod; ativos: Pavimen
   </div>)}</div>;
 }
 const ESC_LAJE = 12, ESC_PAREDE = 12;   // vistas de produção das lajes: 12 mm por metro (mais peças por folha, letras do mesmo tamanho)
-function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod }) {
+function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, rev }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod; rev?: { base: Revisao; dif: ReturnType<typeof compararRev> } }) {
   type F = { key: string; tit: string; body: JSX.Element; rod: string };
   const F: F[] = [];
   const add = (key: string, tit: string, body: JSX.Element, rod: string) => { F.push({ key, tit, body, rod }); return F.length - 1; };
   const sg = prod.sg;
+  if (rev) F.push({ key: 'rev', tit: `ALTERAÇÕES DESDE A REVISÃO ${rev.base.n} (${new Date(rev.base.em).toLocaleDateString('pt-BR')}${rev.base.nota ? ' · ' + rev.base.nota : ''})`, body: <div className="desenho lajes cont conf"><TabelaAlteracoes dif={rev.dif} /></div>, rod: 'Comparação peça por peça pela posição na planta · produzir de novo as peças que mudaram e descartar as que deixaram de existir' });
   const fLaje = ESC_VISTA / ESC_LAJE, fPar = ESC_VISTA / ESC_PAREDE, titulo = nome.replace(/\.(dxf|dwg|pdf|json)$/i, '');
   const indice: { pav: string; tipo: 'Paredes' | 'Lajes'; nums: number[]; f: number }[] = [];
   const trelSemLaje: { pav: string; t: number }[] = [];
