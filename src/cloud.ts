@@ -95,7 +95,8 @@ export async function marcarMontagem(id: string, codigo: string, m: Marca | null
 }
 
 // ---------- marcação das peças pelo QR, sem login (supabase/marcacoes.sql) ----------
-export type Etapa = 'concretada' | 'carregada' | 'montada' | 'problema' | 'desfeita';
+// 'pista' = montada na pista (antes de concretar); 'montada' = instalada na obra
+export type Etapa = 'pista' | 'concretada' | 'carregada' | 'montada' | 'problema' | 'desfeita';
 export interface Marcacao { peca: string; etapa: Etapa; obs: string | null; por: string | null; em: string }
 // chave da obra (só o dono); null = SQL das marcações ainda não rodado
 export async function chaveObra(projeto: string, trocar = false): Promise<string | null> {

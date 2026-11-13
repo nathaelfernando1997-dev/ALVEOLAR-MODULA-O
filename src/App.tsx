@@ -950,8 +950,8 @@ export default function App() {
                 {dif && <TabelaAlteracoes dif={dif} />}
               </div>;
             })()}
-            {prod && qrBase && <div className="card noprint"><h3>Montagem na obra (marcada pelo QR das etiquetas)</h3>
-              <p><b>{Object.values(montagem).filter(m => m.status === 'montada').length}</b> de {prod.pecas.length} peças montadas · <b>{Object.values(montagem).filter(m => m.status === 'problema').length}</b> com problema <button onClick={() => projId && cloud.lerMontagem(projId).then(setMontagem)}>Atualizar</button></p>
+            {prod && qrBase && <div className="card noprint"><h3>Instalação na obra (marcada pelo QR das etiquetas)</h3>
+              <p><b>{Object.values(montagem).filter(m => m.status === 'montada').length}</b> de {prod.pecas.length} peças instaladas · <b>{Object.values(montagem).filter(m => m.status === 'problema').length}</b> com problema <button onClick={() => projId && cloud.lerMontagem(projId).then(setMontagem)}>Atualizar</button></p>
               {Object.entries(montagem).filter(([, m]) => m.status === 'problema').map(([c, m]) => <p key={c} className="erro">{c}: {m.obs || 'problema'} ({new Date(m.em).toLocaleString('pt-BR')} · {m.por})</p>)}
               {ativos.map(pv => { const ps = prod.pecas.filter(x => x.pav === pv.id); const mt = ps.filter(x => montagem[x.codigo]?.status === 'montada').length; return ps.length ? <p key={pv.id} className="dica">{pv.nome}: {mt}/{ps.length}</p> : null; })}
             </div>}
@@ -1752,10 +1752,13 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
 // tela do celular aberta pelo QR da etiqueta: a peça, o desenho dela e o botão para marcar a montagem
 
 // ---------- marcação pelo QR, sem login ----------
-const ETAPAS: { k: cloud.Etapa; t: string; cor: string; ic: string }[] = [
-  { k: 'concretada', t: 'Concretada', cor: '#1971c2', ic: '🧱' },
-  { k: 'carregada', t: 'Carregada', cor: '#f08c00', ic: '🚚' },
-  { k: 'montada', t: 'Montada', cor: '#2f9e44', ic: '🏗' },
+// ordem: montada na pista (fôrma/armação) → concretada → carregada → instalada na obra.
+// 'montada' continua sendo a chave gravada da instalação (marcações antigas e portal do gestão)
+const ETAPAS: { k: cloud.Etapa; t: string; bt: string; cor: string; ic: string; cn: string }[] = [
+  { k: 'pista', t: 'Montada na pista', bt: 'Peça montada na pista', cor: '#7048e8', ic: '🔧', cn: 'roxo' },
+  { k: 'concretada', t: 'Concretada', bt: 'Peça concretada', cor: '#1971c2', ic: '🧱', cn: 'azul' },
+  { k: 'carregada', t: 'Carregada', bt: 'Peça carregada', cor: '#f08c00', ic: '🚚', cn: 'laranja' },
+  { k: 'montada', t: 'Instalada na obra', bt: 'Peça instalada na obra', cor: '#2f9e44', ic: '🏗', cn: 'verde' },
 ];
 const corEtapa = (e?: cloud.Etapa | null) => e === 'problema' ? '#e03131' : ETAPAS.find(x => x.k === e)?.cor ?? '#adb5bd';
 const nomeEtapa = (e?: cloud.Etapa | null) => e === 'problema' ? 'Problema' : ETAPAS.find(x => x.k === e)?.t ?? 'Sem marcação';
@@ -1784,7 +1787,7 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
       <div className="cel-status" style={{ borderColor: corEtapa(st?.atual?.etapa), color: corEtapa(st?.atual?.etapa) }}>
         Situação: <b>{nomeEtapa(st?.atual?.etapa)}</b>{st?.atual ? ` · ${new Date(st.atual.em).toLocaleString('pt-BR')} · ${st.atual.por ?? ''}` : ''}{st?.atual?.obs ? ` · ${st.atual.obs}` : ''}
       </div>
-      {ETAPAS.map(e => <button key={e.k} className="qr-bt" style={{ background: e.cor }} disabled={salvando} onClick={() => marcar(e.k)}>{e.ic} {e.t}{feitas.has(e.k) ? ' ✔' : ''}</button>)}
+      {ETAPAS.map(e => <button key={e.k} className="qr-bt" style={{ background: e.cor }} disabled={salvando} onClick={() => marcar(e.k)}>{e.ic} {e.bt}{feitas.has(e.k) ? ' ✔' : ''}</button>)}
       <textarea placeholder="Problema? (avaria, trinca, medida errada, falta…)" value={obs} onChange={e => setObs(e.target.value)} />
       <button className="cel-prob" disabled={salvando || !obs.trim()} onClick={() => marcar('problema', obs.trim())}>⚠ Registrar problema</button>
       {st?.atual && <button disabled={salvando} onClick={() => marcar('desfeita')}>↶ Desfazer a última marcação</button>}
@@ -1801,7 +1804,7 @@ function CardPortal({ projId, planta, logado }: { projId: string | null; planta:
   const baixar = () => { const b = new Blob([JSON.stringify(planta())], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'planta-portal.json'; a.click(); };
   return <div className="card acoes">
     <h3>Portal do cliente</h3>
-    <p className="dica">O cliente vê no portal do sistema de gestão a planta da obra: estacas concretadas e paredes/lajes montadas (pelo QR das etiquetas).</p>
+    <p className="dica">O cliente vê no portal do sistema de gestão a planta da obra: estacas concretadas e paredes/lajes instaladas (pelo QR das etiquetas).</p>
     {logado && projId ? <>
       <p className="dica">1) Envie a planta (de novo sempre que mudar o projeto). 2) No sistema de gestão, na obra → <b>Planta</b>, cole o código abaixo.</p>
       <button disabled={ocupado} onClick={async () => { setOcupado(true); setMsg(''); try { await cloud.enviarPlantaPortal(projId, planta()); setMsg('✔ Planta enviada ao portal.'); } catch (e) { setMsg((e as Error).message); } setOcupado(false); }}>{ocupado ? 'Enviando…' : 'Enviar planta ao portal'}</button>
@@ -1836,8 +1839,8 @@ function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atual
       </div>
       <div className="card acoes">
         <h3>Por pavimento</h3>
-        <table className="tab-acomp"><thead><tr><th></th><th>Peças</th><th>Concr.</th><th>Carreg.</th><th>Mont.</th></tr></thead><tbody>
-          {ativos.map(pv => { const l = P.filter(p => p.pav === pv.id); return l.length ? <tr key={pv.id}><td>{pv.nome}</td><td>{l.length}</td><td>{conta('concretada', l)}</td><td>{conta('carregada', l)}</td><td>{conta('montada', l)}</td></tr> : null; })}
+        <table className="tab-acomp"><thead><tr><th></th><th>Peças</th><th>Pista</th><th>Concr.</th><th>Carreg.</th><th>Instal.</th></tr></thead><tbody>
+          {ativos.map(pv => { const l = P.filter(p => p.pav === pv.id); return l.length ? <tr key={pv.id}><td>{pv.nome}</td><td>{l.length}</td><td>{conta('pista', l)}</td><td>{conta('concretada', l)}</td><td>{conta('carregada', l)}</td><td>{conta('montada', l)}</td></tr> : null; })}
         </tbody></table>
         <h3>Por carreta</h3>
         <table className="tab-acomp"><thead><tr><th>Carreta</th><th>Peças</th><th>Concr.</th><th>Carreg.</th><th></th></tr></thead><tbody>
@@ -1860,7 +1863,7 @@ function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atual
       <div className="botoes">{ativos.map(pv => <button key={pv.id} className={pav.id === pv.id ? 'on' : ''} onClick={() => setPavV(pv.id)}>{pv.nome}</button>)}
         <button className={tipoV === 'Parede' ? 'on' : ''} onClick={() => setTipoV('Parede')}>Paredes</button><button className={tipoV === 'Laje' ? 'on' : ''} onClick={() => setTipoV('Laje')}>Lajes</button></div>
       <ZoomSvg key={pav.id + tipoV} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: desenho }} /></ZoomSvg>
-      <p className="dica">{[...ETAPAS.map(e => `${e.t}: ${e.cor === '#1971c2' ? 'azul' : e.cor === '#f08c00' ? 'laranja' : 'verde'}`), 'problema: vermelho', 'sem marcação: cinza'].join(' · ')} · passe o mouse na peça para ver o código.</p>
+      <p className="dica">{[...ETAPAS.map(e => `${e.t}: ${e.cn}`), 'problema: vermelho', 'sem marcação: cinza'].join(' · ')} · passe o mouse na peça para ver o código.</p>
     </div>
   </section>;
 }
@@ -1877,13 +1880,13 @@ function PecaCelular({ codigo, pc, obra, pav, desenho, carregando, erro, marca, 
       {pc.tipo === 'Parede' && <p className="cel-info">Montagem nº <b>{pc.ordemPav}</b> · lado esquerdo: <b>{pc.esq}</b> · lado direito: <b>{pc.dir}</b><br />{pc.face}</p>}
       <p className="cel-info">Carreta {pc.carreta} · pilha {pc.pilha}</p>
       <div className="cel-desenho" dangerouslySetInnerHTML={{ __html: desenho }} />
-      <div className={'cel-status ' + (marca?.status ?? '')}>{marca ? `${marca.status === 'montada' ? '✔ Montada' : '⚠ Problema'} em ${new Date(marca.em).toLocaleString('pt-BR')} (${marca.por})${marca.obs ? ' — ' + marca.obs : ''}` : 'Ainda não marcada'}</div>
-      <button className="cel-ok" disabled={salvando} onClick={() => vai({ status: 'montada' })}>✔ Peça montada</button>
+      <div className={'cel-status ' + (marca?.status ?? '')}>{marca ? `${marca.status === 'montada' ? '✔ Instalada na obra' : '⚠ Problema'} em ${new Date(marca.em).toLocaleString('pt-BR')} (${marca.por})${marca.obs ? ' — ' + marca.obs : ''}` : 'Ainda não marcada'}</div>
+      <button className="cel-ok" disabled={salvando} onClick={() => vai({ status: 'montada' })}>✔ Peça instalada na obra</button>
       <textarea placeholder="Problema? (avaria, medida errada, falta…)" value={obs} onChange={e => setObs(e.target.value)} />
       <button className="cel-prob" disabled={salvando || !obs.trim()} onClick={() => vai({ status: 'problema', obs: obs.trim() })}>⚠ Registrar problema</button>
       {marca && <button disabled={salvando} onClick={() => vai(null)}>Desfazer marcação</button>}
       {msg && <p>{msg}</p>}
-      <p className="dica">Obra: {montadas} de {total} peças montadas</p>
+      <p className="dica">Obra: {montadas} de {total} peças instaladas</p>
     </>}
     <button onClick={sair}>Abrir o sistema completo</button>
   </div>;

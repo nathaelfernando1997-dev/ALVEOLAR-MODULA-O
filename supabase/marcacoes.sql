@@ -15,7 +15,7 @@ create table if not exists public.pecas_marcacao (
   id bigint generated always as identity primary key,
   projeto uuid not null references public.projetos(id) on delete cascade,
   peca text not null,
-  etapa text not null check (etapa in ('concretada', 'carregada', 'montada', 'problema', 'desfeita')),
+  etapa text not null check (etapa in ('pista', 'concretada', 'carregada', 'montada', 'problema', 'desfeita')),
   obs text,
   por text,
   em timestamptz not null default now()
@@ -49,7 +49,7 @@ begin
   if not exists (select 1 from private.obra_chave where projeto = p_projeto and chave = p_chave) then
     raise exception 'etiqueta inválida ou chave da obra trocada';
   end if;
-  if p_etapa not in ('concretada', 'carregada', 'montada', 'problema', 'desfeita') then raise exception 'etapa inválida'; end if;
+  if p_etapa not in ('pista', 'concretada', 'carregada', 'montada', 'problema', 'desfeita') then raise exception 'etapa inválida'; end if;
   insert into public.pecas_marcacao (projeto, peca, etapa, obs, por)
   values (p_projeto, left(p_peca, 40), p_etapa, left(p_obs, 500), left(p_por, 80));
 end $$;
