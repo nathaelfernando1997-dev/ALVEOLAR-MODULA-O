@@ -236,3 +236,6 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .celular.qr .qr-info table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 6px 0; }
 .celular.qr .qr-info td { padding: 5px 4px; border-bottom: 1px solid #e9ecef; vertical-align: top; }
 .celular.qr .qr-info td:first-child { color: #555; width: 42%; }
+.celular.qr .qr-bt.bloq { opacity: .35; }
+.celular.qr .qr-bt.feito { box-shadow: inset 0 0 0 4px rgba(255,255,255,.75); }
+.celular.qr .qr-bt small { font-size: 12px; font-weight: 400; display: block; }

@@ -1826,7 +1826,22 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
           {dados.desenho && <div className="cel-desenho" dangerouslySetInnerHTML={{ __html: dados.desenho }} />}
         </>}
       </details>
-      {ETAPAS.map(e => <button key={e.k} className="qr-bt" style={{ background: e.cor }} disabled={salvando} onClick={() => marcar(e.k)}>{e.ic} {e.bt}{feitas.has(e.k) ? ' ✔' : ''}</button>)}
+      {ETAPAS.map((e, i) => {
+        const feito = feitas.has(e.k), falta = ETAPAS.slice(0, i).find(x => !feitas.has(x.k));
+        const toque = () => {
+          if (feito) {
+            // desmarca só a última marcação (mantém a sequência)
+            if (st?.atual?.etapa === e.k) { if (confirm(`Desmarcar "${e.bt}"?`)) marcar('desfeita'); return; }
+            const depois = ETAPAS.slice(i + 1).filter(x => feitas.has(x.k)).pop();
+            setMsg(depois ? `Para desmarcar "${e.bt}", desmarque antes "${depois.bt}".` : 'Há um problema registrado depois desta etapa: use "Desfazer a última marcação" primeiro.');
+            return;
+          }
+          if (falta) { setMsg(`Siga a sequência: marque antes "${falta.bt}".`); return; }
+          marcar(e.k);
+        };
+        return <button key={e.k} className={'qr-bt' + (feito ? ' feito' : falta ? ' bloq' : '')} style={{ background: e.cor }} disabled={salvando} onClick={toque}>
+          {feito ? '✔ ' : `${i + 1}. `}{e.ic} {e.bt}{feito ? <small> (toque para desmarcar)</small> : null}</button>;
+      })}
       <textarea placeholder="Problema? (avaria, trinca, medida errada, falta…)" value={obs} onChange={e => setObs(e.target.value)} />
       <button className="cel-prob" disabled={salvando || !obs.trim()} onClick={() => marcar('problema', obs.trim())}>⚠ Registrar problema</button>
       {st?.atual && <button disabled={salvando} onClick={() => marcar('desfeita')}>↶ Desfazer a última marcação</button>}
