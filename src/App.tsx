@@ -654,6 +654,7 @@ export default function App() {
         {(aba === 'modulacao' || aba === 'lajes') && leitura && (
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos.</p></section> :
           <section className="mod">
+<Divisor />
             <div className="lado">
               <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setSel(null); setVaoSel(null); setAmbSel(null); setLajeSel(null); }}>{p.nome}</button>)}</div>
               <div className="desfazer"><button disabled={!hist.current.antes.length} onClick={desfazer} title="Ctrl+Z">↶ Desfazer{hist.current.antes.length ? ` (${hist.current.antes.length})` : ''}</button><button disabled={!hist.current.depois.length} onClick={refazer} title="Ctrl+Y">↷ Refazer</button></div>
@@ -815,6 +816,7 @@ export default function App() {
             </div>;
             return <>
             <section className="mod noprint">
+<Divisor />
               <div className="lado">
                 <div className="card acoes">
                   <h3>Pontos de fundação (para o Eberick)</h3>
@@ -908,6 +910,7 @@ export default function App() {
         {aba === 'vigas' && leitura && (
           ativos.length === 0 ? <section className="card"><p>Marque pelo menos uma planta baixa na aba Desenhos.</p></section> :
           <section className="mod">
+<Divisor />
             <div className="lado">
               <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setVigaSel(null); }}>{p.nome}</button>)}</div>
               <ListaVigas V={calc.vigas.filter(v => v.pav === pavAtual.id)} sel={vigaSel} onSel={setVigaSel} />
@@ -1769,6 +1772,27 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
   </div>)}</div>;
 }
 
+// barra entre o painel e a planta: arrastar muda a largura do painel; um toque esconde/mostra o painel
+const ladoW = (w: number) => {
+  const r = document.documentElement;
+  r.style.setProperty('--lado', w + 'px'); r.classList.toggle('lado-off', w === 0);
+  try { localStorage.setItem('alv-lado', String(w)); } catch { /* sem armazenamento */ }
+};
+try { const w = localStorage.getItem('alv-lado'); if (w !== null) ladoW(Number(w)); } catch { /* sem armazenamento */ }
+function Divisor() {
+  const ini = useRef<{ x: number; w: number; moveu: boolean } | null>(null);
+  const atual = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lado')) || (document.documentElement.classList.contains('lado-off') ? 0 : 320);
+  return <div className="divisor noprint" title="Arraste para mudar o tamanho do painel · toque para esconder/mostrar" style={{ touchAction: 'none' }}
+    onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); ini.current = { x: e.clientX, w: atual(), moveu: false }; }}
+    onPointerMove={e => {
+      const i = ini.current; if (!i) return;
+      const dx = e.clientX - i.x; if (!i.moveu && Math.abs(dx) < 6) return; i.moveu = true;
+      let w = Math.max(0, Math.min(window.innerWidth * 0.6, i.w + dx)); if (w < 120) w = 0; ladoW(Math.round(w));
+    }}
+    onPointerUp={() => { const i = ini.current; ini.current = null; if (i && !i.moveu) ladoW(i.w < 120 ? 320 : 0); }}
+    onPointerCancel={() => { ini.current = null; }}><span>⋮</span></div>;
+}
+
 // tela do celular aberta pelo QR da etiqueta: a peça, o desenho dela e o botão para marcar a montagem
 
 // ---------- marcação pelo QR, sem login ----------
@@ -1912,6 +1936,7 @@ function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atual
     : calc.pl.filter(p => p.pav === pav.id).map(p => { const c = corEtapa(atual(codigoLaje(p, sg))); return `<rect x="${q.X(p.x0)}" y="${q.Y(p.y1)}" width="${(p.x1 - p.x0) * q.k}" height="${(p.y1 - p.y0) * q.k}" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="3"><title>${codigoLaje(p, sg)} · ${nomeEtapa(atual(codigoLaje(p, sg)))}</title></rect><text x="${q.X((p.x0 + p.x1) / 2)}" y="${q.Y((p.y0 + p.y1) / 2)}" font-size="${0.18 * q.k}" text-anchor="middle">L${p.num}</text>`; }).join(''));
   const cargas = [...new Set(P.map(p => p.carreta ?? 0))].sort((a, b) => a - b);
   return <section className="mod acomp">
+<Divisor />
     <div className="lado">
       <div className="card acoes">
         <h3>Produção e obra (marcado pelo QR)</h3>
