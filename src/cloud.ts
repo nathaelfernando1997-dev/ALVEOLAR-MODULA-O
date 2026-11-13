@@ -127,6 +127,27 @@ export function situacoes(hist: Marcacao[]): Map<string, { etapas: Marcacao[]; a
   return new Map([...m].map(([k, l]) => [k, { etapas: l, atual: l[l.length - 1] ?? null }]));
 }
 
+// ---------- informações das peças para a tela do QR (supabase/pecas_info.sql) ----------
+export interface InfoPeca { tipo: string; pav: string; desc: string; area: number; peso: number; ordem?: number;
+  esq?: string; dir?: string; face?: string; aberturas?: string; carreta?: number; pilha?: number; desenho?: string }
+// envia (substitui) as informações de todas as peças do projeto; false = SQL ainda não rodado
+export async function enviarInfoPecas(projeto: string, rows: { peca: string; dados: InfoPeca }[]): Promise<boolean> {
+  if (!sb) return false;
+  const del = await sb.from('pecas_info').delete().eq('projeto', projeto);
+  if (del.error) return false;
+  for (let i = 0; i < rows.length; i += 100) {
+    const { error } = await sb.from('pecas_info').insert(rows.slice(i, i + 100).map(r => ({ projeto, peca: r.peca, dados: r.dados })));
+    if (error) return false;
+  }
+  return true;
+}
+export async function infoPeca(projeto: string, chave: string, peca: string): Promise<InfoPeca | null> {
+  if (!sb) return null;
+  const { data, error } = await sb.rpc('info_peca', { p_projeto: projeto, p_chave: chave, p_peca: peca });
+  if (error) return null;
+  return (data as InfoPeca) ?? null;
+}
+
 // ---------- planta para o portal do cliente (sistema de gestão; tabela da migração 0025 do gestão) ----------
 export async function enviarPlantaPortal(projeto: string, dados: unknown) {
   const { error } = await sb!.from('planta_portal').upsert({ projeto, dados, atualizado: new Date().toISOString() });

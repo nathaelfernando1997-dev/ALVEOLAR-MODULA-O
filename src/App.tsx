@@ -428,6 +428,26 @@ export default function App() {
   useEffect(() => { setChaveQR(null); setMarcs([]); if (projId && sess && cloud.nuvemConfigurada) { cloud.chaveObra(projId).then(setChaveQR); cloud.lerMarcacoes(projId).then(setMarcs); } }, [projId, sess?.user.id]);
   useEffect(() => { if (!projId || !sess || aba !== 'acompanhamento') return; const t = setInterval(() => cloud.lerMarcacoes(projId).then(setMarcs), 30000); return () => clearInterval(t); }, [projId, sess?.user.id, aba]);
   const qrBase = cloud.nuvemConfigurada && sess && projId ? (chaveQR ? `${location.origin}/?obra=${projId}&k=${chaveQR}&peca=` : `${location.origin}/?obra=${projId}&peca=`) : '';
+  // informações das peças para quem escaneia o QR (conferência): envia sozinho quando o projeto muda
+  useEffect(() => {
+    if (!prod || !projId || !sess || !chaveQR || !cloud.nuvemConfigurada) return;
+    const t = setTimeout(() => {
+      const trel = (p: (typeof calc.pl)[number]) => calc.vigas.filter(v => v.pav === p.pav && v.tipo === 'trelica').map(v => ({ ...v, tipo: trelicaDaEsp(espDaLaje(aj)(p) ?? 0) }));
+      const rows = prod.pecas.map(pc => {
+        let desenho = '';
+        if (pc.tipo === 'Parede') { const p = calc.ps.find(x => x.num === pc.num); if (p) desenho = vistaSvg(p, prod.infos.get(p.num), 18); }
+        else { const p = calc.pl.find(x => x.num === pc.num); if (p) desenho = vistaLajeSvg(p, [], trel(p), 0, 18, pc.codigo); }
+        const dados: cloud.InfoPeca = { tipo: pc.tipo, pav: pavs.find(x => x.id === pc.pav)?.nome ?? '', desc: pc.desc, area: pc.area, peso: pc.peso,
+          ordem: pc.ordemPav, esq: pc.esq, dir: pc.dir, face: pc.face, aberturas: pc.aberturas, carreta: pc.carreta, pilha: pc.pilha, desenho };
+        return { peca: pc.codigo, dados };
+      });
+      const txt = JSON.stringify(rows); let h = 5381; for (let i = 0; i < txt.length; i++) h = ((h << 5) + h + txt.charCodeAt(i)) | 0;
+      const chaveH = 'alv-info-' + projId;
+      try { if (localStorage.getItem(chaveH) === String(h)) return; } catch { /* sem armazenamento */ }
+      cloud.enviarInfoPecas(projId, rows).then(ok => { if (ok) try { localStorage.setItem(chaveH, String(h)); } catch { /* sem armazenamento */ } });
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [prod, projId, sess?.user.id, chaveQR]);
 
   const cortes = useMemo(() => dxf ? lerCortes(dxf, pavs.filter(p => p.corte)) : [], [dxf, pavs]);
   const avisos = useMemo(() => conferir(cortes, ativos, quadro, regras, calc.ps), [cortes, pavs, quadro, regras, calc]);
@@ -1769,7 +1789,8 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
   const [info, setInfo] = useState<{ obra: string; hist: cloud.Marcacao[] } | null>(null);
   const [erro, setErro] = useState(''); const [msg, setMsg] = useState(''); const [obs, setObs] = useState(''); const [salvando, setSalvando] = useState(false);
   const carregar = () => cloud.situacaoPeca(obra, chave, peca).then(setInfo).catch(e => setErro((e as Error).message));
-  useEffect(() => { carregar(); }, []);
+  const [dados, setDados] = useState<cloud.InfoPeca | null | undefined>(undefined);
+  useEffect(() => { carregar(); cloud.infoPeca(obra, chave, peca).then(setDados); }, []);
   const st = info ? cloud.situacoes(info.hist).get(peca) : undefined, feitas = new Set(st?.etapas.map(e => e.etapa));
   const marcar = async (e: cloud.Etapa, o: string | null = null) => {
     setSalvando(true); setMsg('');
@@ -1787,6 +1808,24 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
       <div className="cel-status" style={{ borderColor: corEtapa(st?.atual?.etapa), color: corEtapa(st?.atual?.etapa) }}>
         Situação: <b>{nomeEtapa(st?.atual?.etapa)}</b>{st?.atual ? ` · ${new Date(st.atual.em).toLocaleString('pt-BR')} · ${st.atual.por ?? ''}` : ''}{st?.atual?.obs ? ` · ${st.atual.obs}` : ''}
       </div>
+      <details className="qr-info" open>
+        <summary>Informações da peça (conferência)</summary>
+        {dados === undefined ? <p className="dica">Carregando…</p> : !dados ? <p className="dica">As informações desta peça ainda não foram enviadas. Peça ao responsável para abrir o projeto no sistema (com login) e elas sobem sozinhas.</p> : <>
+          <table><tbody>
+            <tr><td>Peça</td><td><b>{dados.tipo} {peca}</b></td></tr>
+            <tr><td>{dados.tipo === 'Laje' ? 'Laje sobre o' : 'Pavimento'}</td><td>{dados.pav}</td></tr>
+            <tr><td>Medidas</td><td>{dados.desc} m</td></tr>
+            <tr><td>Área / peso</td><td>{dados.area.toFixed(2).replace('.', ',')} m² · {Math.round(dados.peso)} kg</td></tr>
+            {dados.ordem != null && <tr><td>Ordem de montagem</td><td><b>nº {dados.ordem}</b></td></tr>}
+            {dados.esq && <tr><td>Lado esquerdo</td><td>{dados.esq}</td></tr>}
+            {dados.dir && <tr><td>Lado direito</td><td>{dados.dir}</td></tr>}
+            {dados.face && <tr><td>Face</td><td>{dados.face.replace(/^vista: /, '')}</td></tr>}
+            {dados.aberturas && <tr><td>Aberturas</td><td>{dados.aberturas}</td></tr>}
+            {(dados.carreta != null || dados.pilha != null) && <tr><td>Carreta / pilha</td><td>{dados.carreta ?? '—'} / {dados.pilha ?? '—'}</td></tr>}
+          </tbody></table>
+          {dados.desenho && <div className="cel-desenho" dangerouslySetInnerHTML={{ __html: dados.desenho }} />}
+        </>}
+      </details>
       {ETAPAS.map(e => <button key={e.k} className="qr-bt" style={{ background: e.cor }} disabled={salvando} onClick={() => marcar(e.k)}>{e.ic} {e.bt}{feitas.has(e.k) ? ' ✔' : ''}</button>)}
       <textarea placeholder="Problema? (avaria, trinca, medida errada, falta…)" value={obs} onChange={e => setObs(e.target.value)} />
       <button className="cel-prob" disabled={salvando || !obs.trim()} onClick={() => marcar('problema', obs.trim())}>⚠ Registrar problema</button>
