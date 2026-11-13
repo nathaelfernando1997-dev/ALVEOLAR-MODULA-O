@@ -3,13 +3,18 @@ import type { ReactNode } from 'react';
 
 // SVG com zoom (roda do mouse, botões, pinça no celular) e arrastar para mover.
 export function ZoomSvg({ vb, children }: { vb: string; children: ReactNode }) {
-  const base = vb.split(' ').map(Number) as [number, number, number, number];
+  const b0 = vb.split(' ').map(Number) as [number, number, number, number];
+  // girar o desenho de 90 em 90° (fica guardado neste aparelho)
+  const [giro, setGiro] = useState(() => { try { return Number(localStorage.getItem('alv-giro')) || 0; } catch { return 0; } });
+  const gcx = b0[0] + b0[2] / 2, gcy = b0[1] + b0[3] / 2;
+  const base: [number, number, number, number] = giro % 180 ? [gcx - b0[3] / 2, gcy - b0[2] / 2, b0[3], b0[2]] : b0;
+  const girar = () => setGiro(g => { const n = (g + 90) % 360; try { localStorage.setItem('alv-giro', String(n)); } catch { /* sem armazenamento */ } return n; });
   const [v, setV] = useState(base);
   const ref = useRef<SVGSVGElement>(null);
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
   const arrastou = useRef(false);
   const ini = useRef<{ v: typeof v; dist: number; cx: number; cy: number } | null>(null);
-  useEffect(() => { setV(base); }, [vb]);
+  useEffect(() => { setV(base); }, [vb, giro]);
 
   const paraSvg = (cx: number, cy: number, vv = v) => {
     const r = ref.current!.getBoundingClientRect();
@@ -38,6 +43,7 @@ export function ZoomSvg({ vb, children }: { vb: string; children: ReactNode }) {
         <button onClick={() => zoom(1 / 1.4)} title="Aproximar">+</button>
         <button onClick={() => zoom(1.4)} title="Afastar">−</button>
         <button onClick={() => setV(base)} title="Ver tudo">⤢</button>
+        <button onClick={girar} title="Girar o desenho 90°">↻</button>
       </div>
       <svg ref={ref} viewBox={v.join(' ')}
         onPointerDown={e => { ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY }); arrastou.current = false;
@@ -64,7 +70,7 @@ export function ZoomSvg({ vb, children }: { vb: string; children: ReactNode }) {
         onPointerCancel={e => { ptrs.current.delete(e.pointerId); }}
         onClickCapture={e => { if (arrastou.current) { e.stopPropagation(); arrastou.current = false; } }}
         style={{ touchAction: 'none' }}>
-        {children}
+        <g transform={giro ? `rotate(${giro} ${gcx} ${gcy})` : undefined}>{children}</g>
       </svg>
     </div>
   );

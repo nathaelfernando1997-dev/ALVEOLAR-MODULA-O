@@ -895,7 +895,7 @@ export default function App() {
                 {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} />
                   {modoFund && verFund === 'pontos' && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(174,62,201,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
                     const el = (e.target as SVGElement).ownerSVGElement!; const pt = el.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-                    const v = pt.matrixTransform(el.getScreenCTM()!.inverse()); clique(q.iX(v.x), q.iY(v.y)); }} />}
+                    const v = pt.matrixTransform((e.target as SVGGraphicsElement).getScreenCTM()!.inverse()); clique(q.iX(v.x), q.iY(v.y)); }} />}
                   {typeof modoFund === 'object' && modoFund && <circle cx={q.X(modoFund.x)} cy={q.Y(modoFund.y)} r={0.3 * q.k} fill="none" stroke="#ae3ec9" strokeWidth={6} />}
                 </ZoomSvg>}
                 {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <p className="dica">{verFund === 'esperas' ? 'Painéis do térreo (azul e laranja alternados) com as esperas (x vermelho).' : 'Pontos de fundação nas paredes do térreo: verde = canto, encontro, ponta ou coluna · laranja = intermediário · roxo = acrescentado à mão. Mudou as paredes, a planta acompanha.'}</p>}
@@ -1180,7 +1180,7 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
             onClick={e => {
               if (cortando && cortando.trecho === p.trecho) {
                 const svg = (e.target as SVGElement).ownerSVGElement!; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-                const v = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+                const v = pt.matrixTransform((e.target as SVGGraphicsElement).getScreenCTM()!.inverse());
                 onCorte(p.trecho, p.o === 'H' ? q.iX(v.x) : q.iY(v.y));
               } else onPainel(p.trecho);
             }}><title>Painel {p.num} · {br(p.larg)} × {p.chanfro ? `${br(p.chanfro.ha)} → ${br(p.chanfro.hb)} (chanfro)` : br(p.H)}</title></line>;
@@ -1194,7 +1194,7 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
         {modoParede && typeof modoParede === 'object' && <circle cx={q.X(modoParede.x)} cy={q.Y(modoParede.y)} r={10} fill="#0a8a2c" />}
         {modoParede && onPonto && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(10,138,44,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
           const svg = (e.target as SVGElement).ownerSVGElement!; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-          const v = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+          const v = pt.matrixTransform((e.target as SVGGraphicsElement).getScreenCTM()!.inverse());
           let x = q.iX(v.x), y = q.iY(v.y);
           const vx = ts.filter(t => t.o === 'V').map(t => t.c).sort((a, b) => Math.abs(a - x) - Math.abs(b - x))[0];
           const hy = ts.filter(t => t.o === 'H').map(t => t.c).sort((a, b) => Math.abs(a - y) - Math.abs(b - y))[0];
@@ -1273,7 +1273,7 @@ function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje, vigas = [
         {/* adicionar viga: a planta toda recebe o clique; o ponto encosta no eixo da parede mais perto (até 20 cm) */}
         {modoViga && onPonto && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(230,119,0,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
           const svg = (e.target as SVGElement).ownerSVGElement!; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-          const v = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+          const v = pt.matrixTransform((e.target as SVGGraphicsElement).getScreenCTM()!.inverse());
           let x = q.iX(v.x), y = q.iY(v.y);
           const ts = calc.ts.filter(t => t.pav === pav.id);
           const vx = ts.filter(t => t.o === 'V').map(t => t.c).sort((a, b) => Math.abs(a - x) - Math.abs(b - x))[0];
