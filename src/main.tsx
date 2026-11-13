@@ -5,6 +5,16 @@ import './styles.css';
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
 
+// app abre sem internet (tela do QR na obra)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(() => {
+    // guarda já a página e os arquivos desta versão (a primeira abertura acontece antes do service worker existir)
+    const arqs = ['/', ...performance.getEntriesByType('resource').map(e => new URL(e.name))
+      .filter(u => u.origin === location.origin && u.pathname.startsWith('/assets/')).map(u => u.pathname)];
+    caches.open('alv-app-v1').then(c => c.addAll([...new Set(arqs)])).catch(() => { /* sem armazenamento */ });
+  }).catch(() => { /* sem suporte */ });
+}
+
 // Avisa quando sai uma versão nova do sistema (a aba aberta continua com a antiga até recarregar).
 if (import.meta.env.PROD) {
   const atual = (document.querySelector('script[type=module][src*="/assets/index-"]') as HTMLScriptElement | null)?.src.split('/assets/')[1];

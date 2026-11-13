@@ -148,6 +148,55 @@ export async function infoPeca(projeto: string, chave: string, peca: string): Pr
   return (data as InfoPeca) ?? null;
 }
 
+// ---------- QR sem internet: obra guardada no celular + fila de marcações (supabase/offline.sql) ----------
+export interface ObraOffline { obra: string; info: Record<string, InfoPeca>; marcas: Marcacao[]; salvoEm: string }
+export interface ItemFila { obra: string; chave: string; peca: string; etapa: Etapa; obs: string | null; por: string; em: string }
+const semRede = (msg: string) => (typeof navigator !== 'undefined' && !navigator.onLine) || /fetch|network|load failed|timeout/i.test(msg);
+const urlObra = (obra: string) => `/__alv-obra/${obra}`;
+export async function lerObraOffline(obra: string): Promise<ObraOffline | null> {
+  try { const r = await (await caches.open('alv-dados')).match(urlObra(obra)); return r ? (await r.json()) as ObraOffline : null; } catch { return null; }
+}
+async function gravarObraOffline(obra: string, d: ObraOffline) {
+  try { await (await caches.open('alv-dados')).put(urlObra(obra), new Response(JSON.stringify(d), { headers: { 'content-type': 'application/json' } })); } catch { /* sem armazenamento */ }
+}
+// baixa a obra inteira (informações e marcações) e guarda no celular; null = sem sinal ou SQL não rodado
+export async function baixarObra(obra: string, chave: string): Promise<ObraOffline | null> {
+  if (!sb) return null;
+  const { data, error } = await sb.rpc('obra_dados', { p_projeto: obra, p_chave: chave });
+  if (error || !data) return null;
+  const d = { ...(data as Omit<ObraOffline, 'salvoEm'>), salvoEm: new Date().toISOString() };
+  await gravarObraOffline(obra, d);
+  return d;
+}
+export function lerFila(): ItemFila[] { try { return JSON.parse(localStorage.getItem('alv-fila') || '[]') as ItemFila[]; } catch { return []; } }
+function gravarFila(f: ItemFila[]) { try { localStorage.setItem('alv-fila', JSON.stringify(f)); } catch { /* sem armazenamento */ } }
+export function porNaFila(it: ItemFila) { gravarFila([...lerFila(), it]); }
+let enviando: Promise<string[]> | null = null;
+// envia a fila na ordem; para no primeiro erro de rede (tenta depois). Devolve as recusas do servidor.
+export function enviarFila(): Promise<string[]> {
+  if (enviando) return enviando;
+  enviando = (async () => {
+    const recusas: string[] = [];
+    while (sb) {
+      const f = lerFila(); if (!f.length) break;
+      const it = f[0];
+      let { error } = await sb.rpc('marcar_peca_offline', { p_projeto: it.obra, p_chave: it.chave, p_peca: it.peca, p_etapa: it.etapa, p_obs: it.obs, p_por: it.por, p_em: it.em });
+      if (error && /marcar_peca_offline|schema cache|function/i.test(error.message) && !semRede(error.message))
+        ({ error } = await sb.rpc('marcar_peca', { p_projeto: it.obra, p_chave: it.chave, p_peca: it.peca, p_etapa: it.etapa, p_obs: it.obs, p_por: it.por }));
+      if (error && semRede(error.message)) break;
+      gravarFila(lerFila().slice(1));                          // enviado (ou recusado pelo servidor: descarta)
+      if (error) recusas.push(/inválida|trocada/.test(error.message) ? 'etiqueta inválida ou a chave da obra foi trocada' : error.message);
+      if (!error) {                                            // mantém a cópia do celular em dia
+        const d = await lerObraOffline(it.obra);
+        if (d) await gravarObraOffline(it.obra, { ...d, marcas: [...d.marcas, { peca: it.peca, etapa: it.etapa, obs: it.obs, por: it.por, em: it.em }] });
+      }
+    }
+    return recusas;
+  })().finally(() => { enviando = null; });
+  return enviando;
+}
+export { semRede };
+
 // ---------- planta para o portal do cliente (sistema de gestão; tabela da migração 0025 do gestão) ----------
 export async function enviarPlantaPortal(projeto: string, dados: unknown) {
   const { error } = await sb!.from('planta_portal').upsert({ projeto, dados, atualizado: new Date().toISOString() });

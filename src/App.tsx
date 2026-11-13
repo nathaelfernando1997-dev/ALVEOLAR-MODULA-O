@@ -1788,15 +1788,42 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
   const [nomeOk, setNomeOk] = useState(!!nome);
   const [info, setInfo] = useState<{ obra: string; hist: cloud.Marcacao[] } | null>(null);
   const [erro, setErro] = useState(''); const [msg, setMsg] = useState(''); const [obs, setObs] = useState(''); const [salvando, setSalvando] = useState(false);
-  const carregar = () => cloud.situacaoPeca(obra, chave, peca).then(setInfo).catch(e => setErro((e as Error).message));
   const [dados, setDados] = useState<cloud.InfoPeca | null | undefined>(undefined);
-  useEffect(() => { carregar(); cloud.infoPeca(obra, chave, peca).then(setDados); }, []);
-  const st = info ? cloud.situacoes(info.hist).get(peca) : undefined, feitas = new Set(st?.etapas.map(e => e.etapa));
+  // sem internet: usa a obra guardada no celular e põe as marcações numa fila
+  const [semSinal, setSemSinal] = useState(false); const [salvoEm, setSalvoEm] = useState<string | null>(null);
+  const [, setTick] = useState(0);
+  const carregar = async () => {
+    setTick(t => t + 1);
+    try {
+      setInfo(await cloud.situacaoPeca(obra, chave, peca)); setSemSinal(false); setErro('');
+      const d = await cloud.lerObraOffline(obra);
+      if (d) setSalvoEm(d.salvoEm);
+      if (!d || Date.now() - new Date(d.salvoEm).getTime() > 15 * 60e3) cloud.baixarObra(obra, chave).then(n => { if (n) setSalvoEm(n.salvoEm); });
+    } catch (x) {
+      const m = (x as Error).message, d = await cloud.lerObraOffline(obra);
+      if (cloud.semRede(m) && d) { setInfo({ obra: d.obra, hist: d.marcas.filter(h => h.peca === peca) }); setSemSinal(true); setSalvoEm(d.salvoEm); }
+      else setErro(cloud.semRede(m) ? 'Sem internet, e esta obra ainda não foi guardada neste celular. Abra uma etiqueta uma vez com sinal para guardar a obra.' : m);
+    }
+  };
+  useEffect(() => {
+    (async () => { await cloud.enviarFila(); await carregar(); })();
+    (async () => { let d = await cloud.infoPeca(obra, chave, peca); if (!d) d = (await cloud.lerObraOffline(obra))?.info[peca] ?? null; setDados(d); })();
+    const voltou = () => { cloud.enviarFila().then(carregar); };
+    window.addEventListener('online', voltou);
+    const t = setInterval(() => { if (cloud.lerFila().length) cloud.enviarFila().then(carregar); }, 30000);
+    return () => { window.removeEventListener('online', voltou); clearInterval(t); };
+  }, []);
+  const fila = cloud.lerFila().filter(f => f.obra === obra);
+  const pend = fila.filter(f => f.peca === peca).map(f => ({ peca: f.peca, etapa: f.etapa, obs: f.obs, por: f.por, em: f.em, pendente: true }));
+  const hist = info ? [...info.hist, ...pend].sort((a, b) => a.em.localeCompare(b.em)) : [];
+  const st = info ? cloud.situacoes(hist).get(peca) : undefined, feitas = new Set(st?.etapas.map(e => e.etapa));
   const marcar = async (e: cloud.Etapa, o: string | null = null) => {
     setSalvando(true); setMsg('');
-    try { await cloud.marcarPeca(obra, chave, peca, e, o, nome.trim()); setMsg(e === 'desfeita' ? 'Última marcação desfeita.' : `Salvo: ${nomeEtapa(e)}.`); setObs(''); await carregar(); }
-    catch (x) { setMsg((x as Error).message); }
-    setSalvando(false);
+    cloud.porNaFila({ obra, chave, peca, etapa: e, obs: o, por: nome.trim(), em: new Date().toISOString() });
+    const recusas = await cloud.enviarFila();
+    const ficou = cloud.lerFila().some(f => f.obra === obra && f.peca === peca);
+    setMsg(recusas.length ? 'Não salvou: ' + recusas.join(' · ') : ficou ? '⏳ Sem sinal: marcação guardada no celular. Ela é enviada sozinha quando o sinal voltar.' : e === 'desfeita' ? 'Desmarcado.' : `Salvo: ${nomeEtapa(e)}.`);
+    setObs(''); await carregar(); setSalvando(false);
   };
   return <div className="celular qr">
     <div className="cel-topo"><b>{peca}</b><span>{info?.obra ?? ''}</span></div>
@@ -1808,6 +1835,9 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
       <div className="cel-status" style={{ borderColor: corEtapa(st?.atual?.etapa), color: corEtapa(st?.atual?.etapa) }}>
         Situação: <b>{nomeEtapa(st?.atual?.etapa)}</b>{st?.atual ? ` · ${new Date(st.atual.em).toLocaleString('pt-BR')} · ${st.atual.por ?? ''}` : ''}{st?.atual?.obs ? ` · ${st.atual.obs}` : ''}
       </div>
+      {semSinal && <p className="qr-off">📵 Sem sinal: mostrando o que está guardado no celular{salvoEm ? ` (atualizado ${new Date(salvoEm).toLocaleString('pt-BR')})` : ''}.</p>}
+      {fila.length > 0 && <p className="qr-off">⏳ {fila.length} marcaç{fila.length === 1 ? 'ão' : 'ões'} desta obra aguardando sinal para enviar.</p>}
+      {!semSinal && salvoEm && <p className="dica">✔ Obra guardada neste celular para usar sem internet ({new Date(salvoEm).toLocaleString('pt-BR')}).</p>}
       <details className="qr-info" open>
         <summary>Informações da peça (conferência)</summary>
         {dados === undefined ? <p className="dica">Carregando…</p> : !dados ? <p className="dica">As informações desta peça ainda não foram enviadas. Peça ao responsável para abrir o projeto no sistema (com login) e elas sobem sozinhas.</p> : <>
@@ -1846,7 +1876,7 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
       <button className="cel-prob" disabled={salvando || !obs.trim()} onClick={() => marcar('problema', obs.trim())}>⚠ Registrar problema</button>
       {st?.atual && <button disabled={salvando} onClick={() => marcar('desfeita')}>↶ Desfazer a última marcação</button>}
       {msg && <p className="qr-msg">{msg}</p>}
-      {!!st?.etapas.length && <div className="qr-hist"><b>Histórico</b>{st.etapas.map((h, i) => <div key={i}>{nomeEtapa(h.etapa)} · {new Date(h.em).toLocaleString('pt-BR')} · {h.por}{h.obs ? ` · ${h.obs}` : ''}</div>)}</div>}
+      {!!st?.etapas.length && <div className="qr-hist"><b>Histórico</b>{st.etapas.map((h, i) => <div key={i}>{nomeEtapa(h.etapa)} · {new Date(h.em).toLocaleString('pt-BR')} · {h.por}{h.obs ? ` · ${h.obs}` : ''}{'pendente' in h ? ' · ⏳ aguardando envio' : ''}</div>)}</div>}
       <p className="dica">Marcando como <b>{nome}</b> · <a href="#" onClick={e => { e.preventDefault(); setNomeOk(false); }}>trocar nome</a></p>
     </>}
   </div>;
