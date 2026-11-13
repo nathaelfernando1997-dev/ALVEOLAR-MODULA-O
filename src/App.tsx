@@ -1799,18 +1799,26 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
   const [erro, setErro] = useState(''); const [msg, setMsg] = useState(''); const [obs, setObs] = useState(''); const [salvando, setSalvando] = useState(false);
   const [dados, setDados] = useState<cloud.InfoPeca | null | undefined>(undefined);
   // sem internet: usa a obra guardada no celular e põe as marcações numa fila
-  const [semSinal, setSemSinal] = useState(false); const [salvoEm, setSalvoEm] = useState<string | null>(null);
+  const [semSinal, setSemSinal] = useState(false); const [salvoEm, setSalvoEm] = useState<string | null>(null); const [avisoOff, setAvisoOff] = useState('');
   const [, setTick] = useState(0);
   const carregar = async () => {
     setTick(t => t + 1);
     try {
-      setInfo(await cloud.situacaoPeca(obra, chave, peca)); setSemSinal(false); setErro('');
+      const sit = await cloud.situacaoPeca(obra, chave, peca);
+      setInfo(sit); setSemSinal(false); setErro('');
       const d = await cloud.lerObraOffline(obra);
-      if (d) setSalvoEm(d.salvoEm);
-      if (!d || Date.now() - new Date(d.salvoEm).getTime() > 15 * 60e3) cloud.baixarObra(obra, chave).then(n => { if (n) setSalvoEm(n.salvoEm); });
+      if (d && Object.keys(d.info).length > 1) setSalvoEm(d.salvoEm);
+      if (!d || Object.keys(d.info).length <= 1 || Date.now() - new Date(d.salvoEm).getTime() > 15 * 60e3)
+        cloud.baixarObra(obra, chave).then(async n => {
+          if (n) { setSalvoEm(n.salvoEm); setAvisoOff(''); return; }
+          setAvisoOff(cloud.erroBaixarObra);
+          // sem a obra inteira: guarda ao menos esta peça
+          await cloud.guardarPeca(obra, sit.obra, peca, sit.hist, await cloud.infoPeca(obra, chave, peca));
+        });
     } catch (x) {
       const m = (x as Error).message, d = await cloud.lerObraOffline(obra);
-      if (cloud.semRede(m) && d) { setInfo({ obra: d.obra, hist: d.marcas.filter(h => h.peca === peca) }); setSemSinal(true); setSalvoEm(d.salvoEm); }
+      if (cloud.semRede(m) && d) { setInfo({ obra: d.obra, hist: d.marcas.filter(h => h.peca === peca) }); setSemSinal(true); setSalvoEm(d.salvoEm);
+        if (!(peca in d.info)) setAvisoOff('esta peça não está guardada no celular'); }
       else setErro(cloud.semRede(m) ? 'Sem internet, e esta obra ainda não foi guardada neste celular. Abra uma etiqueta uma vez com sinal para guardar a obra.' : m);
     }
   };
@@ -1847,6 +1855,7 @@ function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: stri
       {semSinal && <p className="qr-off">📵 Sem sinal: mostrando o que está guardado no celular{salvoEm ? ` (atualizado ${new Date(salvoEm).toLocaleString('pt-BR')})` : ''}.</p>}
       {fila.length > 0 && <p className="qr-off">⏳ {fila.length} marcaç{fila.length === 1 ? 'ão' : 'ões'} desta obra aguardando sinal para enviar.</p>}
       {!semSinal && salvoEm && <p className="dica">✔ Obra guardada neste celular para usar sem internet ({new Date(salvoEm).toLocaleString('pt-BR')}).</p>}
+      {avisoOff && <p className="qr-off">⚠ {semSinal ? `Sem as informações desta peça: ${avisoOff}. A marcação funciona e é enviada quando o sinal voltar.` : `A obra inteira não foi guardada para usar sem internet: ${avisoOff}. Só as peças já abertas com sinal funcionam sem internet.`}</p>}
       <details className="qr-info" open>
         <summary>Informações da peça (conferência)</summary>
         {dados === undefined ? <p className="dica">Carregando…</p> : !dados ? <p className="dica">As informações desta peça ainda não foram enviadas. Peça ao responsável para abrir o projeto no sistema (com login) e elas sobem sozinhas.</p> : <>

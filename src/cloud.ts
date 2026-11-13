@@ -160,13 +160,26 @@ async function gravarObraOffline(obra: string, d: ObraOffline) {
   try { await (await caches.open('alv-dados')).put(urlObra(obra), new Response(JSON.stringify(d), { headers: { 'content-type': 'application/json' } })); } catch { /* sem armazenamento */ }
 }
 // baixa a obra inteira (informações e marcações) e guarda no celular; null = sem sinal ou SQL não rodado
+export let erroBaixarObra = '';
 export async function baixarObra(obra: string, chave: string): Promise<ObraOffline | null> {
   if (!sb) return null;
   const { data, error } = await sb.rpc('obra_dados', { p_projeto: obra, p_chave: chave });
-  if (error || !data) return null;
+  if (error || !data) {
+    erroBaixarObra = error && !semRede(error.message)
+      ? (/obra_dados|pecas_info|schema cache|function|relation/i.test(error.message) ? 'falta rodar no Supabase o SQL do modo sem internet (offline.sql, depois do pecas_info.sql)' : error.message) : '';
+    return null;
+  }
+  erroBaixarObra = '';
   const d = { ...(data as Omit<ObraOffline, 'salvoEm'>), salvoEm: new Date().toISOString() };
   await gravarObraOffline(obra, d);
   return d;
+}
+// guarda no celular o que já se sabe desta peça (funciona mesmo sem o SQL da obra inteira)
+export async function guardarPeca(obra: string, nomeObra: string, peca: string, hist: Marcacao[], info?: InfoPeca | null) {
+  const d = (await lerObraOffline(obra)) ?? { obra: nomeObra, info: {}, marcas: [], salvoEm: new Date().toISOString() };
+  const novo: ObraOffline = { ...d, obra: nomeObra || d.obra, marcas: [...d.marcas.filter(m => m.peca !== peca), ...hist].sort((a, b) => a.em.localeCompare(b.em)),
+    info: info ? { ...d.info, [peca]: info } : d.info };
+  await gravarObraOffline(obra, novo);
 }
 export function lerFila(): ItemFila[] { try { return JSON.parse(localStorage.getItem('alv-fila') || '[]') as ItemFila[]; } catch { return []; } }
 function gravarFila(f: ItemFila[]) { try { localStorage.setItem('alv-fila', JSON.stringify(f)); } catch { /* sem armazenamento */ } }
