@@ -31,13 +31,16 @@ main { padding: 16px; }
 .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px 16px; }
 .grade label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
 .grade input { width: 90px; }
-.mod { display: grid; grid-template-columns: var(--lado, 320px) 1fr; gap: 14px; align-items: start; position: relative; }
-.mod > .divisor { position: absolute; top: 0; bottom: 0; left: var(--lado, 320px); width: 14px; cursor: col-resize; z-index: 3; display: flex; justify-content: center; }
-.mod > .divisor span { position: sticky; top: 45vh; height: 64px; width: 12px; border-radius: 6px; background: #1f4e79; color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center; opacity: .8; }
-.mod > .divisor:hover span { opacity: 1; }
-html.lado-off .mod > .lado { visibility: hidden; overflow: hidden; height: 0; }
-html.lado-off .mod { gap: 14px; }
-@media (max-width: 800px) { .mod { grid-template-columns: 1fr; } .mod > .divisor { display: none; } html.lado-off .mod > .lado { visibility: visible; height: auto; } }
+.mod { display: grid; grid-template-columns: 320px 1fr; gap: 14px; align-items: start; position: relative; }
+.mod > .divisor { position: absolute; top: 0; left: 320px; width: 14px; height: 100%; margin: 0; padding: 0; border: none; background: transparent; cursor: pointer; z-index: 3; display: flex; justify-content: center; box-shadow: none; }
+.mod > .divisor span { position: sticky; top: 45vh; height: 72px; width: 14px; border-radius: 7px; background: #1f4e79; color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.mod > .divisor .mostra { display: none; }
+html.lado-off .mod { grid-template-columns: 1fr; padding-left: 18px; }
+html.lado-off .mod > .lado { display: none; }
+html.lado-off .mod > .divisor { left: 0; }
+html.lado-off .mod > .divisor .mostra { display: flex; }
+html.lado-off .mod > .divisor .esconde { display: none; }
+@media (max-width: 800px) { .mod { grid-template-columns: 1fr; } .mod > .divisor { display: none; } html.lado-off .mod > .lado { display: block; } html.lado-off .mod { padding-left: 0; } }
 .lado .pavsel button.on { background: #1f4e79; color: #fff; }
 .acoes label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin: 8px 0; }
 .acoes button { display: block; width: 100%; text-align: left; }

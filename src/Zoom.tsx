@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 // SVG com zoom (roda do mouse, botões, pinça no celular) e arrastar para mover.
+// painel da esquerda escondido (planta em tela cheia); fica guardado no aparelho
+export function alternarPainel(forcar?: boolean) {
+  const r = document.documentElement, on = forcar ?? !r.classList.contains('lado-off');
+  r.classList.toggle('lado-off', on);
+  try { localStorage.setItem('alv-painel-off', on ? '1' : '0'); } catch { /* sem armazenamento */ }
+}
+try { if (localStorage.getItem('alv-painel-off') === '1') document.documentElement.classList.add('lado-off'); } catch { /* sem armazenamento */ }
+
 export function ZoomSvg({ vb, children }: { vb: string; children: ReactNode }) {
   const b0 = vb.split(' ').map(Number) as [number, number, number, number];
   // girar o desenho de 90 em 90° (fica guardado neste aparelho)
@@ -15,6 +23,18 @@ export function ZoomSvg({ vb, children }: { vb: string; children: ReactNode }) {
   const arrastou = useRef(false);
   const ini = useRef<{ v: typeof v; dist: number; cx: number; cy: number } | null>(null);
   useEffect(() => { setV(base); }, [vb, giro]);
+  // a área da planta mudou de tamanho (painel escondido/mostrado, tablet girado): enquadra de novo
+  const largura = useRef(0);
+  useEffect(() => {
+    const el = ref.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const w = el.getBoundingClientRect().width;
+      if (largura.current && Math.abs(w - largura.current) > 30) setV(base);
+      largura.current = w;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [vb, giro]);
 
   const paraSvg = (cx: number, cy: number, vv = v) => {
     const r = ref.current!.getBoundingClientRect();
@@ -44,6 +64,7 @@ export function ZoomSvg({ vb, children }: { vb: string; children: ReactNode }) {
         <button onClick={() => zoom(1.4)} title="Afastar">−</button>
         <button onClick={() => setV(base)} title="Ver tudo">⤢</button>
         <button onClick={girar} title="Girar o desenho 90°">↻</button>
+        <button onClick={() => alternarPainel()} title="Planta em tela cheia (esconder/mostrar o painel)">⛶</button>
       </div>
       <svg ref={ref} viewBox={v.join(' ')}
         onPointerDown={e => { ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY }); arrastou.current = false;

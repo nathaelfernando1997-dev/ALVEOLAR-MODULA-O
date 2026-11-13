@@ -15,7 +15,7 @@ import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, pesoBitola, ESTACA_PADRAO, quantEstaca, fundacaoTecnico, dxfFundacaoDetalhe } from './engine/fundacao.ts';
-import { ZoomSvg } from './Zoom.tsx';
+import { ZoomSvg, alternarPainel } from './Zoom.tsx';
 import { plantaPortal } from './engine/portal.ts';
 import * as db from './db.ts';
 import { pastaDe, configValida } from './db.ts';
@@ -1772,25 +1772,10 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
   </div>)}</div>;
 }
 
-// barra entre o painel e a planta: arrastar muda a largura do painel; um toque esconde/mostra o painel
-const ladoW = (w: number) => {
-  const r = document.documentElement;
-  r.style.setProperty('--lado', w + 'px'); r.classList.toggle('lado-off', w === 0);
-  try { localStorage.setItem('alv-lado', String(w)); } catch { /* sem armazenamento */ }
-};
-try { const w = localStorage.getItem('alv-lado'); if (w !== null) ladoW(Number(w)); } catch { /* sem armazenamento */ }
+// barra entre o painel e a planta: um toque esconde/mostra o painel (a planta ocupa a tela toda)
 function Divisor() {
-  const ini = useRef<{ x: number; w: number; moveu: boolean } | null>(null);
-  const atual = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lado')) || (document.documentElement.classList.contains('lado-off') ? 0 : 320);
-  return <div className="divisor noprint" title="Arraste para mudar o tamanho do painel · toque para esconder/mostrar" style={{ touchAction: 'none' }}
-    onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); ini.current = { x: e.clientX, w: atual(), moveu: false }; }}
-    onPointerMove={e => {
-      const i = ini.current; if (!i) return;
-      const dx = e.clientX - i.x; if (!i.moveu && Math.abs(dx) < 6) return; i.moveu = true;
-      let w = Math.max(0, Math.min(window.innerWidth * 0.6, i.w + dx)); if (w < 120) w = 0; ladoW(Math.round(w));
-    }}
-    onPointerUp={() => { const i = ini.current; ini.current = null; if (i && !i.moveu) ladoW(i.w < 120 ? 320 : 0); }}
-    onPointerCancel={() => { ini.current = null; }}><span>⋮</span></div>;
+  return <button type="button" className="divisor noprint" title="Esconder/mostrar o painel" onClick={() => alternarPainel()}>
+    <span className="mostra">▶</span><span className="esconde">◀</span></button>;
 }
 
 // tela do celular aberta pelo QR da etiqueta: a peça, o desenho dela e o botão para marcar a montagem
