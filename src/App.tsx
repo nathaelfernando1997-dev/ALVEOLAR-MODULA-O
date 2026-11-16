@@ -943,7 +943,7 @@ export default function App() {
               <div className="planta">
                 <div className="botoes">{([['pontos', 'Pontos de fundação'], ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['bloco', 'Bloco e estaca'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
                 {(verFund === 'bloco' || verFund === 'estaca') && <div className="bloco-tela"><ZoomSvg vb="0 0 400 255"><g dangerouslySetInnerHTML={{ __html: dfT }} /></ZoomSvg></div>}
-                {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <ZoomSvg key={verFund} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: svg }} />
+                {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <ZoomSvg key={verFund} vb={q.vb} metro={q.k}><g dangerouslySetInnerHTML={{ __html: svg }} />
                   {modoFund && verFund === 'pontos' && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(174,62,201,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
                     const el = (e.target as SVGElement).ownerSVGElement!; const pt = el.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
                     const v = pt.matrixTransform((e.target as SVGGraphicsElement).getScreenCTM()!.inverse()); clique(q.iX(v.x), q.iY(v.y)); }} />}
@@ -965,7 +965,7 @@ export default function App() {
               <ListaVigas V={calc.vigas.filter(v => v.pav === pavAtual.id)} sel={vigaSel} onSel={setVigaSel} />
             </div>
             <div className="planta">
-              <ZoomSvg vb={quadroDe(pavAtual).vb}>
+              <ZoomSvg vb={quadroDe(pavAtual).vb} metro={quadroDe(pavAtual).k}>
                 <g dangerouslySetInnerHTML={{ __html: plantaConteudo(leitura, pavAtual, calc.ps.filter(p => p.pav === pavAtual.id), [], arqDe(pavAtual.box), quadroDe(pavAtual)) + vigasConteudo(calc.vigas.filter(v => v.pav === pavAtual.id), quadroDe(pavAtual), vigaSel) }} />
               </ZoomSvg>
               <p className="dica">Vigas sugeridas na estrutura sobre este pavimento (abaixo da laje). Vermelho = obrigatória · laranja = recomendada · verde = selecionada. Sugestões para o engenheiro conferir e dimensionar.</p>
@@ -1215,7 +1215,7 @@ function PlantaParedes({ L, pav, calc, arq, sel, vaoSel, cortando, onCorte, onPa
   const base = useMemo(() => plantaConteudo(L, pav, ps, calc.vaos.filter(v => v.pav === pav.id), arq, q), [L, pav, calc, arq]);
   return (
     <div className="planta">
-      <ZoomSvg vb={q.vb}>
+      <ZoomSvg vb={q.vb} metro={q.k}>
         <g dangerouslySetInnerHTML={{ __html: base }} />
         {calc.guardas.filter(m => m.pav === pav.id).map(m => {
           const [x1, y1, x2, y2] = m.o === 'H' ? [m.s, m.c, m.e, m.c] : [m.c, m.s, m.c, m.e];
@@ -1304,7 +1304,7 @@ function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje, vigas = [
   const TR = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica'), TP = trelicasNasLajes(TR, P);
   return (
     <div className="planta">
-      <ZoomSvg vb={q.vb}>
+      <ZoomSvg vb={q.vb} metro={q.k}>
         <g dangerouslySetInnerHTML={{ __html: DEFS_LAJE + arqSvg(q, arq) + lajesConteudo(lj, P, q, TR.filter(t => TP.some(x => x.t === t.n))) }} />
         {lj.map(a => {
           // área clicável de face a face das paredes; aviso = marcador "!" dentro do ambiente (sem contorno em cima das paredes)
@@ -2068,7 +2068,7 @@ function Acompanhamento({ prod, ativos, calc, arqDe, marcs, chave, logado, atual
     <div className="planta">
       <div className="botoes">{ativos.map(pv => <button key={pv.id} className={pav.id === pv.id ? 'on' : ''} onClick={() => setPavV(pv.id)}>{pv.nome}</button>)}
         <button className={tipoV === 'Parede' ? 'on' : ''} onClick={() => setTipoV('Parede')}>Paredes</button><button className={tipoV === 'Laje' ? 'on' : ''} onClick={() => setTipoV('Laje')}>Lajes</button></div>
-      <ZoomSvg key={pav.id + tipoV} vb={q.vb}><g dangerouslySetInnerHTML={{ __html: desenho }} /></ZoomSvg>
+      <ZoomSvg key={pav.id + tipoV} vb={q.vb} metro={q.k}><g dangerouslySetInnerHTML={{ __html: desenho }} /></ZoomSvg>
       <p className="dica">{[...ETAPAS.map(e => `${e.t}: ${e.cn}`), 'problema: vermelho', 'sem marcação: cinza'].join(' · ')} · passe o mouse na peça para ver o código.</p>
     </div>
   </section>;

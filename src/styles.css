@@ -253,3 +253,6 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .apoio-laje label { font-size: 12px; }
 .apoio-laje input { width: 100%; box-sizing: border-box; }
 .apoio-laje input.mudado { border: 2px solid #1971c2; color: #1971c2; font-weight: 700; }
+
+.zoom-bt button.on { background: #e8590c; color: #fff; }
+.trena-aviso { position: absolute; top: 8px; left: 8px; z-index: 2; background: #fff4e6; border: 1px solid #ffc078; color: #a34a00; border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 600; }
