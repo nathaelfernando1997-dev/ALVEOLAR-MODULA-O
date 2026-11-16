@@ -674,6 +674,44 @@ export default function App() {
                     <p className="dica">A laje passa por cima destas paredes (os ambientes viram um só na laje). A parede continua sendo fabricada.</p>
                     {(aj.lajeJuntar || []).filter(j => j.pav === pavAtual.id).map((j, i) => <div key={i} className="corte-item">parede {j.o === 'H' ? 'horizontal' : 'vertical'} · {br(j.b - j.a)} m
                       <button onClick={() => setAj({ ...aj, lajeJuntar: (aj.lajeJuntar || []).filter(x => x !== j) })}>separar</button></div>)}
+                    {(aj.lajeJuntar || []).some(j => j.pav === pavAtual.id) && <button onClick={() => {
+                      // a mesma parede (mesmo alinhamento) em todo o pavimento: junta todos os pares de ambientes separados por ela
+                      const meus = (aj.lajeJuntar || []).filter(j => j.pav === pavAtual.id), novos: NonNullable<Ajustes['lajeJuntar']> = [];
+                      const L = calc.lajes.filter(a => a.pav === pavAtual.id && a.incluida);
+                      const ja = (l: NonNullable<Ajustes['lajeJuntar']>, x: { o: 'H' | 'V'; c: number; a: number; b: number }) =>
+                        l.some(y => y.pav === pavAtual.id && y.o === x.o && Math.abs(y.c - x.c) < 0.08 && Math.min(y.b, x.b) - Math.max(y.a, x.a) > 0.3);
+                      for (const j of meus) for (const A of L) for (const B of L) {
+                        if (A === B) continue;
+                        const enc = j.o === 'V' ? Math.abs(A.x1 - j.c) < 0.08 && Math.abs(B.x0 - j.c) < 0.08 : Math.abs(A.y1 - j.c) < 0.08 && Math.abs(B.y0 - j.c) < 0.08;
+                        if (!enc) continue;
+                        const a = j.o === 'V' ? Math.max(A.y0, B.y0) : Math.max(A.x0, B.x0), b = j.o === 'V' ? Math.min(A.y1, B.y1) : Math.min(A.x1, B.x1);
+                        if (b - a < 0.3) continue;
+                        const x = { pav: pavAtual.id, o: j.o, c: j.c, a, b };
+                        if (!ja(aj.lajeJuntar || [], x) && !ja(novos, x)) novos.push(x);
+                      }
+                      if (novos.length) setAj({ ...aj, lajeJuntar: [...(aj.lajeJuntar || []), ...novos] });
+                      alert(novos.length ? `${novos.length} cômodo(s) a mais juntado(s) na mesma parede.` : 'Não há outros cômodos separados por essa mesma parede neste pavimento.');
+                    }}>Juntar em todo o pavimento (a mesma parede, em todos os cômodos)</button>}
+                    {ativos.length > 1 && (aj.lajeJuntar || []).some(j => j.pav === pavAtual.id) && <button onClick={() => {
+                      // repete as junções deste pavimento nos outros: mesma posição na planta, encostando na parede que existir lá
+                      const meus = (aj.lajeJuntar || []).filter(j => j.pav === pavAtual.id), novos: NonNullable<Ajustes['lajeJuntar']> = [];
+                      const ja = (l: NonNullable<Ajustes['lajeJuntar']>, x: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }) =>
+                        l.some(y => y.pav === x.pav && y.o === x.o && Math.abs(y.c - x.c) < 0.08 && Math.min(y.b, x.b) - Math.max(y.a, x.a) > 0.3);
+                      for (const p2 of ativos) {
+                        if (p2.id === pavAtual.id) continue;
+                        const dx = p2.box.x0 - pavAtual.box.x0, dy = p2.box.y0 - pavAtual.box.y0;
+                        for (const j of meus) {
+                          const c = j.c + (j.o === 'H' ? dy : dx), a = j.a + (j.o === 'H' ? dx : dy), b = j.b + (j.o === 'H' ? dx : dy);
+                          const t = calc.ts.filter(t => t.pav === p2.id && t.o === j.o && Math.abs(t.c - c) < 0.15 && Math.min(t.e, b) - Math.max(t.s, a) > 0.5 * (b - a))
+                            .sort((p, q) => Math.abs(p.c - c) - Math.abs(q.c - c))[0];
+                          if (!t) continue;
+                          const x = { pav: p2.id, o: j.o, c: t.c, a, b };
+                          if (!ja(aj.lajeJuntar || [], x) && !ja(novos, x)) novos.push(x);
+                        }
+                      }
+                      if (novos.length) setAj({ ...aj, lajeJuntar: [...(aj.lajeJuntar || []), ...novos] });
+                      alert(novos.length ? `${novos.length} junção(ões) repetida(s) nos outros pavimentos.` : 'Os outros pavimentos já têm essas junções (ou não têm parede no mesmo lugar).');
+                    }}>Repetir estas junções nos outros pavimentos</button>}
                   </div>}
                   <AcoesLaje regras={regras} amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />
                 </>}
