@@ -1501,6 +1501,26 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao, regras }: { 
           {pontas.some(l => amb.apoioLado![l as 'o'] < regras.lajeApoio - 1e-6) && <p className="erro">Atenção: ponta da laje com menos de {Math.round(regras.lajeApoio * 100)} cm de apoio na parede.</p>}
         </div>;
       })()}
+      {amb.sentido && (() => {
+        // alinhar as emendas dos painéis com as da fileira vizinha (de cima/de baixo, ou dos lados se os painéis estão deitados)
+        const largX = amb.sentido === 'V';                       // painéis em pé: a largura corre em x
+        const lados = (largX ? [['n', 'de cima'], ['s', 'de baixo']] : [['o', 'da esquerda'], ['l', 'da direita']]) as ['o' | 'l' | 's' | 'n', string][];
+        const [w0, w1] = largX ? [amb.x0, amb.x1] : [amb.y0, amb.y1];
+        const emendasDo = (lado: 'o' | 'l' | 's' | 'n') => {
+          const viz = calc.lajes.filter(b => b.pav === amb.pav && b !== amb && (lado === 'n' ? Math.abs(b.y0 - amb.y1) < 0.08 : lado === 's' ? Math.abs(b.y1 - amb.y0) < 0.08 : lado === 'o' ? Math.abs(b.x1 - amb.x0) < 0.08 : Math.abs(b.x0 - amb.x1) < 0.08)
+            && (largX ? Math.min(b.x1, amb.x1) - Math.max(b.x0, amb.x0) : Math.min(b.y1, amb.y1) - Math.max(b.y0, amb.y0)) > 0.3);
+          const iv = calc.pl.filter(p => viz.some(b => b.id === p.amb)).map(p => largX ? [p.x0, p.x1] : [p.y0, p.y1]).sort((p, q) => p[0] - q[0]);
+          const js: number[] = [];
+          for (let i = 0; i < iv.length - 1; i++) { const g = iv[i + 1][0] - iv[i][1]; if (g > -0.01 && g < 0.3) { const c = (iv[i][1] + iv[i + 1][0]) / 2; if (c > w0 + 0.3 && c < w1 - 0.3 && !js.some(x => Math.abs(x - c) < 0.05)) js.push(c); } }
+          return js;
+        };
+        const tem = (aj.lajeEmendas || {})[amb.id];
+        const opc = lados.map(([l, t]) => ({ t, js: emendasDo(l) })).filter(o => o.js.length);
+        if (!opc.length && !tem) return null;
+        return <>{opc.map(o => <button key={o.t} onClick={() => setAj({ ...aj, lajeEmendas: { ...(aj.lajeEmendas || {}), [amb.id]: o.js }, lajeInteira: (aj.lajeInteira || []).filter(x => x !== amb.id) })}>
+          Alinhar as emendas com as lajes {o.t} ({o.js.map(c => br(c - w0)).join(' · ')} m da borda)</button>)}
+          {tem && <button onClick={() => { const m = { ...(aj.lajeEmendas || {}) }; delete m[amb.id]; setAj({ ...aj, lajeEmendas: m }); }}>Voltar a dividir em partes iguais</button>}</>;
+      })()}
       <label>Pé-direito deste ambiente (m) — vazio = {br(pav.altura)} do pavimento
         <input type="number" step="0.01" key={'pe' + amb.id} defaultValue={aj.peAmb?.[amb.id] ?? ''} onBlur={e => {
           const v = parseFloat(e.target.value.replace(',', '.')); const m = { ...(aj.peAmb || {}) };

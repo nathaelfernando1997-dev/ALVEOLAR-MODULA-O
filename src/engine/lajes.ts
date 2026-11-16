@@ -307,10 +307,16 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const inteira = (aj.lajeInteira || []).includes(a.id);
     const n = inteira ? 1 : Math.max(1, Math.ceil((ladoL + f) / (r.lajeLarg + f) - 1e-9)), w = (ladoL - (n - 1) * f) / n;
     if (inteira && w > r.lajeLarg + 1e-6) { const t = `painel inteiro de ${br2(w)} m de largura, acima do máximo de ${br2(r.lajeLarg)} m — fabricar por exceção`; L.aviso = L.aviso ? `${L.aviso} · ${t}` : t; }
-    esc.p.vaos.forEach(([s0, s1], iv) => { for (let k = 0; k < n; k++) {
+    // faixas da largura: partes iguais, ou cortadas nas emendas escolhidas (alinhar com a fileira vizinha)
+    const cortes = (aj.lajeEmendas?.[a.id] || []).filter(c => c > l0 + 0.25 && c < l1 - 0.25).sort((p, q) => p - q);
+    const faixas: [number, number][] = [];
+    if (cortes.length) { let ini = l0; for (const c of cortes) { faixas.push([ini, c - f / 2]); ini = c + f / 2; } faixas.push([ini, l1]); }
+    else for (let k = 0; k < n; k++) faixas.push([l0 + k * (w + f), l0 + k * (w + f) + w]);
+    if (cortes.length && faixas.some(([p, q]) => q - p > r.lajeLarg + 1e-6)) { const t = `emendas alinhadas: painel de ${br2(Math.max(...faixas.map(([p, q]) => q - p)))} m de largura, acima do máximo de ${br2(r.lajeLarg)} m`; L.aviso = L.aviso ? `${L.aviso} · ${t}` : t; }
+    esc.p.vaos.forEach(([s0, s1], iv) => { for (const [b0, b1] of faixas) {
       // nas pontas com beiral o painel vai até a linha da projeção
       const ult = iv === esc.p.vaos.length - 1;
-      const b0 = l0 + k * (w + f), b1 = b0 + w;
+      const w = b1 - b0;
       // beiral na ponta: só nas fileiras que não entram em outro ambiente
       const livre = (p: number, q: number) => !(sentido === 'H' ? invade(Math.min(p, q), Math.max(p, q), b0, b1) : invade(b0, b1, Math.min(p, q), Math.max(p, q)));
       const e0 = iv === 0 && bP[0] && livre(bP[0].c, s0) ? bP[0].c : null, e1 = ult && bP[1] && livre(s1, bP[1].c) ? bP[1].c : null;

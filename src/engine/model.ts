@@ -411,7 +411,8 @@ export interface Ajustes {
   fundRemover?: { pav: string; x: number; y: number }[];   // pontos de fundação tirados à mão
   fundOrigem?: { pav: string; x: number; y: number; dx: number; dy: number };   // origem da locação: ponto escolhido + deslocamento (ex.: até a divisa)
   lajeApoioLado?: Record<string, Partial<Record<'o' | 'l' | 's' | 'n', number>>>;   // apoio da laje em cima da parede (m) por ambiente e lado, digitado no sistema
-  lajeInteira?: string[];                  // ambientes com um painel só na largura, mesmo acima da largura máxima (fabricar por exceção)
+  lajeInteira?: string[];
+  lajeEmendas?: Record<string, number[]>;   // emendas dos painéis de laje por ambiente (posição do meio da emenda, na largura), para alinhar com a fileira vizinha                  // ambientes com um painel só na largura, mesmo acima da largura máxima (fabricar por exceção)
   lajeJuntar?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }[];   // trecho de parede que não divide a laje (a laje passa por cima e junta os ambientes)
   laje16?: string[];                       // (antigo) ambientes com laje de 16 cm
   lajeEspAmb?: Record<string, number>;     // espessura da laje por ambiente (m); 16 cm usa treliça TG12, 20 cm TG16, 25 cm TG20
