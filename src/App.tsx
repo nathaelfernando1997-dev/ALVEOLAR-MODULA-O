@@ -470,7 +470,20 @@ export default function App() {
   const cortes = useMemo(() => dxf ? lerCortes(dxf, pavs.filter(p => p.corte)) : [], [dxf, pavs]);
   const avisos = useMemo(() => conferir(cortes, ativos, quadro, regras, calc.ps), [cortes, pavs, quadro, regras, calc]);
 
-  const arqDe = (box: Box): Prim[] => leitura ? leitura.prims.filter(p => p.pts.every(q => q[0] > box.x0 - 0.6 && q[0] < box.x1 + 0.6 && q[1] > box.y0 - 0.6 && q[1] < box.y1 + 0.6)) : [];
+  // paredes desenhadas no sistema entram no desenho (contorno + hachura), como as do projeto
+  const paredeDesenho = (m: { o: 'H' | 'V'; c: number; a: number; b: number; esp?: number }): Prim[] => {
+    const h = (m.esp ?? 0.14) / 2, [x0, x1, y0, y1] = m.o === 'H' ? [m.a, m.b, m.c - h, m.c + h] : [m.c - h, m.c + h, m.a, m.b];
+    const L = (a: [number, number], b: [number, number]): Prim => ({ kind: 'line', pts: [a, b], layer: 'PAREDE' });
+    const out = [L([x0, y0], [x1, y0]), L([x1, y0], [x1, y1]), L([x1, y1], [x0, y1]), L([x0, y1], [x0, y0])];
+    // hachura a 45° (x - y = k), recortada no retângulo
+    for (let k = x0 - y1 + 0.05; k < x1 - y0; k += 0.05) {
+      const xa = Math.max(x0, y0 + k), xb = Math.min(x1, y1 + k);
+      if (xb - xa > 0.005) out.push(L([xa, xa - k], [xb, xb - k]));
+    }
+    return out;
+  };
+  const arqDe = (box: Box): Prim[] => leitura ? [...leitura.prims.filter(p => p.pts.every(q => q[0] > box.x0 - 0.6 && q[0] < box.x1 + 0.6 && q[1] > box.y0 - 0.6 && q[1] < box.y1 + 0.6)),
+    ...(aj.paredesManuais || []).filter(m => { const [x, y] = m.o === 'H' ? [(m.a + m.b) / 2, m.c] : [m.c, (m.a + m.b) / 2]; return x > box.x0 - 0.6 && x < box.x1 + 0.6 && y > box.y0 - 0.6 && y < box.y1 + 0.6; }).flatMap(paredeDesenho)] : [];
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
   // QR com a chave da obra: tela de marcação sem login
