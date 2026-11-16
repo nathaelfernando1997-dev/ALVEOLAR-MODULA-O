@@ -23,6 +23,7 @@ import * as cloud from './cloud.ts';
 import type { Session } from '@supabase/supabase-js';
 import { Login } from './Login.tsx';
 import qrcode from 'qrcode-generator';
+import { escurecerDxf } from './engine/cores.ts';
 import type { Projeto, Config, Pasta } from './db.ts';
 
 type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento' | 'acompanhamento';
@@ -31,11 +32,12 @@ const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
 const baixarDwg = async (nome: string, dxf: string) => {
   try {
     const { dxfParaDwg } = await import('./engine/dwg.ts');
-    const bin = await dxfParaDwg(dxf);
+    const bin = await dxfParaDwg(escurecerDxf(dxf));
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bin as BlobPart], { type: 'application/acad' })); a.download = nome.replace(/\.dxf$/i, '') + '.dwg'; a.click();
   } catch (e) { alert('Não consegui gerar o DWG: ' + (e as Error).message + '. Baixe o DXF e abra no AutoCAD.'); }
 };
 const baixar = (nome: string, conteudo: string, tipo: string) => {
+  if (tipo === 'application/dxf') conteudo = escurecerDxf(conteudo);
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
 };
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
