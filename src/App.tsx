@@ -36,6 +36,14 @@ const baixarDwg = async (nome: string, dxf: string) => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bin as BlobPart], { type: 'application/acad' })); a.download = nome.replace(/\.dxf$/i, '') + '.dwg'; a.click();
   } catch (e) { alert('Não consegui gerar o DWG: ' + (e as Error).message + '. Baixe o DXF e abra no AutoCAD.'); }
 };
+// planta em PDF (A3 vetorial com carimbo), feita do mesmo desenho do DXF
+const baixarPdf = async (nome: string, dxf: string, info: { titulo: string; sub?: string; obs?: string }) => {
+  try {
+    const { dxfParaPdf } = await import('./engine/pdf.ts');
+    const bin = dxfParaPdf(escurecerDxf(dxf), info);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bin as BlobPart], { type: 'application/pdf' })); a.download = nome.replace(/\.dxf$/i, '') + '.pdf'; a.click();
+  } catch (e) { alert('Não consegui gerar o PDF: ' + (e as Error).message); }
+};
 const baixar = (nome: string, conteudo: string, tipo: string) => {
   if (tipo === 'application/dxf') conteudo = escurecerDxf(conteudo);
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
@@ -891,6 +899,7 @@ export default function App() {
                   {(doPav(aj.fundExtra).length > 0 || doPav(aj.fundRemover).length > 0) && <button onClick={() => setAj({ ...aj, fundExtra: (aj.fundExtra || []).filter(e => e.pav !== pf.id), fundRemover: (aj.fundRemover || []).filter(e => e.pav !== pf.id) })}>Voltar aos pontos automáticos ({doPav(aj.fundExtra).length} acrescentados, {doPav(aj.fundRemover).length} tirados)</button>}
                   <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
                   <button onClick={() => baixarDwg(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF))}>Baixar planta de fundação (DWG)</button>
+                  <button onClick={() => baixarPdf(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF), { titulo: 'PLANTA DE FUNDAÇÃO', sub: `${projNome || base} · ${pf.nome}` })}>Baixar planta de fundação (PDF)</button>
                   <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
                   <p className="dica">DXF em metros, nas mesmas coordenadas do projeto. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
                 </div>
@@ -906,6 +915,7 @@ export default function App() {
                   {og && <button onClick={() => setAj({ ...aj, fundOrigem: undefined })}>Voltar a origem para o canto de baixo à esquerda</button>}
                   <button onClick={() => baixar(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc), 'application/dxf')}>Baixar planta de locação (DXF)</button>
                   <button onClick={() => baixarDwg(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc))}>Baixar planta de locação (DWG)</button>
+                  <button onClick={() => baixarPdf(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc), { titulo: 'PLANTA DE LOCAÇÃO', sub: `${projNome || base} · ${pf.nome}` })}>Baixar planta de locação (PDF)</button>
                   <button onClick={() => baixar(base + '-locacao.csv', csvLocacao(loc), 'text/csv')}>Baixar coordenadas da locação (CSV)</button>
                 </div>
                 <div className="card acoes">
@@ -918,6 +928,7 @@ export default function App() {
                   <p className="dica">Embaixo de porta não tem espera. As cotas saem a partir do início de cada painel.</p>
                   <button onClick={() => baixar(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee), 'application/dxf')}>Baixar planta das esperas (DXF)</button>
                   <button onClick={() => baixarDwg(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee))}>Baixar planta das esperas (DWG)</button>
+                  <button onClick={() => baixarPdf(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee), { titulo: 'PLANTA DAS ESPERAS DOS PAINÉIS', sub: `${projNome || base} · ${pf.nome}` })}>Baixar planta das esperas (PDF)</button>
                   <button onClick={() => baixar(base + '-esperas.csv', csvEsperas(es, loc.ox, loc.oy), 'text/csv')}>Baixar tabela das esperas (CSV)</button>
                 </div>
                 <div className="card acoes">
@@ -929,6 +940,7 @@ export default function App() {
                   </div>
                   <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
                   <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
+                  <button onClick={() => baixarPdf(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), { titulo: 'DETALHE DO BLOCO E DA ESTACA', sub: `${projNome || base} · ${pf.nome}`, obs: 'Medidas em cm' })}>Baixar detalhe do bloco e da estaca (PDF)</button>
                   <p className="dica">Gaiola: {ob.barras} estribos quadrados fechados em cada direção (N1 e N2), de {n2(ob.armLado * 100)} × {n2(ob.armAlt * 100)} cm, com gancho de {n2(ob.gancho * 100)} cm em cada ponta. Comprimento de cada estribo: {Math.round(qb.comp * 100)} cm.</p>
                 </div>
                 <div className="card acoes">
@@ -941,6 +953,7 @@ export default function App() {
                   <p className="dica">{oe.barras} N3 ø{oe.bitLong.toFixed(1)} C={Math.round(oe.armComp * 100)} · {qe.nEstr} estribos N4 ø{oe.bitEstr.toFixed(1)} c/{Math.round(oe.espEstr * 100)} C={Math.round(qe.cEstr * 100)} (circular ø{Math.round(oe.armDiam * 100)}).</p>
                   <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
                   <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
+                  <button onClick={() => baixarPdf(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), { titulo: 'DETALHE DO BLOCO E DA ESTACA', sub: `${projNome || base} · ${pf.nome}`, obs: 'Medidas em cm' })}>Baixar detalhe do bloco e da estaca (PDF)</button>
                 </div>
                 <div className="card acoes">
                   <h3>Folhas para imprimir</h3>
