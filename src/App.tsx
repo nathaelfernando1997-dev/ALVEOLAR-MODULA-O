@@ -27,6 +27,14 @@ import type { Projeto, Config, Pasta } from './db.ts';
 
 type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento' | 'acompanhamento';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
+// mesma planta em DWG (converte o DXF gerado)
+const baixarDwg = async (nome: string, dxf: string) => {
+  try {
+    const { dxfParaDwg } = await import('./engine/dwg.ts');
+    const bin = await dxfParaDwg(dxf);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bin as BlobPart], { type: 'application/acad' })); a.download = nome.replace(/\.dxf$/i, '') + '.dwg'; a.click();
+  } catch (e) { alert('Não consegui gerar o DWG: ' + (e as Error).message + '. Baixe o DXF e abra no AutoCAD.'); }
+};
 const baixar = (nome: string, conteudo: string, tipo: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
 };
@@ -880,6 +888,7 @@ export default function App() {
                   {dicaModo && <p className="dica"><b>{dicaModo}</b> (clique de novo no botão para parar)</p>}
                   {(doPav(aj.fundExtra).length > 0 || doPav(aj.fundRemover).length > 0) && <button onClick={() => setAj({ ...aj, fundExtra: (aj.fundExtra || []).filter(e => e.pav !== pf.id), fundRemover: (aj.fundRemover || []).filter(e => e.pav !== pf.id) })}>Voltar aos pontos automáticos ({doPav(aj.fundExtra).length} acrescentados, {doPav(aj.fundRemover).length} tirados)</button>}
                   <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
+                  <button onClick={() => baixarDwg(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF))}>Baixar planta de fundação (DWG)</button>
                   <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
                   <p className="dica">DXF em metros, nas mesmas coordenadas do projeto. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
                 </div>
@@ -894,6 +903,7 @@ export default function App() {
                   {og && <p className="dica">Ex.: divisa 1,50 m à esquerda do ponto → X = -1,50; 2,00 m abaixo → Y = -2,00.</p>}
                   {og && <button onClick={() => setAj({ ...aj, fundOrigem: undefined })}>Voltar a origem para o canto de baixo à esquerda</button>}
                   <button onClick={() => baixar(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc), 'application/dxf')}>Baixar planta de locação (DXF)</button>
+                  <button onClick={() => baixarDwg(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc))}>Baixar planta de locação (DWG)</button>
                   <button onClick={() => baixar(base + '-locacao.csv', csvLocacao(loc), 'text/csv')}>Baixar coordenadas da locação (CSV)</button>
                 </div>
                 <div className="card acoes">
@@ -905,6 +915,7 @@ export default function App() {
                   </div>
                   <p className="dica">Embaixo de porta não tem espera. As cotas saem a partir do início de cada painel.</p>
                   <button onClick={() => baixar(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee), 'application/dxf')}>Baixar planta das esperas (DXF)</button>
+                  <button onClick={() => baixarDwg(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee))}>Baixar planta das esperas (DWG)</button>
                   <button onClick={() => baixar(base + '-esperas.csv', csvEsperas(es, loc.ox, loc.oy), 'text/csv')}>Baixar tabela das esperas (CSV)</button>
                 </div>
                 <div className="card acoes">
@@ -915,6 +926,7 @@ export default function App() {
                       <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={ob[k]} onChange={e => setBloco(k, parseFloat(e.target.value) || 0)} /></label>)}
                   </div>
                   <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
+                  <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
                   <p className="dica">Gaiola: {ob.barras} estribos quadrados fechados em cada direção (N1 e N2), de {n2(ob.armLado * 100)} × {n2(ob.armAlt * 100)} cm, com gancho de {n2(ob.gancho * 100)} cm em cada ponta. Comprimento de cada estribo: {Math.round(qb.comp * 100)} cm.</p>
                 </div>
                 <div className="card acoes">
@@ -926,6 +938,7 @@ export default function App() {
                   </div>
                   <p className="dica">{oe.barras} N3 ø{oe.bitLong.toFixed(1)} C={Math.round(oe.armComp * 100)} · {qe.nEstr} estribos N4 ø{oe.bitEstr.toFixed(1)} c/{Math.round(oe.espEstr * 100)} C={Math.round(qe.cEstr * 100)} (circular ø{Math.round(oe.armDiam * 100)}).</p>
                   <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
+                  <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
                 </div>
                 <div className="card acoes">
                   <h3>Folhas para imprimir</h3>
@@ -1003,6 +1016,7 @@ export default function App() {
                 {prod && <button className={modoImp === 'etiquetas' ? 'on' : ''} onClick={() => setModoImp('etiquetas')}>Ver etiquetas das peças</button>}
                 <button onClick={() => window.print()}>Imprimir / salvar PDF ({modoImp === 'folhas' ? 'folhas' : 'etiquetas'})</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
+                <button onClick={() => baixarDwg(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2))}>Baixar DWG da modulação</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj)) : []) + ((regras.motor ?? 1) >= 2 ? csvTrelicas(ativos, calc, aj, regras.perda ?? 10) : ''), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 {prod && <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-producao.csv', csvProducao(prod, ativos), 'text/csv')}>Baixar planilha de produção (CSV)</button>}
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
