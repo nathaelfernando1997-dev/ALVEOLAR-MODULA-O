@@ -689,7 +689,7 @@ export default function App() {
                         const x = { pav: pavAtual.id, o: j.o, c: j.c, a, b };
                         if (!ja(aj.lajeJuntar || [], x) && !ja(novos, x)) novos.push(x);
                       }
-                      if (novos.length) setAj({ ...aj, lajeJuntar: [...(aj.lajeJuntar || []), ...novos] });
+                      if (novos.length) setAj(juntarLajes(aj, calc.lajes, novos));
                       alert(novos.length ? `${novos.length} cômodo(s) a mais juntado(s) na mesma parede.` : 'Não há outros cômodos separados por essa mesma parede neste pavimento.');
                     }}>Juntar em todo o pavimento (a mesma parede, em todos os cômodos)</button>}
                     {ativos.length > 1 && (aj.lajeJuntar || []).some(j => j.pav === pavAtual.id) && <button onClick={() => {
@@ -709,7 +709,7 @@ export default function App() {
                           if (!ja(aj.lajeJuntar || [], x) && !ja(novos, x)) novos.push(x);
                         }
                       }
-                      if (novos.length) setAj({ ...aj, lajeJuntar: [...(aj.lajeJuntar || []), ...novos] });
+                      if (novos.length) setAj(juntarLajes(aj, calc.lajes, novos));
                       alert(novos.length ? `${novos.length} junção(ões) repetida(s) nos outros pavimentos.` : 'Os outros pavimentos já têm essas junções (ou não têm parede no mesmo lugar).');
                     }}>Repetir estas junções nos outros pavimentos</button>}
                   </div>}
@@ -1424,6 +1424,19 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
   </div>;
 }
 
+// junta ambientes na laje: o ambiente juntado começa sem "girar" e sem "laje inteira" (marcas dos pedaços antigos,
+// que passariam para ele porque ele fica com o código de um deles)
+function juntarLajes(aj: Ajustes, lajes: LajeAmb[], novos: NonNullable<Ajustes['lajeJuntar']>): Ajustes {
+  const ids = new Set<string>();
+  for (const j of novos) for (const a of lajes) {
+    if (a.pav !== j.pav) continue;
+    const enc = j.o === 'V' ? (Math.abs(a.x0 - j.c) < 0.08 || Math.abs(a.x1 - j.c) < 0.08) && Math.min(a.y1, j.b) - Math.max(a.y0, j.a) > 0.3
+      : (Math.abs(a.y0 - j.c) < 0.08 || Math.abs(a.y1 - j.c) < 0.08) && Math.min(a.x1, j.b) - Math.max(a.x0, j.a) > 0.3;
+    if (enc) ids.add(a.id);
+  }
+  return { ...aj, lajeJuntar: [...(aj.lajeJuntar || []), ...novos], lajeGiro: (aj.lajeGiro || []).filter(x => !ids.has(x)), lajeInteira: (aj.lajeInteira || []).filter(x => !ids.has(x)) };
+}
+
 function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao, regras }: { regras: Regras; amb: LajeAmb | null; lajeSel: string | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento; espPadrao: number }) {
   const lj = calc.lajes.filter(a => a.pav === pav.id && a.incluida), P = calc.pl.filter(p => p.pav === pav.id);
   const area = P.reduce((s, p) => s + areaLaje(p), 0);
@@ -1464,7 +1477,7 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao, regras }: { 
         const lados = ([['o', 'à esquerda'], ['l', 'à direita'], ['n', 'de cima'], ['s', 'de baixo']] as const).filter(([l]) => amb.apoio[l] && !amb.externo?.[l]);
         const seg = (l: 'o' | 'l' | 's' | 'n') => l === 'o' || l === 'l' ? { pav: pav.id, o: 'V' as const, c: l === 'o' ? amb.x0 : amb.x1, a: amb.y0, b: amb.y1 } : { pav: pav.id, o: 'H' as const, c: l === 's' ? amb.y0 : amb.y1, a: amb.x0, b: amb.x1 };
         return lados.length ? <>
-          {lados.map(([l, t]) => <button key={l} onClick={() => setAj({ ...aj, lajeJuntar: [...(aj.lajeJuntar || []), seg(l)] })}>Juntar com o ambiente {t} (laje passa por cima da parede)</button>)}
+          {lados.map(([l, t]) => <button key={l} onClick={() => setAj(juntarLajes(aj, calc.lajes, [seg(l)]))}>Juntar com o ambiente {t} (laje passa por cima da parede)</button>)}
         </> : null;
       })()}
       {amb.apoioLado && amb.sentido && (() => {
