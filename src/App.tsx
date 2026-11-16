@@ -824,8 +824,18 @@ export default function App() {
             const perto = (x: number, y: number) => pts.map(p => ({ p, d: Math.hypot(p.x - x, p.y - y) })).sort((a, b) => a.d - b.d)[0];
             const noEixo = (x: number, y: number) => {
               // encosta no eixo da parede mais perto
-              const c = tf.map(t => { const u = t.o === 'H' ? Math.min(t.e, Math.max(t.s, x)) : t.c, w = t.o === 'H' ? t.c : Math.min(t.e, Math.max(t.s, y)); return { x: u, y: w, d: Math.hypot(u - x, w - y) }; }).sort((a, b) => a.d - b.d)[0];
-              return c && c.d < 0.4 ? { x: +c.x.toFixed(3), y: +c.y.toFixed(3) } : { x: +x.toFixed(3), y: +y.toFixed(3) };
+              // pode passar até 60 cm da ponta da parede, no prolongamento do eixo (pilar maior, alinhado com outra linha)
+              const c = tf.map(t => { const u = t.o === 'H' ? Math.min(t.e + 0.6, Math.max(t.s - 0.6, x)) : t.c, w = t.o === 'H' ? t.c : Math.min(t.e + 0.6, Math.max(t.s - 0.6, y)); return { x: u, y: w, d: Math.hypot(u - x, w - y), H: t.o === 'H' }; }).sort((a, b) => a.d - b.d)[0];
+              if (!c || c.d >= 0.4) return { x: +x.toFixed(3), y: +y.toFixed(3) };
+              // gruda na linha do desenho que atravessa o eixo, se o clique ficou a menos de 5 cm dela
+              const H = c.H;
+              let { x: px, y: py } = c, best = 0.05;
+              for (const pr of arqF) for (let i = 0; i < pr.pts.length - 1; i++) {
+                const [[x1, y1], [x2, y2]] = [pr.pts[i], pr.pts[i + 1]];
+                if (H && Math.abs(x1 - x2) < 0.01 && Math.min(y1, y2) - 0.3 < c.y && c.y < Math.max(y1, y2) + 0.3 && Math.abs(x1 - c.x) < best) { best = Math.abs(x1 - c.x); px = (x1 + x2) / 2; }
+                if (!H && Math.abs(y1 - y2) < 0.01 && Math.min(x1, x2) - 0.3 < c.x && c.x < Math.max(x1, x2) + 0.3 && Math.abs(y1 - c.y) < best) { best = Math.abs(y1 - c.y); py = (y1 + y2) / 2; }
+              }
+              return { x: +px.toFixed(3), y: +py.toFixed(3) };
             };
             const tirar = (p: { x: number; y: number }) => {
               const ex = doPav(aj.fundExtra).find(e => Math.hypot(e.x - p.x, e.y - p.y) < 0.15);
