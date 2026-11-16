@@ -180,7 +180,9 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? 1 : -1;
       const [l0, l1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
       const ov = (t: Trecho) => Math.min(t.e, l1) - Math.max(t.s, l0);
-      const w = novo && a.esp[lado] > 0 ? ts.filter(t => t.pav === a.pav && t.o === o && Math.abs(t.c - ed) < 0.05 && ov(t) > 0.5 * (l1 - l0)).sort((p, q) => ov(q) - ov(p))[0] : undefined;
+      // a parede do lado pode estar em vários pedaços (portas): somados, cobrem boa parte do lado
+      const cs = novo && a.esp[lado] > 0 ? ts.filter(t => t.pav === a.pav && t.o === o && Math.abs(t.c - ed) < 0.05 && ov(t) > 0.05) : [];
+      const w = cs.reduce((s, t) => s + ov(t), 0) > 0.5 * (l1 - l0) ? cs.sort((p, q) => ov(q) - ov(p))[0] : undefined;
       // parede com linha de detalhe junto: a laje usa a face certa, mesmo se a parede ficou com a leitura antiga
       return w ? (w.real?.c ?? w.c) + dir * (w.real?.esp ?? w.esp) / 2 : ed + dir * a.esp[lado] / 2;
     };

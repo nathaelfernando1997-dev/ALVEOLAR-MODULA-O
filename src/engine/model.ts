@@ -361,13 +361,18 @@ function eixos(F: Face[], r: Regras): Eixo[] {
     let c = cMed, esp = eMed, real: { c: number; esp: number } | undefined;
     if ((r.motor ?? 1) >= 2 && g.ds.length > 1) {
       const L = g.ps.map(p => p[1] - p[0]), tot = L.reduce((s, v) => s + v, 0);
-      let best = { peso: 0, c: cMed, d: eMed };
+      let best = { peso: 0, c: cMed, d: eMed, ix: [] as number[] };
       for (let i = 0; i < g.ds.length; i++) {
-        const ix = g.ds.map((d, j) => Math.abs(d - g.ds[i]) <= 0.015 ? j : -1).filter(j => j >= 0);
+        // mesma espessura e mesmo eixo (batente de porta tem a mesma espessura, mas fica 2-3 cm fora do eixo da parede)
+        const ix = g.ds.map((d, j) => Math.abs(d - g.ds[i]) <= 0.015 && Math.abs(g.cs[j] - g.cs[i]) <= 0.01 ? j : -1).filter(j => j >= 0);
         const peso = ix.reduce((s, j) => s + L[j], 0);
-        if (peso > best.peso) best = { peso, c: ix.reduce((s, j) => s + g.cs[j] * L[j], 0) / peso, d: ix.reduce((s, j) => s + g.ds[j] * L[j], 0) / peso };
+        if (peso > best.peso) best = { peso, c: ix.reduce((s, j) => s + g.cs[j] * L[j], 0) / peso, d: ix.reduce((s, j) => s + g.ds[j] * L[j], 0) / peso, ix };
       }
-      if (best.peso >= 0.6 * tot && Math.abs(best.d - eMed) > 0.015) {
+      // quanto da parede (de ponta a ponta) o par principal cobre
+      const uniao = (xs: [number, number][]) => { const o = [...xs].sort((p, q) => p[0] - q[0]); let t = 0, a0 = -1e9, b0 = -1e9;
+        for (const [a, b] of o) { if (a > b0) { t += b0 - a0; a0 = a; b0 = b; } else b0 = Math.max(b0, b); } return t + b0 - a0; };
+      const cob = uniao(best.ix.map(j => g.ps[j])) / Math.max(1e-9, uniao(g.ps));
+      if ((best.peso >= 0.6 * tot || cob >= 0.75) && (Math.abs(best.d - eMed) > 0.015 || Math.abs(best.c - cMed) > 0.005)) {
         real = { c: best.c, esp: best.d };
         // leitura nova: a parede também usa o eixo e a espessura certos (projetos salvos antes ligam na aba Regras)
         if (r.paredeDominante) { c = best.c; esp = best.d; }
