@@ -615,6 +615,7 @@ export default function App() {
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
               <label className="chk"><input type="checkbox" checked={(regras.motor ?? 1) >= 2} onChange={e => setRegras({ ...regras, motor: e.target.checked ? 2 : 1, motorFixo: !e.target.checked })} /> Cálculo atual (padrão): muros fora, laje na garagem e na laje impermeabilizada, paredes tortas, esquadrias pela etiqueta, 17 cm entre painéis, boneca de transporte, produção das lajes e quantitativos. Desmarque só para refazer um projeto pelo cálculo antigo</label>
+              <label className="chk"><input type="checkbox" checked={!!regras.paredeDominante} onChange={e => { if (!e.target.checked || confirm('Ligar a leitura nova das paredes? Paredes que tinham uma linha de detalhe junto (soleira, bancada) passam a ter a espessura certa, e o apoio da laje é medido pela face da parede. ATENÇÃO: nas paredes afetadas, a modulação dos painéis pode mudar. Use em projeto que ainda não foi para produção, ou confira as peças depois (↶ Desfazer volta).')) setRegras({ ...regras, paredeDominante: e.target.checked }); }} /> Leitura nova das paredes: linha de detalhe junto da parede (soleira, bancada) não muda a espessura nem o eixo dela, e a laje apoia certo (6 cm) na face da parede. Já vem ligada nos projetos novos.</label>
               <label className="chk"><input type="checkbox" checked={regras.pinarAuto} onChange={e => setRegras({ ...regras, pinarAuto: e.target.checked })} /> No encontro em T, pinar a parede que chega e deixar a parede contínua sem emenda quando ela couber num painel só</label>
             </div>
             <h3>Lajes</h3>
@@ -647,7 +648,7 @@ export default function App() {
               <li>Boneca nas laterais de toda porta/janela que chega no fim da parede, e embaixo das portas.</li>
               <li>Laje: apoia sempre que possível nas paredes (inclusive internas); o painel pode ser menor que o máximo. O sentido é escolhido para precisar de menos vigas. Beiral até o limite acima sem viga.</li>
             </ul>
-            <button onClick={() => setRegras({ ...REGRAS_PADRAO, motor: regras.motor })}>Voltar ao padrão</button>
+            <button onClick={() => setRegras({ ...REGRAS_PADRAO, motor: regras.motor, paredeDominante: regras.paredeDominante })}>Voltar ao padrão</button>
           </section>
         )}
 

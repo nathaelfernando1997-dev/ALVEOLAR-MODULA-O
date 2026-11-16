@@ -175,7 +175,15 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
   const novo = (r.motor ?? 1) >= 2;
   for (const a of ambs) {
     // vão livre entre faces das paredes
-    const cx0 = a.x0 + a.esp.o / 2, cx1 = a.x1 - a.esp.l / 2, cy0 = a.y0 + a.esp.s / 2, cy1 = a.y1 - a.esp.n / 2;
+    // face pela própria parede do lado (o contorno do ambiente pode ficar na média com uma linha de piso ou viga perto)
+    const faceDe = (lado: 'o' | 'l' | 's' | 'n') => {
+      const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? 1 : -1;
+      const [l0, l1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
+      const ov = (t: Trecho) => Math.min(t.e, l1) - Math.max(t.s, l0);
+      const w = novo && r.paredeDominante ? ts.filter(t => t.pav === a.pav && t.o === o && Math.abs(t.c - ed) < 0.05 && ov(t) > 0.5 * (l1 - l0)).sort((p, q) => ov(q) - ov(p))[0] : undefined;
+      return w ? w.c + dir * w.esp / 2 : ed + dir * a.esp[lado] / 2;
+    };
+    const cx0 = faceDe('o'), cx1 = faceDe('l'), cy0 = faceDe('s'), cy1 = faceDe('n');
     const lx = cx1 - cx0, ly = cy1 - cy0;
     const incluida = !fora.includes(a.id);
     const podeH = a.apoio.o && a.apoio.l, podeV = a.apoio.s && a.apoio.n;

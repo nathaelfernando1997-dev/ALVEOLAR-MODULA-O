@@ -43,6 +43,7 @@ export interface Regras {
   orcEspParede?: number; orcEspLaje?: number;
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
   motorFixo?: boolean;     // o usuário desligou o cálculo novo neste projeto (senão todo projeto abre no cálculo atual)
+  paredeDominante?: boolean;  // parede com linha de detalhe junto (soleira, bancada): vale a espessura da maior parte (projetos novos; os antigos ligam na aba Regras)
   motor?: number;          // versão do cálculo: projetos salvos antes (sem o campo) continuam com o cálculo antigo (1)
   vigaPisoAbaixo?: number; // viga da linha de piso: quanto fica abaixo da laje (o resto passa pela laje e sobe)
   vaoViga: number;         // vão sem parede a partir do qual a viga é obrigatória
@@ -72,14 +73,15 @@ export function regrasDoSalvo(s?: Partial<Regras>): Regras {
   if (s?.lajeLarg === 3) r.lajeLarg = REGRAS_PADRAO.lajeLarg;
   if (s?.cargaMax === 12000) r.cargaMax = REGRAS_PADRAO.cargaMax;
   if (s?.carretaLarg === 2.6) r.carretaLarg = REGRAS_PADRAO.carretaLarg;   // 2,60 foi o padrão por pouco tempo   // 12 t (caminhão) foi o padrão por pouco tempo; a carga é por carreta de 35 t
-  return { ...r, motor: s?.motorFixo ? (s.motor ?? 1) : REGRAS_PADRAO.motor };
+  // projeto salvo antes da leitura nova das paredes continua igual (as paredes dele não mudam sozinhas)
+  return { ...r, motor: s?.motorFixo ? (s.motor ?? 1) : REGRAS_PADRAO.motor, paredeDominante: s ? !!s.paredeDominante : true };
 }
 
 export const REGRAS_PADRAO: Regras = {
   larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 4.0, lajeLarg: 2.5, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15, platibanda: 0.40,
-  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, perda: 10, vaoViga: 5.0, beiral: 1.0,
+  vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, paredeDominante: true, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, perda: 10, vaoViga: 5.0, beiral: 1.0,
   densidade: 2500, cargaMax: 35000, carretaComp: 12.4, carretaLarg: 2.8, carretaLargMax: 3.2, pilhaAlt: 1.5, escoraMax: 1.5, trelicaBarra: 12, mesas: 4, mesaComp: 12, mesaLarg: 3.2,
 };
 
@@ -289,7 +291,7 @@ function lerQuadro(textos: Leitura['textos'], regioes: Box[]): Esquadria[] {
 
 // ---------------- paredes ----------------
 type Face = { c: number; a: number; b: number; k?: number };   // k = inclinação (linha quase reta, terreno torto)
-type Eixo = { c: number; ps: [number, number][]; esp: number };
+type Eixo = { c: number; ps: [number, number][]; esp: number; cid?: number };   // cid = posição antiga do eixo, só para o código (id) da parede
 
 function faces(ps: Prim[], box: Box) {
   const H: Face[] = [], V: Face[] = [];
@@ -353,10 +355,24 @@ function eixos(F: Face[], r: Regras): Eixo[] {
   }
   for (let i = grupos.length - 1; i >= 0; i--) if (!grupos[i].cs.length) grupos.splice(i, 1);
   return grupos.map(g => {
+    const cMed = g.cs.reduce((s, v) => s + v, 0) / g.cs.length, eMed = g.ds.reduce((s, v) => s + v, 0) / g.ds.length;
+    // linha de detalhe (soleira, bancada) junto da face formou um pedaço com outra espessura: vale a espessura
+    // que ocupa a maior parte da parede (senão o eixo sai do lugar e a parede "engorda")
+    let c = cMed, esp = eMed;
+    if ((r.motor ?? 1) >= 2 && r.paredeDominante && g.ds.length > 1) {
+      const L = g.ps.map(p => p[1] - p[0]), tot = L.reduce((s, v) => s + v, 0);
+      let best = { peso: 0, c: cMed, d: eMed };
+      for (let i = 0; i < g.ds.length; i++) {
+        const ix = g.ds.map((d, j) => Math.abs(d - g.ds[i]) <= 0.015 ? j : -1).filter(j => j >= 0);
+        const peso = ix.reduce((s, j) => s + L[j], 0);
+        if (peso > best.peso) best = { peso, c: ix.reduce((s, j) => s + g.cs[j] * L[j], 0) / peso, d: ix.reduce((s, j) => s + g.ds[j] * L[j], 0) / peso };
+      }
+      if (best.peso >= 0.6 * tot && Math.abs(best.d - eMed) > 0.015) { c = best.c; esp = best.d; }
+    }
     const ps = g.ps.sort((a, b) => a[0] - b[0]);
     const m: [number, number][] = [];
     for (const [lo, hi] of ps) { if (m.length && lo <= m[m.length - 1][1] + 0.02) m[m.length - 1][1] = Math.max(m[m.length - 1][1], hi); else m.push([lo, hi]); }
-    return { c: g.cs.reduce((s, v) => s + v, 0) / g.cs.length, ps: m.filter(([a, b]) => b - a >= 0.03), esp: g.ds.reduce((s, v) => s + v, 0) / g.ds.length };
+    return { c, ps: m.filter(([a, b]) => b - a >= 0.03), esp, cid: c !== cMed ? cMed : undefined };
   });
 }
 
@@ -415,11 +431,11 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   const arcos = L.prims.filter((p): p is Extract<Prim, { kind: 'arc' }> => p.kind === 'arc' && p.c[0] > pav.box.x0 - 0.5 && p.c[0] < pav.box.x1 + 0.5 && p.c[1] > pav.box.y0 - 0.5 && p.c[1] < pav.box.y1 + 0.5);
   for (const o of ['H', 'V'] as const) {
     const perp = ax[o === 'H' ? 'V' : 'H'];
-    for (const { c, ps, esp } of ax[o]) {
+    for (const { c, ps, esp, cid } of ax[o]) {
       if (!ps.length || ps[ps.length - 1][1] - ps[0][0] < 0.25) continue;
       const nos = perp.filter(q => q.ps.length && Math.min(...q.ps.map(p => p[0])) - 0.2 <= c && c <= Math.max(...q.ps.map(p => p[1])) + 0.2).map(q => q.c);
       let cur = { s: ps[0][0], vaos: [] as { a: number; b: number; tag: string | null }[] };
-      const fecha = (e: number) => { out.push(montar(pav, o, c, cur.s, e, cur.vaos, esp)); };
+      const fecha = (e: number) => { out.push(montar(pav, o, c, cur.s, e, cur.vaos, esp, cid)); };
       const tagEm = (l: number, h: number) => {
         let best: string | null = null, bd = 1e9;
         for (const t of tags) {
@@ -538,8 +554,11 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     const nv = vao(t.id, { a, b, tag: q.tag }, t.H);
     if (livre) t.vaos.splice(t.vaos.indexOf(livre), 1, nv); else t.vaos.push(nv);
   }
-  function montar(pav: Pavimento, o: 'H' | 'V', c: number, s: number, e: number, vs: { a: number; b: number; tag: string | null }[], esp: number): Trecho {
-    const id = idTrecho(pav.id, o, c, s);
+  function montar(pav: Pavimento, o: 'H' | 'V', c: number, s: number, e: number, vs: { a: number; b: number; tag: string | null }[], esp: number, cid?: number): Trecho {
+    // eixo corrigido (linha de detalhe): o código continua o de antes, para não perder os ajustes salvos
+    let sId = s;
+    for (const q of ax[o === 'H' ? 'V' : 'H']) if (q.cid !== undefined) for (const d of [0, r.coluna / 2, -r.coluna / 2]) if (Math.abs(s - (q.c + d)) < 1e-9) sId = q.cid + d;
+    const id = idTrecho(pav.id, o, cid ?? c, sId);
     const Hh = aj.altura[id] ?? pav.altura;
     const vaos = vs.map(v => vao(id, v, Hh));
     return { id, pav: pav.id, o, c, s, e, vaos, H: Hh, esp };
