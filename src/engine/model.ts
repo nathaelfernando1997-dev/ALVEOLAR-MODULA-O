@@ -291,7 +291,7 @@ function lerQuadro(textos: Leitura['textos'], regioes: Box[]): Esquadria[] {
 
 // ---------------- paredes ----------------
 type Face = { c: number; a: number; b: number; k?: number };   // k = inclinação (linha quase reta, terreno torto)
-type Eixo = { c: number; ps: [number, number][]; esp: number; cid?: number };   // cid = posição antiga do eixo, só para o código (id) da parede
+type Eixo = { c: number; ps: [number, number][]; esp: number; cid?: number; real?: { c: number; esp: number } };   // real = eixo e espessura certos (sem a linha de detalhe), usados pela laje   // cid = posição antiga do eixo, só para o código (id) da parede
 
 function faces(ps: Prim[], box: Box) {
   const H: Face[] = [], V: Face[] = [];
@@ -358,8 +358,8 @@ function eixos(F: Face[], r: Regras): Eixo[] {
     const cMed = g.cs.reduce((s, v) => s + v, 0) / g.cs.length, eMed = g.ds.reduce((s, v) => s + v, 0) / g.ds.length;
     // linha de detalhe (soleira, bancada) junto da face formou um pedaço com outra espessura: vale a espessura
     // que ocupa a maior parte da parede (senão o eixo sai do lugar e a parede "engorda")
-    let c = cMed, esp = eMed;
-    if ((r.motor ?? 1) >= 2 && r.paredeDominante && g.ds.length > 1) {
+    let c = cMed, esp = eMed, real: { c: number; esp: number } | undefined;
+    if ((r.motor ?? 1) >= 2 && g.ds.length > 1) {
       const L = g.ps.map(p => p[1] - p[0]), tot = L.reduce((s, v) => s + v, 0);
       let best = { peso: 0, c: cMed, d: eMed };
       for (let i = 0; i < g.ds.length; i++) {
@@ -367,19 +367,23 @@ function eixos(F: Face[], r: Regras): Eixo[] {
         const peso = ix.reduce((s, j) => s + L[j], 0);
         if (peso > best.peso) best = { peso, c: ix.reduce((s, j) => s + g.cs[j] * L[j], 0) / peso, d: ix.reduce((s, j) => s + g.ds[j] * L[j], 0) / peso };
       }
-      if (best.peso >= 0.6 * tot && Math.abs(best.d - eMed) > 0.015) { c = best.c; esp = best.d; }
+      if (best.peso >= 0.6 * tot && Math.abs(best.d - eMed) > 0.015) {
+        real = { c: best.c, esp: best.d };
+        // leitura nova: a parede também usa o eixo e a espessura certos (projetos salvos antes ligam na aba Regras)
+        if (r.paredeDominante) { c = best.c; esp = best.d; }
+      }
     }
     const ps = g.ps.sort((a, b) => a[0] - b[0]);
     const m: [number, number][] = [];
     for (const [lo, hi] of ps) { if (m.length && lo <= m[m.length - 1][1] + 0.02) m[m.length - 1][1] = Math.max(m[m.length - 1][1], hi); else m.push([lo, hi]); }
-    return { c, ps: m.filter(([a, b]) => b - a >= 0.03), esp, cid: c !== cMed ? cMed : undefined };
+    return { c, ps: m.filter(([a, b]) => b - a >= 0.03), esp, cid: c !== cMed ? cMed : undefined, real };
   });
 }
 
 export interface Vao { a: number; b: number; tag: string | null; tipo: string; w: number; x0: number; x1: number; base: number; h: number; inteiro: boolean; key?: string;
   continua?: boolean; sobe?: boolean;
   topo?: number }   // altura do topo da abertura a partir do piso (porta = altura do quadro)   // sobe = porta que continua na parede de cima   // continuação de porta mais alta que o pavimento de baixo (começa no pé da parede, sem boneca embaixo)
-export interface Trecho { id: string; pav: string; o: 'H' | 'V'; c: number; s: number; e: number; vaos: Vao[]; H: number; esp: number; pinado?: boolean }
+export interface Trecho { id: string; pav: string; o: 'H' | 'V'; c: number; s: number; e: number; vaos: Vao[]; H: number; esp: number; pinado?: boolean; real?: { c: number; esp: number } }
 
 export interface Ajustes {
   excluir: string[];                       // ids de trechos excluídos
@@ -431,11 +435,11 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   const arcos = L.prims.filter((p): p is Extract<Prim, { kind: 'arc' }> => p.kind === 'arc' && p.c[0] > pav.box.x0 - 0.5 && p.c[0] < pav.box.x1 + 0.5 && p.c[1] > pav.box.y0 - 0.5 && p.c[1] < pav.box.y1 + 0.5);
   for (const o of ['H', 'V'] as const) {
     const perp = ax[o === 'H' ? 'V' : 'H'];
-    for (const { c, ps, esp, cid } of ax[o]) {
+    for (const { c, ps, esp, cid, real } of ax[o]) {
       if (!ps.length || ps[ps.length - 1][1] - ps[0][0] < 0.25) continue;
       const nos = perp.filter(q => q.ps.length && Math.min(...q.ps.map(p => p[0])) - 0.2 <= c && c <= Math.max(...q.ps.map(p => p[1])) + 0.2).map(q => q.c);
       let cur = { s: ps[0][0], vaos: [] as { a: number; b: number; tag: string | null }[] };
-      const fecha = (e: number) => { out.push(montar(pav, o, c, cur.s, e, cur.vaos, esp, cid)); };
+      const fecha = (e: number) => { const t = montar(pav, o, c, cur.s, e, cur.vaos, esp, cid); if (real) t.real = real; out.push(t); };
       const tagEm = (l: number, h: number) => {
         let best: string | null = null, bd = 1e9;
         for (const t of tags) {
