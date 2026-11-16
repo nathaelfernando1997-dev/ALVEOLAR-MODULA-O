@@ -248,3 +248,8 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .celular.qr .qr-bt.feito { box-shadow: inset 0 0 0 4px rgba(255,255,255,.75); }
 .celular.qr .qr-bt small { font-size: 12px; font-weight: 400; display: block; }
 .celular.qr .qr-off { background: #fff4e6; border: 1px solid #ffc078; color: #a34a00; border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-weight: 600; }
+.apoio-laje { border: 1px solid #dee2e6; border-radius: 8px; padding: 8px; margin: 8px 0; }
+.apoio-laje .apoio-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.apoio-laje label { font-size: 12px; }
+.apoio-laje input { width: 100%; box-sizing: border-box; }
+.apoio-laje input.mudado { border: 2px solid #1971c2; color: #1971c2; font-weight: 700; }

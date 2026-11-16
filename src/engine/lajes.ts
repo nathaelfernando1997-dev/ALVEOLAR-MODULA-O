@@ -10,7 +10,7 @@ export interface Ambiente { id: string; pav: string; x0: number; x1: number; y0:
 export interface PainelLaje { num: number; amb: string; pav: string; x0: number; y0: number; x1: number; y1: number; comp: number; larg: number; sentido: 'H' | 'V';
   dente?: { x0: number; y0: number; x1: number; y1: number } }   // recorte num canto (painel em L para encaixar)
 export const areaLaje = (p: PainelLaje) => p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0);
-export interface LajeAmb extends Ambiente { incluida: boolean; sentido: 'H' | 'V' | null; vao: number; aviso?: string; info?: string; vigas: number[]; apoiosParede: number[] }
+export interface LajeAmb extends Ambiente { apoioLado?: Record<'o' | 'l' | 's' | 'n', number>; incluida: boolean; sentido: 'H' | 'V' | null; vao: number; aviso?: string; info?: string; vigas: number[]; apoiosParede: number[] }
 
 const agrupa = (vs: number[], tol = 0.06) => {
   const s = [...vs].sort((a, b) => a - b); const out: number[] = [];
@@ -214,7 +214,9 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       : lado === 'l' ? Math.abs(b.x0 - a.x1) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.3
       : lado === 's' ? Math.abs(b.y1 - a.y0) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.3
       : Math.abs(b.y0 - a.y1) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.3));
-    const apo = (lado: 'o' | 'l' | 's' | 'n') => !a.apoio[lado] ? 0 : vizinho(lado) ? r.lajeApoio : (r.lajeApoioBorda ?? 0.10);
+    // valor digitado no sistema (aba Lajes) vale mais que a regra
+    const apOver = aj.lajeApoioLado?.[a.id];
+    const apo = (lado: 'o' | 'l' | 's' | 'n') => apOver?.[lado] != null ? apOver[lado]! : !a.apoio[lado] ? 0 : vizinho(lado) ? r.lajeApoio : (r.lajeApoioBorda ?? 0.10);
     // planeja os apoios num sentido: bordas + paredes internas (a laje apoia nelas) + vigas só onde faltar
     const plano = (sent: 'H' | 'V') => {
       const [ini, fim] = sent === 'H' ? [cx0, cx1] : [cy0, cy1];
@@ -267,7 +269,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     let esc = opcoes[0];
     if (esc && giro.includes(a.id) && opcoes[1]) esc = opcoes[1];
     const sentido = esc ? esc.sn : null;
-    const L: LajeAmb = { ...a, incluida, sentido, vao: esc ? esc.p.maior : 0, vigas: esc ? esc.p.vigas : [], apoiosParede: esc ? esc.p.internas : [] };
+    const L: LajeAmb = { ...a, apoioLado: { o: apo('o'), l: apo('l'), s: apo('s'), n: apo('n') }, incluida, sentido, vao: esc ? esc.p.maior : 0, vigas: esc ? esc.p.vigas : [], apoiosParede: esc ? esc.p.internas : [] };
     const br2 = (v: number) => v.toFixed(2).replace('.', ',');
     // aviso = precisa de atenção; info = só para saber (viga já sugerida, beiral dentro do permitido)
     const avisos: string[] = [], infos: string[] = [];

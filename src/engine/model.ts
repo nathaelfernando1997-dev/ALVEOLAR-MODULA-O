@@ -385,6 +385,7 @@ export interface Ajustes {
   fundExtra?: { pav: string; x: number; y: number }[];     // pontos de fundação acrescentados à mão
   fundRemover?: { pav: string; x: number; y: number }[];   // pontos de fundação tirados à mão
   fundOrigem?: { pav: string; x: number; y: number; dx: number; dy: number };   // origem da locação: ponto escolhido + deslocamento (ex.: até a divisa)
+  lajeApoioLado?: Record<string, Partial<Record<'o' | 'l' | 's' | 'n', number>>>;   // apoio da laje em cima da parede (m) por ambiente e lado, digitado no sistema
   lajeInteira?: string[];                  // ambientes com um painel só na largura, mesmo acima da largura máxima (fabricar por exceção)
   lajeJuntar?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }[];   // trecho de parede que não divide a laje (a laje passa por cima e junta os ambientes)
   laje16?: string[];                       // (antigo) ambientes com laje de 16 cm

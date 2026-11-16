@@ -674,7 +674,7 @@ export default function App() {
                     {(aj.lajeJuntar || []).filter(j => j.pav === pavAtual.id).map((j, i) => <div key={i} className="corte-item">parede {j.o === 'H' ? 'horizontal' : 'vertical'} · {br(j.b - j.a)} m
                       <button onClick={() => setAj({ ...aj, lajeJuntar: (aj.lajeJuntar || []).filter(x => x !== j) })}>separar</button></div>)}
                   </div>}
-                  <AcoesLaje amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />
+                  <AcoesLaje regras={regras} amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />
                 </>}
               {aba === 'modulacao' && <div className="card acoes">
                 <h3>Paredes desenhadas</h3>
@@ -1385,7 +1385,7 @@ function Acoes({ pav, sel, vaoSel, calc, aj, setAj, quadro, regras, cortando, se
   </div>;
 }
 
-function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: LajeAmb | null; lajeSel: string | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento; espPadrao: number }) {
+function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao, regras }: { regras: Regras; amb: LajeAmb | null; lajeSel: string | null; calc: Calc; aj: Ajustes; setAj: (a: Ajustes) => void; pav: Pavimento; espPadrao: number }) {
   const lj = calc.lajes.filter(a => a.pav === pav.id && a.incluida), P = calc.pl.filter(p => p.pav === pav.id);
   const area = P.reduce((s, p) => s + areaLaje(p), 0);
   const tog = (k: 'lajeFora' | 'lajeGiro' | 'laje16' | 'lajeInteira', id: string) => setAj({ ...aj, [k]: (aj[k] || []).includes(id) ? (aj[k] || []).filter(x => x !== id) : [...(aj[k] || []), id] });
@@ -1427,6 +1427,27 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao }: { amb: Laj
         return lados.length ? <>
           {lados.map(([l, t]) => <button key={l} onClick={() => setAj({ ...aj, lajeJuntar: [...(aj.lajeJuntar || []), seg(l)] })}>Juntar com o ambiente {t} (laje passa por cima da parede)</button>)}
         </> : null;
+      })()}
+      {amb.apoioLado && amb.sentido && (() => {
+        // apoio da laje em cima de cada parede do ambiente (cm), editável
+        const nomes = { o: 'Esquerda', l: 'Direita', n: 'Em cima', s: 'Embaixo' } as const;
+        const ordem = (amb.sentido === 'H' ? ['o', 'l', 'n', 's'] : ['n', 's', 'o', 'l']) as ('o' | 'l' | 's' | 'n')[];
+        const pontas = amb.sentido === 'H' ? ['o', 'l'] : ['n', 's'];
+        const over = aj.lajeApoioLado?.[amb.id] || {};
+        const muda = (l: 'o' | 'l' | 's' | 'n', txt: string) => {
+          const v = parseFloat(txt.replace(',', '.')); const m = { ...(aj.lajeApoioLado || {}) }; const o = { ...(m[amb.id] || {}) };
+          if (isFinite(v) && v >= 0) o[l] = v / 100; else delete o[l];
+          if (Object.keys(o).length) m[amb.id] = o; else delete m[amb.id];
+          setAj({ ...aj, lajeApoioLado: m });
+        };
+        return <div className="apoio-laje">
+          <b>Apoio da laje em cima da parede (cm)</b>
+          <div className="apoio-grade">{ordem.map(l => <label key={l}>{nomes[l]}{pontas.includes(l) ? ' (ponta)' : ' (lateral)'}
+            <input type="number" step="0.5" min="0" key={amb.id + l + (over[l] ?? '')} defaultValue={Math.round(amb.apoioLado![l] * 1000) / 10}
+              className={over[l] != null ? 'mudado' : ''} onBlur={e => muda(l, e.target.value)} /></label>)}</div>
+          <p className="dica">Padrão: {Math.round(regras.lajeApoio * 100)} cm onde a parede recebe laje dos dois lados, {Math.round((regras.lajeApoioBorda ?? 0.10) * 100)} cm na borda, 0 sem parede. Apague o número para voltar ao padrão.{Object.keys(over).length ? ' Valor mudado neste ambiente em azul.' : ''}</p>
+          {pontas.some(l => amb.apoioLado![l as 'o'] < regras.lajeApoio - 1e-6) && <p className="erro">Atenção: ponta da laje com menos de {Math.round(regras.lajeApoio * 100)} cm de apoio na parede.</p>}
+        </div>;
       })()}
       <label>Pé-direito deste ambiente (m) — vazio = {br(pav.altura)} do pavimento
         <input type="number" step="0.01" key={'pe' + amb.id} defaultValue={aj.peAmb?.[amb.id] ?? ''} onBlur={e => {
