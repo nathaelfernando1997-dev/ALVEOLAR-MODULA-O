@@ -31,7 +31,7 @@ const txtPdf = (s: string) => {
   }
   return o;
 };
-const dxfTexto = (s: string) => s.replace(/%%[cC]/g, 'ø').replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±');
+const dxfTexto = (s: string) => s.replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/%%[cC]/g, 'ø').replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±');
 
 type Ent = { t: string; cor: number; tr: boolean; x: number; y: number; x2: number; y2: number; r: number; a0: number; a1: number; h: number; s: string; rot: number; al: number };
 
@@ -61,16 +61,72 @@ function lerDxf(dxf: string): Ent[] {
   return out;
 }
 
-export function dxfParaPdf(dxf: string, info: InfoFolha): Uint8Array {
-  const es = lerDxf(dxf);
-  // limites
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  const add = (x: number, y: number) => { if (isFinite(x) && isFinite(y)) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } };
-  for (const e of es) {
-    if (e.t === 'LINE') { add(e.x, e.y); add(e.x2, e.y2); }
-    else if (e.t === 'TEXT') { const w = e.s.length * e.h * 0.75, ax = e.al === 1 ? e.x - w / 2 : e.al === 2 ? e.x - w : e.x; add(ax, e.y); add(ax + w, e.y + e.h); }
-    else { add(e.x - e.r, e.y - e.r); add(e.x + e.r, e.y + e.r); }
+type Caixa = { x0: number; y0: number; x1: number; y1: number };
+function caixa(e: Ent): Caixa {
+  if (e.t === 'LINE') return { x0: Math.min(e.x, e.x2), y0: Math.min(e.y, e.y2), x1: Math.max(e.x, e.x2), y1: Math.max(e.y, e.y2) };
+  if (e.t === 'TEXT') {
+    const w = e.s.length * e.h * 0.75, ax = e.al && isFinite(e.x2) ? e.x2 : e.x, ay = e.al && isFinite(e.y2) ? e.y2 : e.y;
+    const a = e.rot * Math.PI / 180, x0 = e.al === 1 ? -w / 2 : e.al === 2 ? -w : 0, pts = [[x0, 0], [x0 + w, 0], [x0, e.h], [x0 + w, e.h]].map(([u, v]) => [ax + u * Math.cos(a) - v * Math.sin(a), ay + u * Math.sin(a) + v * Math.cos(a)]);
+    return { x0: Math.min(...pts.map(p => p[0])), y0: Math.min(...pts.map(p => p[1])), x1: Math.max(...pts.map(p => p[0])), y1: Math.max(...pts.map(p => p[1])) };
   }
+  return { x0: e.x - e.r, y0: e.y - e.r, x1: e.x + e.r, y1: e.y + e.r };
+}
+// agrupa por faixas separadas por vãos vazios (eixo x ou y)
+function faixas(es: { e: Ent; c: Caixa }[], eixo: 'x' | 'y', vao: number) {
+  const lo = (c: Caixa) => eixo === 'x' ? c.x0 : c.y0, hi = (c: Caixa) => eixo === 'x' ? c.x1 : c.y1;
+  // textos não abrem faixa: entram pela posição do centro
+  const fortes = es.filter(i => i.e.t !== 'TEXT').sort((a, b) => lo(a.c) - lo(b.c));
+  const fx: [number, number][] = [];
+  for (const i of fortes) { const l = fx[fx.length - 1]; if (l && lo(i.c) <= l[1] + vao) l[1] = Math.max(l[1], hi(i.c)); else fx.push([lo(i.c), hi(i.c)]); }
+  if (!fx.length) return [es];
+  const g: { e: Ent; c: Caixa }[][] = fx.map(() => []);
+  for (const i of es) {
+    const m = (lo(i.c) + hi(i.c)) / 2; let best = 0, bd = Infinity;
+    fx.forEach(([a, b], k) => { const d = m < a ? a - m : m > b ? m - b : 0; if (d < bd) { bd = d; best = k; } });
+    g[best].push(i);
+  }
+  return g.filter(x => x.length);
+}
+const limites = (es: { c: Caixa }[]) => es.reduce((a, { c }) => ({ x0: Math.min(a.x0, c.x0), y0: Math.min(a.y0, c.y0), x1: Math.max(a.x1, c.x1), y1: Math.max(a.y1, c.y1) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+
+export function dxfParaPdf(dxf: string, info: InfoFolha, separar = false): Uint8Array {
+  const todos = lerDxf(dxf).map(e => ({ e, c: caixa(e) }));
+  let grupos = [todos];
+  if (separar) {
+    grupos = [];
+    for (const col of faixas(todos, 'x', 1.5)) {
+      const L = limites(col), dw = L.x1 - L.x0 || 1;
+      if (L.y1 - L.y0 <= dw * 1.9) { grupos.push(col); continue; }
+      // coluna muito alta: corta em folhas em pé, pelas linhas vazias
+      const linhas = faixas(col, 'y', 0.6).reverse(); let atual: typeof col = [], topo = 0;
+      for (const ln of linhas) {
+        const l = limites(ln);
+        if (atual.length && topo - l.y0 > dw * 1.41) { grupos.push(atual); atual = []; }
+        if (!atual.length) topo = l.y1;
+        atual.push(...ln);
+      }
+      if (atual.length) grupos.push(atual);
+    }
+  }
+  const pags = grupos.map((g, i) => pagina(g.map(x => x.e), limites(g), grupos.length > 1 ? { ...info, titulo: `${info.titulo} - folha ${i + 1}/${grupos.length}` } : info));
+  const objs: string[] = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${pags.map((_, i) => `${5 + i * 2} 0 R`).join(' ')}] /Count ${pags.length} >>`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'];
+  for (const p of pags) {
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${p.PW} ${p.PH}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${objs.length + 2} 0 R >>`);
+    objs.push(`<< /Length ${p.conteudo.length} >>\nstream\n${p.conteudo}\nendstream`);
+  }
+  let pdf = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'; const off: number[] = [];
+  objs.forEach((o, i) => { off.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${off.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('')}`;
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  const b = new Uint8Array(pdf.length); for (let i = 0; i < pdf.length; i++) b[i] = pdf.charCodeAt(i) & 255;
+  return b;
+}
+
+function pagina(es: Ent[], lim: Caixa, info: InfoFolha): { PW: number; PH: number; conteudo: string } {
+  let { x0, y0, x1, y1 } = lim;
   if (!isFinite(x0)) { x0 = y0 = 0; x1 = y1 = 1; }
   // folha A3: deitada ou em pé conforme o desenho
   const dw = x1 - x0 || 1, dh = y1 - y0 || 1;
@@ -116,20 +172,5 @@ export function dxfParaPdf(dxf: string, info: InfoFolha): Uint8Array {
   c.push(`BT /F1 9 Tf ${c1 + 10} ${M + CAR - 30} Td (${txtPdf(info.obs ?? 'Medidas em metros - sem escala: use as cotas')}) Tj ET`);
   c.push(`BT /F1 9 Tf ${c1 + 10} ${M + CAR - 46} Td (Folha A3) Tj ET`);
 
-  const conteudo = c.join('\n');
-  const objs = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`,
-    `<< /Length ${conteudo.length} >>\nstream\n${conteudo}\nendstream`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
-  ];
-  let pdf = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'; const off: number[] = [];
-  objs.forEach((o, i) => { off.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
-  const xref = pdf.length;
-  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${off.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('')}`;
-  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  const b = new Uint8Array(pdf.length); for (let i = 0; i < pdf.length; i++) b[i] = pdf.charCodeAt(i) & 255;
-  return b;
+  return { PW, PH, conteudo: c.join('\n') };
 }
