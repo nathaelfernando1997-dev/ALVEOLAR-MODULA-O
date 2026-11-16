@@ -256,3 +256,4 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 
 .zoom-bt button.on { background: #e8590c; color: #fff; }
 .trena-aviso { position: absolute; top: 8px; left: 8px; z-index: 2; background: #fff4e6; border: 1px solid #ffc078; color: #a34a00; border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 600; }
+.zoom svg.trena-on, .zoom svg.trena-on * { cursor: crosshair !important; }

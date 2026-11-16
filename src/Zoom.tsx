@@ -51,6 +51,7 @@ export function ZoomSvg({ vb, children, metro }: { vb: string; children: ReactNo
     }
     alvos.current = out;
   };
+  const [mira, setMira] = useState<{ p: Pt; gruda: boolean } | null>(null);
   const noDesenho = (cx: number, cy: number): Pt => {
     const g = gRef.current!, inv = g.getScreenCTM()!.inverse(), q = ref.current!.createSVGPoint(); q.x = cx; q.y = cy;
     const r = q.matrixTransform(inv); let p = { x: r.x, y: r.y };
@@ -105,7 +106,7 @@ export function ZoomSvg({ vb, children, metro }: { vb: string; children: ReactNo
         {metro && <button className={trena ? 'on' : ''} onClick={() => { const on = !trena; setTrena(on); setAberta(null); setMouse(null); if (on) juntarAlvos(); else setMedidas([]); }} title="Trena: clique em dois pontos para medir (clique de novo aqui para sair)">📏</button>}
       </div>
       {trena && <div className="trena-aviso">{aberta ? 'Clique no segundo ponto' : 'Trena: clique no primeiro ponto'}{medidas.length ? <> · <a href="#" onClick={e => { e.preventDefault(); setMedidas([]); }}>limpar</a></> : null}</div>}
-      <svg ref={ref} viewBox={v.join(' ')}
+      <svg ref={ref} viewBox={v.join(' ')} className={trena ? 'trena-on' : undefined}
         onPointerDown={e => { ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY }); arrastou.current = false;
           const ps = [...ptrs.current.values()];
           ini.current = { v, dist: ps.length > 1 ? Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) : 0, cx: e.clientX, cy: e.clientY }; }}
@@ -136,8 +137,16 @@ export function ZoomSvg({ vb, children, metro }: { vb: string; children: ReactNo
           const p = noDesenho(e.clientX, e.clientY);
           if (!aberta) setAberta(p); else { setMedidas(m => [...m.slice(-7), { a: aberta, b: p }]); setAberta(null); setMouse(null); }
         }}
-        onMouseMove={e => { if (trena && aberta) setMouse(noDesenho(e.clientX, e.clientY)); }}
-        style={{ touchAction: 'none' }}>
+        onMouseMove={e => {
+          if (!trena) return;
+          if (!alvos.current.length) juntarAlvos();
+          const q = noDesenho(e.clientX, e.clientY), g = gRef.current!, inv = g.getScreenCTM()!.inverse(), sp = ref.current!.createSVGPoint(); sp.x = e.clientX; sp.y = e.clientY;
+          const cru = sp.matrixTransform(inv);
+          setMira({ p: q, gruda: Math.hypot(cru.x - q.x, cru.y - q.y) > 1e-6 });
+          if (aberta) setMouse(q);
+        }}
+        onMouseLeave={() => setMira(null)}
+        style={{ touchAction: 'none', cursor: trena ? 'crosshair' : undefined }}>
         <g ref={gRef} transform={giro ? `rotate(${giro} ${gcx} ${gcy})` : undefined}>{children}
           {trena && metro && (() => {
             // tamanho fixo na tela, qualquer zoom
@@ -153,7 +162,10 @@ export function ZoomSvg({ vb, children, metro }: { vb: string; children: ReactNo
                   transform={giro ? `rotate(${-giro} ${mx} ${my - 8 * s})` : undefined}>{txt}</text>
               </g>;
             };
-            return <>{medidas.map((m, i) => linha(m.a, m.b, i))}{aberta && <circle className="trena" cx={aberta.x} cy={aberta.y} r={4 * s} fill="#e8590c" />}{aberta && mouse && linha(aberta, mouse, 99, true)}</>;
+            return <>{mira && <g className="trena" style={{ pointerEvents: 'none' }}>
+              {mira.gruda ? <rect x={mira.p.x - 6 * s} y={mira.p.y - 6 * s} width={12 * s} height={12 * s} fill="none" stroke="#1971c2" strokeWidth={2 * s} />
+                : <circle cx={mira.p.x} cy={mira.p.y} r={2.5 * s} fill="#1971c2" />}</g>}
+              {medidas.map((m, i) => linha(m.a, m.b, i))}{aberta && <circle className="trena" cx={aberta.x} cy={aberta.y} r={4 * s} fill="#e8590c" />}{aberta && mouse && linha(aberta, mouse, 99, true)}</>;
           })()}
         </g>
       </svg>
