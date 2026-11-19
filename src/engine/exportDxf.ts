@@ -105,7 +105,7 @@ export function exportarDxf(pavs: Pavimento[], ps: Painel[], pl: PainelLaje[] = 
       w.text('LAJE', x0 + (p.x1 - p.x0) / 2, y0 + (p.y1 - p.y0) / 2, .2, `L${p.num}`, 1, 0, true);
       w.text('LAJE', x0 + (p.x1 - p.x0) / 2, y0 + (p.y1 - p.y0) / 2 - .25, .1, `${br(p.comp)} x ${br(p.larg)}`, 7, 0, true);
     }
-    if (L.length) w.text('TEXTO', X, -(b.y1 - b.y0) - 3, .3, `LAJE SOBRE ${pav.nome.toUpperCase()}`);
+    if (L.length) w.text('TEXTO', X, -3, .3, `LAJE SOBRE ${pav.nome.toUpperCase()}`);
     // produção: vista de cada painel de laje ao lado da planta das lajes
     if (cotas && L.length) {
       let ux = lx, uy = Math.min(-4, vy - 5.5), alt = 0;   // abaixo das vistas das paredes
