@@ -6,7 +6,7 @@ import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro,
 import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
-import { ambientes, modularLajes, numerarLajes, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
+import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar, encaixeManual } from './engine/vigas.ts';
@@ -406,7 +406,7 @@ export default function App() {
       }
     }
     numerar(vazio.ps, ativos.map(p => p.id));
-    numerarLajes(vazio.pl, ativos.map(p => p.id));
+    numerarLajes(vazio.pl, ativos.map(p => p.id), aj.lajeNumFixa);
     { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv }));
       // treliças pedidas nos painéis compridos: ao longo do painel, uma em cada lateral e as outras distribuídas (numeradas depois das de parede)
       for (const P of vazio.pl) {
@@ -699,6 +699,14 @@ export default function App() {
                     <p className="dica">A viga vira apoio da laje (como a LINHA DE PISO): depois dá para girar a laje do ambiente. Fica reta: horizontal ou vertical, pela direção dos dois cliques.</p>
                     {(aj.vigasManuais || []).filter(v => v.pav === pavAtual.id).map((v, i) => <div key={i} className="corte-item">{v.o === 'H' ? 'horizontal' : 'vertical'} · {br(v.b - v.a)} m
                       <button onClick={() => setAj({ ...aj, vigasManuais: (aj.vigasManuais || []).filter(x => x !== v) })}>remover</button></div>)}
+                  </div>
+                  <div className="card acoes">
+                    <h3>Numeração das lajes</h3>
+                    {aj.lajeNumFixa
+                      ? <><p className="dica">Numeração fixa: a peça que não mudou mantém o número (etiqueta já impressa vale). Peça nova ganha número depois do último ({Math.max(0, ...Object.values(aj.lajeNumFixa))}).</p>
+                        <button onClick={() => { if (confirm('Soltar a numeração? As lajes voltam a ser numeradas em sequência e os números podem mudar.')) { const { lajeNumFixa: _, ...r } = aj; setAj(r as typeof aj); } }}>Soltar numeração</button></>
+                      : <><p className="dica">Depois de imprimir as etiquetas, fixe a numeração: se a modulação mudar, só as peças novas ganham número novo.</p>
+                        <button onClick={() => setAj({ ...aj, lajeNumFixa: Object.fromEntries(calc.pl.map(p => [chaveNumLaje(p), p.num])) })}>Fixar numeração atual</button></>}
                   </div>
                   {(aj.lajeJuntar || []).some(j => j.pav === pavAtual.id) && <div className="card acoes">
                     <h3>Ambientes juntados na laje</h3>

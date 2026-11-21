@@ -407,6 +407,7 @@ export interface Ajustes {
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
+  lajeNumFixa?: Record<string, number>;    // numeração das lajes congelada (chaveNumLaje -> número): etiquetas já impressas não mudam
   fundExtra?: { pav: string; x: number; y: number }[];     // pontos de fundação acrescentados à mão
   fundRemover?: { pav: string; x: number; y: number }[];   // pontos de fundação tirados à mão
   fundOrigem?: { pav: string; x: number; y: number; dx: number; dy: number };   // origem da locação: ponto escolhido + deslocamento (ex.: até a divisa)

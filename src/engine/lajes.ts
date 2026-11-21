@@ -389,9 +389,21 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
   return { ambs: res, paineis: P };
 }
 
-export function numerarLajes(P: PainelLaje[], ordem: string[]) {
+// chave da peça para a numeração fixa: pavimento + sentido + posição (a mesma peça na mesma posição mantém o número)
+export const chaveNumLaje = (p: PainelLaje) => `${p.pav}|${p.sentido}|${p.x0.toFixed(2)}|${p.y0.toFixed(2)}|${p.x1.toFixed(2)}|${p.y1.toFixed(2)}`;
+
+// fixa = numeração congelada (etiquetas já impressas): peça que continua igual mantém o número;
+// peça nova ganha número depois do maior já usado (nenhum número antigo é reaproveitado)
+export function numerarLajes(P: PainelLaje[], ordem: string[], fixa?: Record<string, number>) {
   let n = 0;
-  for (const pav of ordem) for (const p of P.filter(q => q.pav === pav).sort((a, b) => Math.round(-(a.y0 + a.y1)) - Math.round(-(b.y0 + b.y1)) || a.x0 - b.x0)) p.num = ++n;
+  const seq: PainelLaje[] = [];
+  for (const pav of ordem) for (const p of P.filter(q => q.pav === pav).sort((a, b) => Math.round(-(a.y0 + a.y1)) - Math.round(-(b.y0 + b.y1)) || a.x0 - b.x0)) { p.num = ++n; seq.push(p); }
+  if (fixa && Object.keys(fixa).length) {
+    let prox = Math.max(0, ...Object.values(fixa));
+    const usados = new Set<number>();
+    for (const p of seq) { const f = fixa[chaveNumLaje(p)]; p.num = f && !usados.has(f) ? f : 0; if (p.num) usados.add(p.num); }
+    for (const p of seq) if (!p.num) p.num = ++prox;
+  }
   return P.sort((a, b) => a.num - b.num);
 }
 
