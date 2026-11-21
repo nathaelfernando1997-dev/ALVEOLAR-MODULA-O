@@ -432,6 +432,7 @@ export default function App() {
   }, [leitura, pavs, quadro, regras, aj]);
   const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
   const [modoImp, setModoImp] = useState<'folhas' | 'etiquetas'>('folhas');
+  const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
   const [notaRev, setNotaRev] = useState('');
   // QR da etiqueta: ?obra=<projeto>&peca=<código> abre a peça no celular para marcar a montagem
@@ -1051,6 +1052,10 @@ export default function App() {
                 <button className={modoImp === 'folhas' ? 'on' : ''} onClick={() => setModoImp('folhas')}>Ver folhas de produção</button>
                 {prod && <button className={modoImp === 'etiquetas' ? 'on' : ''} onClick={() => setModoImp('etiquetas')}>Ver etiquetas das peças</button>}
                 <button onClick={() => window.print()}>Imprimir / salvar PDF ({modoImp === 'folhas' ? 'folhas' : 'etiquetas'})</button>
+                {prod && modoImp === 'etiquetas' && <label className="so-etq">Só estas etiquetas (códigos, ex.: T-L128, T-L129 — vazio = todas)
+                  <textarea rows={2} value={soEtq} onChange={e => setSoEtq(e.target.value)} placeholder="T-L128, T-L129, 1-P74…" />
+                  {soEtq.trim() && (() => { const ks = new Set(soEtq.toUpperCase().split(/[\s,;]+/).filter(Boolean)), tem = new Set(prod.pecas.map(x => x.codigo.toUpperCase())), fora = [...ks].filter(k => !tem.has(k)); return <small>{[...ks].filter(k => tem.has(k)).length} etiqueta(s){fora.length ? ` · não encontrei: ${fora.slice(0, 8).join(', ')}${fora.length > 8 ? '…' : ''}` : ''}</small>; })()}
+                </label>}
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
                 <button onClick={() => baixarDwg(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2))}>Baixar DWG da modulação</button>
                 <button onClick={() => baixarPdf(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), { titulo: 'MODULAÇÃO', sub: projNome || nome.replace(/\.dxf$/i, '') }, true)}>Baixar PDF da modulação</button>
@@ -1080,7 +1085,7 @@ export default function App() {
             </div>}
             {!qrBase && prod && <p className="dica noprint">O QR das etiquetas (marcar a montagem pelo celular) aparece com o projeto salvo na nuvem e o login feito.</p>}
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
-            {modoImp === 'etiquetas' && prod ? <Etiquetas prod={prod} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
+            {modoImp === 'etiquetas' && prod ? <Etiquetas prod={soEtq.trim() ? { ...prod, pecas: (ks => prod.pecas.filter(x => ks.has(x.codigo.toUpperCase())))(new Set(soEtq.toUpperCase().split(/[\s,;]+/).filter(Boolean))) } : prod} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
               : prod ? <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod}
                   rev={(() => { const b = (aj.revisoes || []).find(r => r.n === revBase); return b ? { base: b, dif: compararRev(b.pecas, retrato(calc, prod.sg)) } : undefined; })()} />
               : <p className="dica">As folhas de produção usam o cálculo atual (aba Regras).</p>}
