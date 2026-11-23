@@ -1074,6 +1074,13 @@ export default function App() {
                 {prod && <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-producao.csv', csvProducao(prod, ativos), 'text/csv')}>Baixar planilha de produção (CSV)</button>}
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
+                <label className="botao">Abrir só os ajustes das LAJES (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try {
+                  const j = JSON.parse(await f.text()), sa = (j.config?.ajustes ?? j.ajustes ?? {}) as Partial<Ajustes>;
+                  // só o que é da laje: giro, inteira, emendas, juntar, fora, espessuras, treliças, numeração fixa e armação; paredes e vigas ficam como estão
+                  const K = ['lajeGiro', 'lajeInteira', 'lajeEmendas', 'lajeJuntar', 'lajeFora', 'lajeEspAmb', 'lajeEspPainel', 'lajeEspPav', 'laje16', 'trelicasPainel', 'lajeNumFixa', 'arm'] as const;
+                  const novo = { ...aj } as Record<string, unknown>; for (const k of K) if (k in sa) novo[k] = (sa as Record<string, unknown>)[k];
+                  setAj(novo as unknown as Ajustes); alert('Ajustes das lajes aplicados. Paredes e vigas não foram mexidas.');
+                } catch (er) { alert('Arquivo inválido: ' + (er as Error).message); } e.target.value = ''; }} /></label>
               </div>
             </div>
             {prod && (() => {
