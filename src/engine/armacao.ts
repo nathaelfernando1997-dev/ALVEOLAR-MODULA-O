@@ -249,7 +249,10 @@ export function alcas(a: PecaArm, kg: number, laje: boolean): { pts: [number, nu
   if (!nerv.length) nerv.push(L / 2);
   if (laje) {
     const Lc = Hx(0), xs = [nerv[Math.min(1, nerv.length - 1)], nerv[Math.max(0, nerv.length - 2)]];
-    return { pts: [Lc / 5, Lc * 4 / 5].flatMap(y => xs.map(x => [x, y, 0] as [number, number, number])), ntrab: 4 };
+    // peça pesada (parte maciça): 6 ou 8 alças em vez de 4
+    const lin = kg * COEF_ICA / 4 <= ALCA_CAP ? 2 : kg * COEF_ICA / 6 <= ALCA_CAP ? 3 : 4;
+    const ys = Array.from({ length: lin }, (_, i) => Lc / 5 + (Lc * 3 / 5) * (lin > 1 ? i / (lin - 1) : 0));
+    return { pts: ys.flatMap(y => xs.map(x => [x, y, 0] as [number, number, number])), ntrab: lin * 2 };
   }
   let por = L >= 1.80 - 1e-6 ? 4 : L >= 1.20 - 1e-6 ? 3 : 2;
   if (kg * COEF_ICA / por > ALCA_CAP) por = 5;

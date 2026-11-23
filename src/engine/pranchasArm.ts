@@ -292,7 +292,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       'BORDA: 2 ø6,3 embaixo (L4, com gancho) + 2 ø8,0 em cima (L5) em cada lateral · L3 ø4,2 atravessado a cada 30 cm (2 faces).',
       'TRELIÇAS: embaixo das paredes do pavimento de cima, na posição de cada folha' + (E.trelBorda16 ? '; lajes de 16 cm ou mais: treliça também nas 2 laterais de cada painel.' : '.'),
       'REFORÇO SOB PAREDE DE CIMA (L8 ø10 / L9 ø12,5): onde a parede do pavimento de cima fica em cima da laje sem parede embaixo, faixa maciça (sem isopor) e ferro a mais embaixo, conforme a folha de cada laje.',
-      'ALÇAS: 4 na face de cima, pernas de 50 cm ao longo da nervura, laço saindo 8 cm.',
+      'ALÇAS: 4 na face de cima (6 ou 8 nos painéis pesados, com parte maciça), pernas de 50 cm ao longo da nervura, laço saindo 8 cm.',
       'ORDEM: espaçadores → ferros de baixo (L1, L4, L3) → treliças → isopor → ferros de cima (L2, L7, L5, L3) → alças → conferir → concretar.',
       'DESFORMA / IÇAMENTO: com fcj >= 15 MPa · cura mínima de 3 dias com a peça úmida.',
     ] : [
@@ -338,7 +338,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const kpa = t.kg * COEF_ICA / t.ntrab, xd = 158;
     F.t(xd, 91, 'DADOS DA PEÇA', 6.4, { bold: true });
     [`Medida: ${cm(L)} x ${cm(Hm)} x ${cm(t.esp)} cm`, `Peso: ${br(t.kg, 0)} kg · concreto ${br(t.vol, 3)} m³`, `Aço: ${br(kgT, 1)} kg por peça`,
-      laje ? 'Alças: 4 na face de cima' : `Alças: ${t.alc.length / 2} em cima + ${t.alc.length / 2} embaixo`, `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`]
+      laje ? `Alças: ${t.alc.length} na face de cima` : `Alças: ${t.alc.length / 2} em cima + ${t.alc.length / 2} embaixo`, `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`]
       .forEach((s, i) => F.t(xd, 86.5 - i * 3.9, s, 5.8));
     F.t(xd, 64, 'ORDEM DE MONTAGEM', 6.4, { bold: true });
     (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. Ferros de baixo (vista 1º): L1, L4 e L3', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. Ferros de cima (vista 2º): L2, L7, L5 e L3', '6. Alças na face de cima · conferir e concretar']
