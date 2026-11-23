@@ -547,7 +547,11 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
   if (novo) for (const tg of tags) {
     const q = Q.get(tg.text);
     if (!q) continue;
-    const ja = out.some(t => t.pav === pav.id && t.vaos.some(v => v.tag === q.tag && Math.hypot((t.o === 'H' ? (v.a + v.b) / 2 : t.c) - tg.x, (t.o === 'H' ? t.c : (v.a + v.b) / 2) - tg.y) < 0.8 + q.larg / 2));
+    // já tem o vão: um vão com a mesma etiqueta perto, e esta é a etiqueta igual mais perto dele
+    // (duas portas iguais lado a lado: cada etiqueta fica com o seu vão)
+    const dV = (t: Trecho, v: Vao, x: number, y: number) => Math.hypot((t.o === 'H' ? (v.a + v.b) / 2 : t.c) - x, (t.o === 'H' ? t.c : (v.a + v.b) / 2) - y);
+    const ja = out.some(t => t.pav === pav.id && t.vaos.some(v => v.tag === q.tag && dV(t, v, tg.x, tg.y) < 0.8 + q.larg / 2 &&
+      !tags.some(o => o !== tg && o.text === tg.text && dV(t, v, o.x, o.y) < dV(t, v, tg.x, tg.y) - 0.05)));
     if (ja) continue;
     let best: { t: Trecho; pd: number; along: number } | null = null;
     for (const t of out) {
