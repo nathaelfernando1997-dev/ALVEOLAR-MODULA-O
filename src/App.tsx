@@ -48,6 +48,9 @@ const baixar = (nome: string, conteudo: string, tipo: string) => {
   if (tipo === 'application/dxf') conteudo = escurecerDxf(conteudo);
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
 };
+const baixarBin = (nome: string, bin: Uint8Array, tipo: string) => {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bin as BlobPart], { type: tipo })); a.download = nome; a.click();
+};
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
@@ -188,7 +191,7 @@ export default function App() {
     const lista = (v?: string[]) => (v || []).map(troca).filter((x): x is string => !!x);
     const reg = <T,>(v?: Record<string, T>) => Object.fromEntries(Object.entries(v || {}).map(([k, x]) => [troca(k), x] as const).filter(([k]) => !!k)) as Record<string, T>;
     const a = { ...AJUSTES_VAZIOS, ...salvo.ajustes };
-    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro), laje16: lista(a.laje16), lajeEspAmb: reg(a.lajeEspAmb), peAmb: reg(a.peAmb),
+    return { pavs, aj: { ...a, excluir: lista(a.excluir), juntar: lista(a.juntar), naoDividir: lista(a.naoDividir), naoPinar: lista(a.naoPinar), lajeFora: lista(a.lajeFora), lajeGiro: lista(a.lajeGiro), laje16: lista(a.laje16), lajeEspAmb: reg(a.lajeEspAmb), lajeEspPav: reg(a.lajeEspPav), arm: a.arm ? { ...a.arm, pavs: a.arm.pavs ? lista(a.arm.pavs) : undefined } : undefined, peAmb: reg(a.peAmb),
       cortes: reg(a.cortes), colunas: reg(a.colunas), altura: reg(a.altura), vaoTipo: reg(a.vaoTipo) } };
   };
   const carregarTexto = (txt: string, arquivo: string, cfg: Config | null, deOutraVersao = false) => {
@@ -695,6 +698,14 @@ export default function App() {
                 ? <Acoes pav={pavAtual} sel={sel} vaoSel={vaoSel} calc={calc} aj={aj} setAj={setAj} quadro={quadro} regras={regras} cortando={cortando} setCortando={setCortando} limpar={() => { setSel(null); setVaoSel(null); setCortando(null); }} />
                 : <>
                   <div className="card acoes">
+                    <h3>Espessura das lajes deste pavimento</h3>
+                    <label>Espessura (cm) <input type="number" step="1" key={'esp' + pavAtual.id} defaultValue={Math.round((aj.lajeEspPav?.[pavAtual.id] ?? regras.lajeEsp) * 100)} onBlur={e => {
+                      const v = parseFloat(e.target.value.replace(',', '.')); const m = { ...(aj.lajeEspPav || {}) };
+                      if (!isFinite(v) || Math.abs(v / 100 - regras.lajeEsp) < 1e-6) delete m[pavAtual.id]; else m[pavAtual.id] = v / 100;
+                      setAj({ ...aj, lajeEspPav: m }); }} /></label>
+                    <p className="dica">Vale para todos os ambientes deste pavimento que não têm espessura própria. 16 cm usa treliça TG12.</p>
+                  </div>
+                  <div className="card acoes">
                     <h3>Vigas desenhadas</h3>
                     <button className={modoViga ? 'on' : ''} onClick={() => setModoViga(modoViga ? null : 'ok')}>{modoViga ? (modoViga === 'ok' ? 'Clique no 1º ponto da viga… (clique aqui para parar)' : 'Clique no 2º ponto da viga…') : 'Adicionar viga (clique em 2 pontos na planta)'}</button>
                     <p className="dica">A viga vira apoio da laje (como a LINHA DE PISO): depois dá para girar a laje do ambiente. Fica reta: horizontal ou vertical, pela direção dos dois cliques.</p>
@@ -1084,6 +1095,7 @@ export default function App() {
               {ativos.map(pv => { const ps = prod.pecas.filter(x => x.pav === pv.id); const mt = ps.filter(x => montagem[x.codigo]?.status === 'montada').length; return ps.length ? <p key={pv.id} className="dica">{pv.nome}: {mt}/{ps.length}</p> : null; })}
             </div>}
             {!qrBase && prod && <p className="dica noprint">O QR das etiquetas (marcar a montagem pelo celular) aparece com o projeto salvo na nuvem e o login feito.</p>}
+            {(regras.motor ?? 1) >= 2 && <CardArmacao ativos={ativos} calc={calc} regras={regras} aj={aj} setAj={setAj} nome={projNome || nome} />}
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
             {modoImp === 'etiquetas' && prod ? <Etiquetas prod={soEtq.trim() ? { ...prod, pecas: (ks => prod.pecas.filter(x => ks.has(x.codigo.toUpperCase())))(new Set(soEtq.toUpperCase().split(/[\s,;]+/).filter(Boolean))) } : prod} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
               : prod ? <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod}
@@ -1102,7 +1114,7 @@ const TRELICA = { TG8: 'ferro 6,3 mm', TG12: 'ferro 8,0 mm', TG16: 'ferro 8,0 mm
 const trelicaDaEsp = (e: number): keyof typeof TRELICA => e >= 0.25 - 1e-6 ? 'TG20' : e >= 0.20 - 1e-6 ? 'TG16' : e >= 0.16 - 1e-6 ? 'TG12' : 'TG8';
 const REGRA_TRELICA = 'até 15 cm TG8 · 16 cm TG12 · 20 cm TG16 · 25 cm ou mais TG20';
 // espessura da laje do ambiente (m), quando alterada; o "laje16" antigo vale 16 cm
-const espDoAmb = (aj: Ajustes) => (amb: string) => aj.lajeEspAmb?.[amb] ?? ((aj.laje16 || []).includes(amb) ? 0.16 : undefined);
+const espDoAmb = (aj: Ajustes) => (amb: string) => aj.lajeEspAmb?.[amb] ?? ((aj.laje16 || []).includes(amb) ? 0.16 : undefined) ?? aj.lajeEspPav?.[amb.split('|')[0]];
 // painel de laje: chave estável pelo ambiente e pelo canto (a numeração muda); espessura do painel vale mais que a do ambiente
 const chaveLaje = (p: { amb: string; x0?: number; y0?: number }) => `${p.amb}@${(p.x0 ?? 0).toFixed(1)},${(p.y0 ?? 0).toFixed(1)}`;
 const espDaLaje = (aj: Ajustes) => (p: { amb: string; x0?: number; y0?: number }) => aj.lajeEspPainel?.[chaveLaje(p)] ?? espDoAmb(aj)(p.amb);
@@ -1691,6 +1703,56 @@ function csvProducao(prod: Prod, ativos: Pavimento[]): string {
   L.push('', 'Carreta;Peças;Peso (kg);Comprimento usado (m);Da peça;Até a peça');
   for (const c of prod.plano) L.push([c.n, c.pecas.length, Math.round(c.peso), br(c.usado), c.pecas[0].codigo, c.pecas[c.pecas.length - 1].codigo].join(';'));
   return '﻿' + L.join('\r\n');
+}
+// detalhamento da armação (paredes e lajes), caderno da fábrica e lista de compra do aço
+function CardArmacao({ ativos, calc, regras, aj, setAj, nome }: { ativos: Pavimento[]; calc: Calc; regras: Regras; aj: Ajustes; setAj: (a: Ajustes) => void; nome: string }) {
+  const [msg, setMsg] = useState(''); const [ocupado, setOcupado] = useState(false);
+  const o = aj.arm || {}, liberado = o.liberado ?? true, trelBorda16 = o.trelBorda16 ?? true, pavs = o.pavs ?? ativos.map(p => p.id);
+  const muda = (x: Partial<NonNullable<Ajustes['arm']>>) => setAj({ ...aj, arm: { ...o, ...x } });
+  const titulo = nome.replace(/\.(dxf|dwg|pdf|json)$/i, ''), nomesPav = ativos.filter(p => pavs.includes(p.id)).map(p => p.nome);
+  const obra = titulo + (nomesPav.length && nomesPav.length < ativos.length ? ' - ' + nomesPav.join(', ') : '');
+  const gerar = async (o2: 'paredes' | 'lajes' | 'caderno' | 'compra' | 'aco') => {
+    setOcupado(true); setMsg('');
+    try {
+      const { detalhar, caderno, csvCompra, csvAco } = await import('./engine/pranchasArm.ts');
+      const { paginasParaPdf } = await import('./engine/folhaDoc.ts');
+      const sg = siglas(ativos);
+      const E = { obra, resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', pavs: ativos.map(p => ({ id: p.id, nome: p.nome })),
+        ps: calc.ps.filter(p => pavs.includes(p.pav)), pl: calc.pl.filter(p => pavs.includes(p.pav)), vigas: calc.vigas.filter(v => v.tipo === 'trelica'), regras,
+        espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, codP: (p: Painel) => codigoParede(p, sg), codL: (p: PainelLaje) => codigoLaje(p, sg), liberado, trelBorda16 };
+      const arq = titulo + (nomesPav.length < ativos.length ? ' - ' + nomesPav.join(' ') : '');
+      if (o2 === 'paredes' || o2 === 'lajes') {
+        const d = detalhar(E, o2 === 'lajes');
+        baixarBin(`${arq} - Armacao ${o2.toUpperCase()}.pdf`, paginasParaPdf(d.paginas), 'application/pdf');
+        setMsg(`${d.tipos} tipos · ${d.paginas.length} folhas · ${br(d.kg, 1)} kg de aço${d.avisos.length ? ' · ATENÇÃO: ' + d.avisos.join(' | ') : ''}`);
+      } else {
+        const dp = detalhar(E, false), dl = detalhar(E, true), lin = [...dp.linhas, ...dl.linhas];
+        if (o2 === 'aco') { baixar(`${arq} - Relacao do aco.csv`, csvAco(lin), 'text/csv'); return; }
+        const c = caderno(E, lin);
+        if (o2 === 'caderno') baixarBin(`${arq} - Caderno da fabrica (aco).pdf`, paginasParaPdf(c.paginas), 'application/pdf');
+        else baixar(`${arq} - Lista de compra de aco.csv`, csvCompra(c.compra, obra), 'text/csv');
+        const a = c.compra.reduce((s, x) => s + x.kgPecas, 0), b = c.compra.reduce((s, x) => s + x.kgCompra, 0);
+        setMsg(`Aço nas peças ${br(a, 1)} kg · comprado ${br(b, 1)} kg (barras de 12 m)`);
+      }
+    } catch (e) { setMsg('Não consegui gerar: ' + (e as Error).message); }
+    finally { setOcupado(false); }
+  };
+  return <div className="card noprint">
+    <h3>Armação (detalhamento das paredes e lajes)</h3>
+    <p className="dica">Pranchas A3 de cada tipo de peça (2 vistas na ordem de montagem, relação do aço, corte), resumo do aço, verificações, caderno da fábrica (corte, dobra e plano de corte) e lista de compra.</p>
+    <div className="botoes">{ativos.map(p => <label key={p.id}><input type="checkbox" checked={pavs.includes(p.id)} onChange={e => muda({ pavs: e.target.checked ? [...pavs, p.id] : pavs.filter(x => x !== p.id) })} /> {p.nome}</label>)}</div>
+    <label><input type="checkbox" checked={liberado} onChange={e => muda({ liberado: e.target.checked })} /> Folhas liberadas para produção</label>
+    <label><input type="checkbox" checked={trelBorda16} onChange={e => muda({ trelBorda16: e.target.checked })} /> Lajes de 16 cm ou mais: treliça nas 2 laterais de cada painel</label>
+    <div className="botoes">
+      <button disabled={ocupado} onClick={() => gerar('paredes')}>Baixar armação das PAREDES (PDF)</button>
+      <button disabled={ocupado} onClick={() => gerar('lajes')}>Baixar armação das LAJES (PDF)</button>
+      <button disabled={ocupado} onClick={() => gerar('caderno')}>Caderno da fábrica (PDF)</button>
+      <button disabled={ocupado} onClick={() => gerar('compra')}>Lista de compra do aço (CSV)</button>
+      <button disabled={ocupado} onClick={() => gerar('aco')}>Relação do aço por peça (CSV)</button>
+    </div>
+    {ocupado && <p className="dica">Gerando…</p>}
+    {msg && <p className={/ATENÇÃO|Não consegui/.test(msg) ? 'erro' : 'dica'}>{msg}</p>}
+  </div>;
 }
 // etiquetas para colar nas peças: 12 por folha A4 deitada
 const qrSvg = (t: string) => { const q = qrcode(0, 'M'); q.addData(t); q.make(); return q.createSvgTag({ cellSize: 2, margin: 0, scalable: true }); };

@@ -416,6 +416,8 @@ export interface Ajustes {
   lajeEmendas?: Record<string, number[]>;   // emendas dos painéis de laje por ambiente (posição do meio da emenda, na largura), para alinhar com a fileira vizinha                  // ambientes com um painel só na largura, mesmo acima da largura máxima (fabricar por exceção)
   lajeJuntar?: { pav: string; o: 'H' | 'V'; c: number; a: number; b: number }[];   // trecho de parede que não divide a laje (a laje passa por cima e junta os ambientes)
   laje16?: string[];                       // (antigo) ambientes com laje de 16 cm
+  lajeEspPav?: Record<string, number>;     // espessura da laje de um pavimento inteiro (m), quando o ambiente não tem a dele
+  arm?: { liberado?: boolean; trelBorda16?: boolean; pavs?: string[] };   // detalhamento da armação: folhas liberadas, treliça nas laterais das lajes de 16 cm, pavimentos
   lajeEspAmb?: Record<string, number>;     // espessura da laje por ambiente (m); 16 cm usa treliça TG12, 20 cm TG16, 25 cm TG20
   lajeEspPainel?: Record<string, number>;  // espessura de um painel de laje só (chave = ambiente@canto), vale mais que a do ambiente
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
