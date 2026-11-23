@@ -11,7 +11,9 @@ import type { PainelLaje } from './lajes.ts';
 export interface Barra { f: string; x0: number; y0: number; x1: number; y1: number; c?: number }
 export interface Vao { x0: number; x1: number; y0: number; y1: number; porta: boolean; tag: string }
 export interface Trel { n: number; vert: boolean; pos: number; i0: number; i1: number; tipo: string; borda?: boolean }
-export interface PecaArm { L: number; Hx: (x: number) => number; ab: Vao[]; slots: [number, number][]; zon: [number, number][]; bars: Barra[]; sobParede: number[]; T: Trel[]; esp: number }
+// reforço da laje embaixo de parede do pavimento de cima (sem parede embaixo): faixa maciça (sem isopor) + ferro extra embaixo
+export interface Reforco { modo: 'longo' | 'atravessa'; pos: number; i0: number; i1: number; faixa: number; n: number; bit: number; porNerv: boolean; q: number; Md: number; Vd: number; ok: boolean; macico: boolean; txt: string }
+export interface PecaArm { L: number; Hx: (x: number) => number; ab: Vao[]; slots: [number, number][]; zon: [number, number][]; bars: Barra[]; sobParede: number[]; T: Trel[]; esp: number; ref?: Reforco[] }
 export interface VigaTrel { id: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; n?: number }
 
 export const COB = 0.025, PASSO_H = 0.25, PASSO_T = 0.30, ESTR = 0.20, PIL = 0.12, NEG_FRAC = 0.25, FAIXA_PAREDE = 0.20;
@@ -26,6 +28,7 @@ export const POS: Record<string, [number, string]> = {
 export const POSL: Record<string, [number, string]> = {
   L1: [6.3, 'Positivo (inferior) nas nervuras, gancho 90° nas pontas'], L2: [8.0, 'Negativo ø8,0 nas pontas (L/4) ou corrido sob parede de cima'],
   L7: [5.0, 'Construtivo superior ø5,0 corrido'], L3: [4.2, 'Transversal c/30 (2 faces)'], L4: [6.3, 'Borda: 2 ø6,3 inferior, gancho 90° nas pontas'], L5: [8.0, 'Borda: 2 ø8,0 superior'],
+  L8: [10, 'Reforço sob parede ø10 (embaixo), gancho 90° nas pontas'], L9: [12.5, 'Reforço sob parede ø12,5 (embaixo), gancho 90° nas pontas'],
 };
 export const comp = (b: Barra) => b.c ?? Math.hypot(b.x1 - b.x0, b.y1 - b.y0);
 
@@ -108,7 +111,7 @@ export function trelicasDoPainel(p: PainelLaje, vigas: VigaTrel[], tipo: string)
   return out.filter(q => !coberta(q));
 }
 
-export function armarLaje(p: PainelLaje, Tin: Trel[], r: Regras, esp: number, trelBorda: boolean): PecaArm {
+export function armarLaje(p: PainelLaje, Tin: Trel[], r: Regras, esp: number, trelBorda: boolean, carga = 0): PecaArm {
   const W = p.larg, Lc = p.comp, ab: Vao[] = [], d = p.dente;
   if (d) {
     const [u0, u1, v0, v1] = p.sentido === 'H' ? [d.x0 - p.x0, d.x1 - p.x0, d.y0 - p.y0, d.y1 - p.y0] : [d.y0 - p.y0, d.y1 - p.y0, d.x0 - p.x0, d.x1 - p.x0];
@@ -132,8 +135,62 @@ export function armarLaje(p: PainelLaje, Tin: Trel[], r: Regras, esp: number, tr
     novo.push({ f: 'L2', x0: x, y0: b.y0, x1: x, y1: b.y0 + c }, { f: 'L2', x0: x, y0: b.y1 - c, x1: x, y1: b.y1 }, { f: 'L7', x0: x, y0: b.y0, x1: x, y1: b.y1 });
   }
   const g = esp - 0.05;   // perna do gancho do positivo: sobe até a capa de cima
-  const bars = novo.filter(b => b.f !== 'L6').map(b => b.f === 'L1' || b.f === 'L4' ? { ...b, c: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) + 2 * g } : b);
-  return { ...a, bars, sobParede: sob, T, esp };
+  const ref = carga > 0 ? reforcos(Tp, Lc, W, esp, carga, a.bars.filter(b => b.f === 'L1').map(b => b.x0)) : [];
+  for (const rf of ref) {   // ferro de reforço embaixo, de apoio a apoio, com gancho como o positivo
+    const f = rf.bit === 10 ? 'L8' : 'L9';
+    const xs = rf.porNerv ? [...new Set(a.bars.filter(b => b.f === 'L1').map(b => b.x0))]
+      : rf.modo === 'atravessa' ? Array.from({ length: rf.n }, (_, i) => COB + (W - 2 * COB) * (rf.n > 1 ? i / (rf.n - 1) : 0.5))
+      : Array.from({ length: rf.n }, (_, i) => rf.pos - rf.faixa / 2 + COB + (rf.faixa - 2 * COB) * (rf.n > 1 ? i / (rf.n - 1) : 0.5));
+    for (const x of xs) novo.push({ f, x0: x + 0.012, y0: COB, x1: x + 0.012, y1: Lc - COB });
+  }
+  const bars = novo.filter(b => b.f !== 'L6').map(b => ['L1', 'L4', 'L8', 'L9'].includes(b.f) ? { ...b, c: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) + 2 * g } : b);
+  return { ...a, bars, sobParede: sob, T, esp, ref };
+}
+
+// ---------- reforço embaixo das paredes de cima ----------
+// laje biapoiada no comprimento Lc; parede de cima com carga q (kN/m, característica) sem parede embaixo.
+// 'longo': parede ao longo do vão (faixa vira viguinha maciça na espessura da laje); 'atravessa': parede atravessando os painéis
+// (carga em linha a 'pos' do apoio, distribuída pela largura do painel). A favor da segurança: sem contar a parede de cima trabalhando junto.
+const AREA: Record<string, number> = { '10': 0.785, '12.5': 1.227 };
+export function reforcos(T: Trel[], Lc: number, W: number, esp: number, q: number, nerv: number[]): Reforco[] {
+  const out: Reforco[] = [], d = esp * 100 - 3.5, fcdc = FCK / GC / 10;
+  const vrd = (bcm: number, As: number) => 0.25 * fctd * Math.abs(1.6 - d / 100) * (1.2 + 40 * Math.min(0.02, As / (bcm * d))) * bcm * d;   // kN (sem estribo)
+  for (const t of T) {
+    if (t.vert) {   // ao longo do vão: carga q no trecho i0..i1 de um vão biapoiado
+      const a0 = Math.max(0, t.i0), a1 = Math.min(Lc, t.i1), N = 200; let RA = 0, W1 = 0, M = 0, Mm = 0;
+      for (let k = 0; k < N; k++) { const x = (k + 0.5) * Lc / N; if (x >= a0 && x <= a1) { W1 += q * Lc / N; RA += q * Lc / N * (Lc - x) / Lc; } }
+      let V = RA; const RB = W1 - RA;
+      for (let k = 0; k < N; k++) { const x = (k + 0.5) * Lc / N; V -= x >= a0 && x <= a1 ? q * Lc / N : 0; M += V * Lc / N; Mm = Math.max(Mm, M); }
+      const Md = GF * Mm, Vd = GF * Math.max(RA, RB);
+      let faixa = 0.40; while (faixa < 0.80 && Md * 100 > 0.25 * faixa * 100 * d * d * fcdc) faixa += 0.20;
+      const kmdOk = Md * 100 <= 0.25 * faixa * 100 * d * d * fcdc;
+      const asExist = nerv.filter(x => Math.abs(x - t.pos) <= faixa / 2).length * 0.312;
+      const As = Md * 100 / (fyd50 * 0.85 * d), falta = Math.max(0, As - asExist);
+      let bit = 10, n = Math.max(2, Math.ceil(falta / AREA['10'] - 1e-9));
+      if (n > 4) { bit = 12.5; n = Math.max(2, Math.ceil(falta / AREA['12.5'] - 1e-9)); }
+      const nMax = Math.floor((faixa - 2 * COB) / 0.045) + 1;   // espaço livre mínimo entre barras ~3,2 cm
+      // cortante: concreto da faixa maciça + diagonais das 3 treliças da faixa (ø4,2 a cada 20 cm, 2 por treliça)
+      const vsw = 3 * (2 * 0.139 / 20) * 0.9 * d * fyd50 * Math.SQRT2;
+      const okV = Vd <= vrd(faixa * 100, asExist + n * AREA[String(bit)]) + vsw, ok = kmdOk && okV && n <= nMax;
+      out.push({ modo: 'longo', pos: t.pos, i0: a0, i1: a1, faixa, n, bit, porNerv: false, q, Md, Vd, ok, macico: false,
+        txt: ok ? `faixa maciça de ${Math.round(faixa * 100)} cm (sem isopor) + ${n} ø${String(bit).replace('.', ',')} embaixo` : 'NÃO RESOLVE NA LAJE: prever viga ou parede embaixo' });
+    } else {        // atravessa: carga em linha a t.pos do apoio, por metro de largura
+      const x = Math.min(Math.max(t.pos, 0.05), Lc - 0.05), larg = Math.min(W, t.i1 - t.i0), fr = larg / W;   // parte da largura com parede
+      const Md = GF * q * fr * x * (Lc - x) / Lc, Vd = GF * q * fr * Math.max(x, Lc - x) / Lc;   // por metro de largura
+      const nm = Math.max(1, nerv.length / W), asExist = nm * 0.312, As = Md * 100 / (fyd50 * 0.85 * d), falta = Math.max(0, As - asExist);
+      const kmdOk = Md * 100 <= 0.25 * 100 * d * d * fcdc;
+      let bit = 10, porNerv = true, n = Math.round(nm * W), esp_ = 0;
+      if (falta > nm * AREA['10']) bit = 12.5;
+      if (falta > nm * AREA['12.5']) { porNerv = false; bit = 12.5; esp_ = Math.floor(100 * AREA['12.5'] / As); n = Math.ceil(W * 100 / Math.max(esp_, 1)) + 1; }   // painel maciço: ø12,5 em todo o painel
+      const okNerv = porNerv && Vd / nm <= vrd(3, 0.312 + AREA[String(bit)]), okMac = Vd <= vrd(100, porNerv ? asExist + nm * AREA[String(bit)] : As);
+      const macico = !okNerv, ok = kmdOk && (porNerv ? (okNerv || okMac) : okMac && esp_ >= 8);
+      out.push({ modo: 'atravessa', pos: x, i0: t.i0, i1: t.i1, faixa: 0.40, n, bit, porNerv, q, Md, Vd, ok, macico,
+        txt: !ok ? 'NÃO RESOLVE NA LAJE: prever viga ou parede embaixo'
+          : !porNerv ? `painel MACIÇO (sem isopor) + ø12,5 a cada ${esp_} cm embaixo, em toda a largura`
+          : `${falta > 0 ? `+ 1 ø${String(bit).replace('.', ',')} embaixo em cada nervura` : 'ferro de baixo já basta'}; ${macico ? 'painel MACIÇO (sem isopor): o cortante não passa só nas nervuras' : 'faixa maciça de 40 cm (sem isopor) embaixo da parede'}` });
+    }
+  }
+  return out;
 }
 
 // ---------- verificações ----------

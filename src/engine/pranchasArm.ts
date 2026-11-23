@@ -13,10 +13,10 @@ export interface EntradaArm {
 }
 type Tipo = { g: (Painel | PainelLaje)[]; a: PecaArm; rel: Relacao; kg: number; vol: number; area: number; alc: [number, number, number][]; ntrab: number; tg: string; esp: number };
 export interface LinhaAco { pav: string; codigo: string; tipo: string; pos: string; bit: number | string; qtd: number; c: number }   // c em m
-export interface Detalhamento { paginas: Pagina[]; linhas: LinhaAco[]; tipos: number; kg: number; avisos: string[] }
+export interface Detalhamento { paginas: Pagina[]; linhas: LinhaAco[]; tipos: number; kg: number; avisos: string[]; reforcos: { codigo: string; tipo: string; txt: string; ok: boolean }[] }
 
 const INK = '#111111';
-const COR: Record<string, string> = { N1: '#b03a2e', N2: '#1e8449', N3: '#1a5276', N4: '#6c3483', N5: '#ca6f1e', N6: '#9a7d0a', L1: '#b03a2e', L2: '#1a5276', L7: '#117a65', L3: '#1e8449', L4: '#ca6f1e', L5: '#2e86c1', T: '#7d3c98', A: '#c0392b' };
+const COR: Record<string, string> = { N1: '#b03a2e', N2: '#1e8449', N3: '#1a5276', N4: '#6c3483', N5: '#ca6f1e', N6: '#9a7d0a', L1: '#b03a2e', L2: '#1a5276', L7: '#117a65', L3: '#1e8449', L4: '#ca6f1e', L5: '#2e86c1', L8: '#d35400', L9: '#d35400', T: '#7d3c98', A: '#c0392b' };
 const DUAS_FACES = new Set(['N1', 'N2', 'L3']);
 const br = (v: number, n = 2) => v.toLocaleString('pt-BR', { minimumFractionDigits: n, maximumFractionDigits: n });
 const cm = (v: number) => String(Math.round(v * 1000) / 10).replace('.', ',');
@@ -48,6 +48,13 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
   for (const [p0, p1] of a.slots) F.poly([P(p0, 0), P(p1, 0), P(p1, Hx(p1)), P(p0, Hx(p0))], { fill: '#eef1f6' });
   for (const [z0, z1] of a.zon) F.poly([P(z0, 0), P(z1, 0), P(z1, Hx(z1)), P(z0, Hx(z0))], { fill: '#dfe6ef' });
   F.poly([P(0, 0), P(L, 0), P(L, Hx(L)), P(0, Hx(0))], { stroke: INK, lw: 0.9 });
+  for (const rf of a.ref ?? []) {   // faixa / painel maciço (sem isopor)
+    const q = rf.macico ? [P(0, 0), P(L, 0), P(L, Hx(L)), P(0, Hx(0))] : rf.modo === 'longo' ? [P(rf.pos - rf.faixa / 2, rf.i0), P(rf.pos + rf.faixa / 2, rf.i0), P(rf.pos + rf.faixa / 2, rf.i1), P(rf.pos - rf.faixa / 2, rf.i1)]
+      : [P(Math.max(0, rf.i0), rf.pos - rf.faixa / 2), P(Math.min(L, rf.i1), rf.pos - rf.faixa / 2), P(Math.min(L, rf.i1), rf.pos + rf.faixa / 2), P(Math.max(0, rf.i0), rf.pos + rf.faixa / 2)];
+    F.poly(q, { fill: '#fbe3cf', stroke: '#d35400', lw: 0.5 });
+    const cx = (q[0][0] + q[2][0]) / 2, cy = (q[0][1] + q[2][1]) / 2;
+    F.t(cx, cy, rf.macico ? 'PAINEL MACIÇO (sem isopor)' : 'MACIÇO', 4.6, { ha: 'center', va: 'center', bold: true, color: '#d35400', rot: rf.modo === 'longo' && !rf.macico ? 90 : 0 });
+  }
   for (const v of a.ab) {
     const [x0, y0] = P(v.x0, v.y0), [x1, y1] = P(v.x1, v.y1);
     F.r(x0, y0, x1 - x0, y1 - y0, { fill: '#ffffff', lw: 0.7 }); F.seg(x0, y0, x1, y1, 0.2, '#888888'); F.seg(x0, y1, x1, y0, 0.2, '#888888');
@@ -112,7 +119,7 @@ function nomear(k: string, c: number, Lc: number, esp: number, laje: boolean) {
     L7: 'ferro fino corrido de CIMA, em cada nervura', L5: 'ferro de CIMA da borda (2 em cada lateral)', T: 'treliça — apoiada nos ferros de baixo',
     A: 'alça de içamento — ' + (laje ? 'face de cima, pernas de 50 cm na nervura' : 'metade em cima, metade embaixo'), N1: 'ferro em pé em cada nervura — nas 2 faces',
     N3: 'ferros do pilar: 4 em cada ponta e ao lado das portas', N2: 'ferro deitado — nas 2 faces', N4: 'estribo do pilar (7 x 9 cm)', N5: 'verga — em cima da porta / janela (2 em cada face)',
-    N6: 'contraverga — embaixo da janela (2 em cada face)' } as Record<string, string>)[f] ?? '';
+    N6: 'contraverga — embaixo da janela (2 em cada face)', L8: 'REFORÇO embaixo da parede de cima · gancho nas 2 pontas', L9: 'REFORÇO embaixo da parede de cima · gancho nas 2 pontas' } as Record<string, string>)[f] ?? '';
 }
 function chamadas(F: Folha, a: PecaArm, rel: Relacao, alc: [number, number, number][], P: (x: number, y: number) => [number, number], xlab: number, ybot: number, ytop: number, laje: boolean, tg: string) {
   const STEP = 8.6, alvo: { pt: [number, number]; txt: string; f: string; y: number; k: string; c: number }[] = [], idx = new Map<string, number>(), PD = laje ? POSL : POS;
@@ -232,14 +239,23 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const lajes = E.pavs.filter(p => (idxPav.get(p.id) ?? 0) >= i).reduce((s, p) => s + pp(espDoPav(p.id)) + G_REV + Q_USO, 0);
     return lajes * trib + (E.pavs.length - 1 - i) * pp(0.14) * H;
   };
+  // carga (kN/m) da parede do pavimento de cima que fica em cima da laje do pavimento i (sem parede embaixo)
+  const cargaLinha = (pid: string) => {
+    const i = (idxPav.get(pid) ?? 0) + 1; if (i >= E.pavs.length) return 0;
+    const acima = E.pl.length ? E.pl : [], vs = acima.filter(q => (idxPav.get(q.pav) ?? 0) >= i).map(q => q.comp), trib = vs.length ? vs.reduce((s, v) => s + v, 0) / vs.length : 3.0;
+    const H = 3.0, lajes = E.pavs.filter(p => (idxPav.get(p.id) ?? 0) >= i).reduce((s, p) => s + pp(espDoPav(p.id)) + G_REV + Q_USO, 0);
+    return lajes * trib + (E.pavs.length - i) * pp(espPar) * H;
+  };
   // tipos (peças iguais)
   const grupos = new Map<string, Tipo>();
   const vigasT = E.vigas;
   if (laje) for (const p of E.pl) {
-    const esp = E.espLaje(p), tg = tgDaEsp(esp), T = trelicasDoPainel(p, vigasT, tg), a = armarLaje(p, T, R, esp, E.trelBorda16 && esp >= 0.16 - 1e-6);
-    const k = JSON.stringify([esp, Math.round(p.larg * 100), Math.round(p.comp * 100), p.dente ?? null, a.T.map(t => [t.vert, Math.round(t.pos * 100), Math.round(t.i0 * 100), Math.round(t.i1 * 100)]).sort()]);
+    const esp = E.espLaje(p), tg = tgDaEsp(esp), T = trelicasDoPainel(p, vigasT, tg), a = armarLaje(p, T, R, esp, E.trelBorda16 && esp >= 0.16 - 1e-6, cargaLinha(p.pav));
+    const k = JSON.stringify([esp, Math.round(p.larg * 100), Math.round(p.comp * 100), p.dente ?? null, a.T.map(t => [t.vert, Math.round(t.pos * 100), Math.round(t.i0 * 100), Math.round(t.i1 * 100)]).sort(), (a.ref ?? []).map(r => r.txt)]);
     const g = grupos.get(k); if (g) { g.g.push(p); continue; }
     const area = p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), w = pesoPeca(p.larg, p.comp, area, [], esp, R);
+    const fIso = (R.isoporLarg ?? 0.12) / ((R.isoporLarg ?? 0.12) + (R.isoporEspaco ?? 0.03)) * (R.isoporAlt ?? 0.09);   // m³ de isopor por m² de laje
+    for (const rf of a.ref ?? []) { const ex = (rf.macico ? p.larg * p.comp : rf.modo === 'longo' ? rf.faixa * (rf.i1 - rf.i0) : rf.faixa * Math.min(p.larg, rf.i1 - rf.i0)) * fIso; w.vol += ex; w.kg += ex * (R.densidade ?? 2500); }
     const al = alcas(a, w.kg, true);
     grupos.set(k, { g: [p], a, rel: relacao(a, al.pts.length, true), kg: w.kg, vol: w.vol, area: w.area, alc: al.pts, ntrab: al.ntrab, tg, esp });
   } else for (const p of E.ps) {
@@ -262,6 +278,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const pvi = Math.min(...t.g.map(q => idxPav.get(q.pav) ?? 0)), c = verParede(Lc, t.esp, cargaParede(pvi, Lc)), mh = manuseio(Lc, t.esp);
     return { ok: c.ok_lam && c.ok_N && mh.ok, txt: `esbeltez ${br(c.lam, 0)} <= 86 · Nd ${br(c.Nd, 0)} <= NRd ${br(c.NRd, 0)} kN/m · desforma ${br(mh.sigma)} <= ${br(mh.lim)} MPa` };
   });
+  if (laje) tipos.forEach((t, i) => { for (const rf of t.a.ref ?? []) if (!rf.ok) avisos.push(`${pref}-${String(i + 1).padStart(2, '0')} (${t.g.map(cod).join(', ')}): parede de cima ${rf.modo === 'longo' ? 'ao longo do vão' : 'atravessando'} com ${br(rf.q, 1)} kN/m — ${rf.txt}`); });
   tipos.forEach((t, i) => { if (!ver[i].ok) avisos.push(`${pref}-${String(i + 1).padStart(2, '0')}: verificação não atendida (${ver[i].txt})`); if (t.kg * COEF_ICA / t.ntrab > ALCA_CAP) avisos.push(`${pref}-${String(i + 1).padStart(2, '0')}: peso por alça acima do limite`); });
   // ---- folha 01: capa / notas ----
   {
@@ -274,6 +291,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       'EM CIMA: L2 ø8,0 nas pontas (1/4 do vão) e L7 ø5,0 corrido; nas nervuras embaixo de parede do pavimento de cima, L2 ø8,0 corrido.',
       'BORDA: 2 ø6,3 embaixo (L4, com gancho) + 2 ø8,0 em cima (L5) em cada lateral · L3 ø4,2 atravessado a cada 30 cm (2 faces).',
       'TRELIÇAS: embaixo das paredes do pavimento de cima, na posição de cada folha' + (E.trelBorda16 ? '; lajes de 16 cm ou mais: treliça também nas 2 laterais de cada painel.' : '.'),
+      'REFORÇO SOB PAREDE DE CIMA (L8 ø10 / L9 ø12,5): onde a parede do pavimento de cima fica em cima da laje sem parede embaixo, faixa maciça (sem isopor) e ferro a mais embaixo, conforme a folha de cada laje.',
       'ALÇAS: 4 na face de cima, pernas de 50 cm ao longo da nervura, laço saindo 8 cm.',
       'ORDEM: espaçadores → ferros de baixo (L1, L4, L3) → treliças → isopor → ferros de cima (L2, L7, L5, L3) → alças → conferir → concretar.',
       'DESFORMA / IÇAMENTO: com fcj >= 15 MPa · cura mínima de 3 dias com a peça úmida.',
@@ -305,7 +323,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     moldura(F, `ARMAÇÃO ${laje ? 'DA LAJE' : 'DO PAINEL'} ${nome}`, `${laje ? 'LAJE' : 'PAREDE'} TIPO ${nome} — ${cm(L)} x ${cm(Hm)}${laje ? ' x ' + cm(t.esp) : ''} cm — ${qtd} peça${qtd > 1 ? 's' : ''}`, it + 2, TOTAL, `vistas 1:${esc} · corte 1:10`, E);
     const cods = g.map(cod).join(', ');
     F.t(15, 267.5, 'PEÇAS DESTE TIPO:', 6.2, { bold: true }); F.t(45, 267.5, cods.length < 150 ? cods : cods.slice(0, 150) + ' …', 6.6, { bold: true, color: '#1f3b57' });
-    const GR: [string, string[], string][] = laje ? [['1º  FERROS DE BAIXO + TRELIÇAS', ['L1', 'L4', 'L3', 'T'], '#b03a2e'], ['2º  FERROS DE CIMA + ALÇAS', ['L2', 'L7', 'L5', 'L3', 'A'], '#1a5276']]
+    const GR: [string, string[], string][] = laje ? [['1º  FERROS DE BAIXO + TRELIÇAS', ['L1', 'L4', 'L8', 'L9', 'L3', 'T'], '#b03a2e'], ['2º  FERROS DE CIMA + ALÇAS', ['L2', 'L7', 'L5', 'L3', 'A'], '#1a5276']]
       : [['1º  FERROS EM PÉ + ALÇAS', ['N1', 'N3', 'A'], '#b03a2e'], ['2º  FERROS DEITADOS + ESTRIBOS', ['N2', 'N4', 'N5', 'N6'], '#1e8449']];
     const W = L * m, X0 = 36, passo = Math.max(W + 74 + 26, 185), Y0 = 118 + (130 - Hm * m) / 2;
     GR.forEach(([tit, fams, cor], i) => {
@@ -326,8 +344,17 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. Ferros de baixo (vista 1º): L1, L4 e L3', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. Ferros de cima (vista 2º): L2, L7, L5 e L3', '6. Alças na face de cima · conferir e concretar']
       : ['1. Espaçadores de 2,5 cm na forma', '2. Tela de baixo: N1 em pé + N2 deitado', '3. Pilares (N3 + estribos N4) e vergas (N5 / N6)', '4. Isopor entre as nervuras', '5. Tela de cima: N1 + N2 (igual à de baixo)', '6. Alças · conferir e concretar'])
       .forEach((s, i) => F.t(xd, 59.5 - i * 3.9, s, 5.6));
-    const ok = ver[it].ok && kpa <= ALCA_CAP;
-    F.t(xd, 33, ok ? `Cálculo conferido ✓ (verificações na folha ${String(TOTAL).padStart(2, '0')})` : 'ATENÇÃO: verificação não atendida — ver folha de verificações', 5.6, { color: ok ? '#1e8449' : '#b03a2e', bold: true });
+    if (laje && t.a.ref?.length) {
+      const wrap = (txt: string, n = 64) => { const o: string[] = []; let c = ''; for (const w of txt.split(' ')) { if ((c + ' ' + w).trim().length > n) { o.push(c); c = w; } else c = (c + ' ' + w).trim(); } if (c) o.push(c); return o; };
+      let yy = 30;
+      F.t(158, yy, 'REFORÇO EMBAIXO DE PAREDE DO PAVIMENTO DE CIMA', 6, { bold: true, color: '#d35400' });
+      for (const rf of t.a.ref.slice(0, 3)) {
+        yy -= 3.6; F.t(158, yy, `Parede ${rf.modo === 'longo' ? 'ao longo do vão' : 'atravessando o painel'} · ${br(rf.q, 1)} kN/m · Md ${br(rf.Md, 1)} kN.m${rf.modo === 'atravessa' ? '/m' : ''}`, 5.2);
+        for (const ln of wrap(rf.txt)) { yy -= 3.3; F.t(158, yy, ln, 5.4, { bold: true, color: rf.ok ? '#d35400' : '#b03a2e' }); }
+      }
+    }
+    const ok = ver[it].ok && kpa <= ALCA_CAP && (t.a.ref ?? []).every(r => r.ok);
+    F.t(xd, 35.5, ok ? `Cálculo conferido ✓ (verificações na folha ${String(TOTAL).padStart(2, '0')})` : 'ATENÇÃO: verificação não atendida — ver folha de verificações', 5.6, { color: ok ? '#1e8449' : '#b03a2e', bold: true });
     corteA(F, a, 262, 64, laje);
     for (const q of g) for (const [k, Lr] of t.rel) for (const [c, n] of Lr) linhas.push({ pav: nomePav.get(q.pav) ?? q.pav, codigo: cod(q), tipo: nome, pos: k, bit: bitDe(k, laje, t.tg), qtd: n, c: c / 100 });
     pags.push(F);
@@ -373,10 +400,16 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       F.t(30, y, `${cm(t.a.L)} x ${cm(t.a.Hx(0))} · ${ver[i].txt}  ${ver[i].ok ? '✓' : '✗'}`, 5.4, { color: ver[i].ok ? INK : '#b03a2e' });
       y -= 3.5;
     });
+    const RF = laje ? tipos.flatMap((t, i) => (t.a.ref ?? []).map(rf => ({ t, i, rf }))) : [];
+    if (RF.length) {
+      y -= 4; F.t(15, y, 'PAINÉIS COM REFORÇO EMBAIXO DE PAREDE DO PAVIMENTO DE CIMA', 7, { bold: true, color: '#d35400' });
+      for (const { t, i, rf } of RF) { if (y < 40) break; y -= 4; F.t(15, y, `${pref}-${String(i + 1).padStart(2, '0')} (${t.g.map(cod).join(', ')}): ${br(rf.q, 1)} kN/m · ${rf.txt}`, 5.6, { color: rf.ok ? INK : '#b03a2e' }); }
+    }
     if (avisos.length) { y -= 4; F.t(15, y, 'AVISOS', 7, { bold: true, color: '#b03a2e' }); for (const s of avisos.slice(0, 12)) { y -= 4; F.t(15, y, s, 5.6, { color: '#b03a2e' }); } }
     pags.push(F);
   }
-  return { paginas: pags, linhas, tipos: NT, kg: kgTot, avisos };
+  const reforcos = laje ? tipos.flatMap((t, i) => t.g.flatMap(q => (t.a.ref ?? []).map(rf => ({ codigo: cod(q), tipo: `${pref}-${String(i + 1).padStart(2, '0')}`, txt: rf.txt, ok: rf.ok })))) : [];
+  return { paginas: pags, linhas, tipos: NT, kg: kgTot, avisos, reforcos };
 }
 
 // ---------- caderno da fábrica (corte e dobra) + compra ----------

@@ -1724,7 +1724,7 @@ function CardArmacao({ ativos, calc, regras, aj, setAj, nome }: { ativos: Pavime
       if (o2 === 'paredes' || o2 === 'lajes') {
         const d = detalhar(E, o2 === 'lajes');
         baixarBin(`${arq} - Armacao ${o2.toUpperCase()}.pdf`, paginasParaPdf(d.paginas), 'application/pdf');
-        setMsg(`${d.tipos} tipos · ${d.paginas.length} folhas · ${br(d.kg, 1)} kg de aço${d.avisos.length ? ' · ATENÇÃO: ' + d.avisos.join(' | ') : ''}`);
+        setMsg(`${d.tipos} tipos · ${d.paginas.length} folhas · ${br(d.kg, 1)} kg de aço${d.reforcos.length ? ` · ${new Set(d.reforcos.map(r => r.codigo)).size} painéis com reforço embaixo de parede de cima: ${[...new Set(d.reforcos.map(r => r.codigo))].join(', ')}` : ''}${d.avisos.length ? ' · ATENÇÃO: ' + d.avisos.join(' | ') : ''}`);
       } else {
         const dp = detalhar(E, false), dl = detalhar(E, true), lin = [...dp.linhas, ...dl.linhas];
         if (o2 === 'aco') { baixar(`${arq} - Relacao do aco.csv`, csvAco(lin), 'text/csv'); return; }
