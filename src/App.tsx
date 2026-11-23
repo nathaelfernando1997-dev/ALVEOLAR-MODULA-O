@@ -435,6 +435,7 @@ export default function App() {
   }, [leitura, pavs, quadro, regras, aj]);
   const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
   const [modoImp, setModoImp] = useState<'folhas' | 'etiquetas'>('folhas');
+  const [pavsImp, setPavsImp] = useState<string[]>([]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
   const [notaRev, setNotaRev] = useState('');
@@ -1062,14 +1063,20 @@ export default function App() {
               <div className="botoes">
                 <button className={modoImp === 'folhas' ? 'on' : ''} onClick={() => setModoImp('folhas')}>Ver folhas de produção</button>
                 {prod && <button className={modoImp === 'etiquetas' ? 'on' : ''} onClick={() => setModoImp('etiquetas')}>Ver etiquetas das peças</button>}
-                <button onClick={() => window.print()}>Imprimir / salvar PDF ({modoImp === 'folhas' ? 'folhas' : 'etiquetas'})</button>
+                <button onClick={() => window.print()}>Imprimir / salvar PDF ({modoImp === 'folhas' ? 'folhas' : 'etiquetas'}{pavsImp.length ? ' — ' + ativos.filter(p => pavsImp.includes(p.id)).map(p => p.nome).join(', ') : ''})</button>
+              </div>
+              <div className="botoes pavs-imp"><b>Pavimentos que saem na impressão:</b>
+                <label><input type="checkbox" checked={!pavsImp.length} onChange={() => setPavsImp([])} /> Todos</label>
+                {ativos.map(p => <label key={p.id}><input type="checkbox" checked={pavsImp.includes(p.id)} onChange={e => setPavsImp(e.target.checked ? [...pavsImp, p.id] : pavsImp.filter(x => x !== p.id))} /> {p.nome}</label>)}
+              </div>
+              <div className="botoes">
                 {prod && modoImp === 'etiquetas' && <label className="so-etq">Só estas etiquetas (códigos, ex.: T-L128, T-L129 — vazio = todas)
                   <textarea rows={2} value={soEtq} onChange={e => setSoEtq(e.target.value)} placeholder="T-L128, T-L129, 1-P74…" />
                   {soEtq.trim() && (() => { const ks = new Set(soEtq.toUpperCase().split(/[\s,;]+/).filter(Boolean)), tem = new Set(prod.pecas.map(x => x.codigo.toUpperCase())), fora = [...ks].filter(k => !tem.has(k)); return <small>{[...ks].filter(k => tem.has(k)).length} etiqueta(s){fora.length ? ` · não encontrei: ${fora.slice(0, 8).join(', ')}${fora.length > 8 ? '…' : ''}` : ''}</small>; })()}
                 </label>}
-                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
-                <button onClick={() => baixarDwg(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2))}>Baixar DWG da modulação</button>
-                <button onClick={() => baixarPdf(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries(ativos.map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), { titulo: 'MODULAÇÃO', sub: projNome || nome.replace(/\.dxf$/i, '') }, true)}>Baixar PDF da modulação</button>
+                <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries((pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos).map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), 'application/dxf')}>Baixar DXF da modulação</button>
+                <button onClick={() => baixarDwg(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries((pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos).map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2))}>Baixar DWG da modulação</button>
+                <button onClick={() => baixarPdf(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries((pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos).map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), { titulo: 'MODULAÇÃO', sub: projNome || nome.replace(/\.dxf$/i, '') }, true)}>Baixar PDF da modulação</button>
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj)) : []) + ((regras.motor ?? 1) >= 2 ? csvTrelicas(ativos, calc, aj, regras.perda ?? 10) : ''), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 {prod && <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-producao.csv', csvProducao(prod, ativos), 'text/csv')}>Baixar planilha de produção (CSV)</button>}
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
@@ -1104,8 +1111,8 @@ export default function App() {
             {!qrBase && prod && <p className="dica noprint">O QR das etiquetas (marcar a montagem pelo celular) aparece com o projeto salvo na nuvem e o login feito.</p>}
             {(regras.motor ?? 1) >= 2 && <CardArmacao ativos={ativos} calc={calc} regras={regras} aj={aj} setAj={setAj} nome={projNome || nome} />}
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
-            {modoImp === 'etiquetas' && prod ? <Etiquetas prod={soEtq.trim() ? { ...prod, pecas: (ks => prod.pecas.filter(x => ks.has(x.codigo.toUpperCase())))(new Set(soEtq.toUpperCase().split(/[\s,;]+/).filter(Boolean))) } : prod} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
-              : prod ? <Folhas ativos={ativos} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod}
+            {modoImp === 'etiquetas' && prod ? <Etiquetas prod={(pr => pavsImp.length ? { ...pr, pecas: pr.pecas.filter(x => pavsImp.includes(x.pav)) } : pr)(soEtq.trim() ? { ...prod, pecas: (ks => prod.pecas.filter(x => ks.has(x.codigo.toUpperCase())))(new Set(soEtq.toUpperCase().split(/[\s,;]+/).filter(Boolean))) } : prod)} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
+              : prod ? <Folhas ativos={ativos} soPavs={pavsImp} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod}
                   rev={(() => { const b = (aj.revisoes || []).find(r => r.n === revBase); return b ? { base: b, dif: compararRev(b.pecas, retrato(calc, prod.sg)) } : undefined; })()} />
               : <p className="dica">As folhas de produção usam o cálculo atual (aba Regras).</p>}
           </section>
@@ -1788,8 +1795,10 @@ function girar(vb: string, html: string): { vb: string; html: string } {
 }
 function SvgFolha({ vb, html }: { vb: string; html: string }) { const g = girar(vb, html); return <svg viewBox={g.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: g.html }} />; }
 
-function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, rev }: { ativos: Pavimento[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod; rev?: { base: Revisao; dif: ReturnType<typeof compararRev> } }) {
+function Folhas({ ativos: todos, soPavs, calc, leitura, arqDe, nome, novo, regras, aj, prod, rev }: { ativos: Pavimento[]; soPavs?: string[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod; rev?: { base: Revisao; dif: ReturnType<typeof compararRev> } }) {
   type F = { key: string; tit: string; body: JSX.Element; rod: string };
+  // só os pavimentos escolhidos: folhas do pavimento, cargas com peças dele; as folhas gerais (isopor, mesas, conferência...) saem só com todos
+  const filtra = !!soPavs?.length && soPavs.length < todos.length, ativos = filtra ? todos.filter(p => soPavs!.includes(p.id)) : todos;
   const F: F[] = [];
   const add = (key: string, tit: string, body: JSX.Element, rod: string) => { F.push({ key, tit, body, rod }); return F.length - 1; };
   const sg = prod.sg;
@@ -1864,8 +1873,9 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
     }
   }
   // plano de carga: uma folha por carreta, com as pilhas vistas de cima e a ordem de descarga (= ordem de montagem)
-  const CL = regras.carretaComp ?? 12.4, CW = regras.carretaLarg ?? 2.8, CWM = regras.carretaLargMax ?? 3.2, nCargas = prod.plano.length, pesoTot = prod.pecas.reduce((s, p) => s + p.peso, 0);
+  const CL = regras.carretaComp ?? 12.4, CW = regras.carretaLarg ?? 2.8, CWM = regras.carretaLargMax ?? 3.2, nCargas = prod.plano.length, pesoTot = prod.pecas.filter(p => ativos.some(v => v.id === p.pav)).reduce((s, p) => s + p.peso, 0);
   for (const c of prod.plano) {
+    if (filtra && !c.pecas.some(x => ativos.some(p => p.id === prod.porId.get(x.id)?.pav))) continue;
     const kk = 100, W = (CL + 0.6) * kk, H = (CW + 0.9) * kk, X = (x: number) => (x + 0.3) * kk, Y = (y: number) => (y + 0.6) * kk;
     const cores = ['#dbe8ff', '#ffe3c7', '#dff5d8', '#f4dcf5', '#fff3b0', '#d8f1f4'];
     const ex = (CWM - CW) / 2;
@@ -1902,7 +1912,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
       `Peças deitadas · camada 1 = embaixo · peça de cima no máximo 30 cm maior que a de baixo · carreta de ${br(CW)} m (até ${br(CWM)} m com excesso lateral, pilha em vermelho) · peças de etapas seguintes completam a carga · calçar com caibros entre as peças e amarrar cada pilha`);
   }
   // plano de corte do isopor
-  {
+  if (!filtra) {
     const ci = prod.corteIso, bc = regras.isoporComp ?? 4;
     const tabPad = (P: typeof ci.padroes) => <table className="tlaje rom"><thead><tr><th>Barras</th><th>Cortes de cada barra (m)</th><th>Sobra (m)</th></tr></thead><tbody>
       {P.map((p, i) => <tr key={i}><td><b>{p.qtd}</b></td><td>{p.cortes.map(c => br(c)).join(' + ')}</td><td>{br(p.sobra)}</td></tr>)}</tbody></table>;
@@ -1917,14 +1927,14 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
       `Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm · alvéolos na altura das paredes e no comprimento das lajes, cortados nas portas e janelas · a sobra de uma barra vira pedaço de outra peça · alvéolo maior que a barra sai emendado`);
   }
   // plano de corte das treliças
-  if (prod.corteTrel.length) add('trelcorte', `PLANO DE CORTE DAS TRELIÇAS — BARRAS DE ${br(regras.trelicaBarra ?? 12)} m`,
+  if (!filtra && prod.corteTrel.length) add('trelcorte', `PLANO DE CORTE DAS TRELIÇAS — BARRAS DE ${br(regras.trelicaBarra ?? 12)} m`,
     <div className="desenho lajes cont conf">{prod.corteTrel.map(t => <div className="ccol" key={t.tipo}><h3>{t.tipo} ({TRELICA[t.tipo]}): {t.barras} barra(s) · {br(t.total)} m · perda {br(t.perda * 100)}%</h3>
       <table className="tlaje rom"><thead><tr><th>Barras</th><th>Cortes de cada barra (m)</th><th>Sobra (m)</th></tr></thead><tbody>
         {t.padroes.map((p, i) => <tr key={i}><td><b>{p.qtd}</b></td><td>{p.cortes.map(c => br(c)).join(' + ')}</td><td>{br(p.sobra)}</td></tr>)}</tbody></table>
       <p className="dica">Pedaços: {t.medidas.map(m => `${m.n} × ${br(m.comp)}`).join(' · ')}</p></div>)}</div>,
     'Comprimentos das treliças de reforço (folhas de treliças de cada laje) · 1 cm de corte entre pedaços · sobra de uma barra vira pedaço de outra laje');
   // produção nas mesas: um dia por linha, as mesas lado a lado
-  {
+  if (!filtra) {
     const MC = regras.mesaComp ?? 12, ML = regras.mesaLarg ?? 3.2, DIAS = 6;
     const mesaSvg = (m: { n: number; pecas: { codigo: string; x: number; y: number; L: number; W: number }[]; usado: number }) => {
       const k = 100;
@@ -1954,14 +1964,14 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
   // cada coluna leva ~46 linhas impressas; item longo conta como várias linhas
   const blocosConf: JSX.Element[][] = [[]]; let carga = 0;
   for (const [el, w] of linhasConf) { if (carga + w > 46 && blocosConf[blocosConf.length - 1].length) { blocosConf.push([]); carga = 0; } blocosConf[blocosConf.length - 1].push(el); carga += w; }
-  for (let f = 0; f * 2 < blocosConf.length; f++) add('conf' + f, `CONFERÊNCIA AUTOMÁTICA${blocosConf.length > 2 ? ` — ${f + 1}/${Math.ceil(blocosConf.length / 2)}` : ''}`,
+  if (!filtra) for (let f = 0; f * 2 < blocosConf.length; f++) add('conf' + f, `CONFERÊNCIA AUTOMÁTICA${blocosConf.length > 2 ? ` — ${f + 1}/${Math.ceil(blocosConf.length / 2)}` : ''}`,
     <div className="desenho lajes cont conf">{f === 0 && <p className="resumoConf"><b>{alertas.filter(a => a.nivel === 'erro').length} erro(s)</b> · {alertas.filter(a => a.nivel !== 'erro').length} ponto(s) de atenção · {iguaisP.length + iguaisL.length} grupo(s) de peças iguais</p>}
       {blocosConf.slice(f * 2, f * 2 + 2).map((B, i) => <div className="ccol" key={i}>{B}</div>)}</div>,
     '✖ = corrigir antes de produzir · ! = conferir · aberturas a menos de 15 cm da borda ou do topo · peças iguais agrupadas para produzir juntas');
   add('det', 'DETALHES TÍPICOS DE MONTAGEM',
     <div className="desenho" dangerouslySetInnerHTML={{ __html: detalhesSvg({ esp: (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025), lajeEsp: (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025), apoio: regras.lajeApoio, apoioBorda: regras.lajeApoioBorda ?? 0.1, coluna: regras.coluna, folga: regras.folga, vigaAlt: regras.vigaAltura, vigaLarg: regras.vigaLargura }) }} />,
     'Detalhes esquemáticos com as medidas das regras do projeto · armaduras, grautes, ligações e fundação conforme o projeto estrutural');
-  if (novo) add('quant', 'QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)',
+  if (novo && !filtra) add('quant', 'QUANTITATIVOS — ÁREA (m²) E VOLUME (m³)',
     <><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} />
       <TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></>,
     `Isopor ${br((regras.isoporLarg ?? 0.12) * 100)} × ${br((regras.isoporAlt ?? 0.09) * 100)} cm, em barras de ${br(regras.isoporComp ?? 4)} m, sobras aproveitadas (em cima das janelas e nas lajes), ${br((regras.isoporEspaco ?? 0.03) * 100)} cm de concreto entre eles e ${br((regras.capeamento ?? 0.025) * 100)} cm de capeamento em cima e embaixo · paredes com os alvéolos na altura · portas e janelas sem concreto e sem isopor`);
@@ -1973,7 +1983,7 @@ function Folhas({ ativos, calc, leitura, arqDe, nome, novo, regras, aj, prod, re
   }).filter(l => l.np || l.nl);
   const tot = linhasResumo.reduce((s, l) => ({ np: s.np + l.np, ap: s.ap + l.ap, nl: s.nl + l.nl, al: s.al + l.al }), { np: 0, ap: 0, nl: 0, al: 0 });
   const capa = <div className="folha capa" key="capa">
-    <div className="cab">PRODUÇÃO E MONTAGEM — PAREDES E LAJES</div>
+    <div className="cab">PRODUÇÃO E MONTAGEM — PAREDES E LAJES{filtra ? ' — SÓ ' + ativos.map(p => p.nome.toUpperCase()).join(', ') : ''}</div>
     <h1>{titulo}</h1>
     <div className="capa-grid">
       <div>

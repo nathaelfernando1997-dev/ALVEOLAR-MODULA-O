@@ -259,3 +259,5 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .zoom svg.trena-on, .zoom svg.trena-on * { cursor: crosshair !important; }
 .so-etq { display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 6px; font-size: 13px; }
 .so-etq textarea { width: 100%; font: inherit; }
+.pavs-imp { align-items: center; gap: 12px; margin-top: 6px; }
+.pavs-imp label { display: inline-flex; align-items: center; gap: 4px; }
