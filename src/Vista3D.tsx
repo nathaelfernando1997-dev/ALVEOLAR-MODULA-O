@@ -1,0 +1,142 @@
+// Visualizador 3D da modulação: paredes (com portas e janelas), lajes e pavimentos um em cima do outro.
+// Carregado só quando a aba 3D é aberta (three.js fica fora do pacote principal).
+import { useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { Painel, Pavimento } from './engine/model.ts';
+import type { PainelLaje } from './engine/lajes.ts';
+
+export interface Props3D {
+  pavs: Pavimento[];
+  desloc: Record<string, { dx: number; dy: number }>;
+  ps: Painel[]; pl: PainelLaje[];
+  espLaje: (p: PainelLaje) => number;
+  espParede: number;
+  sg: Map<string, string>;
+}
+
+type Caixa = { pav: string; tipo: 'parede' | 'laje'; cod: string; txt: string; ab: boolean; grossa: boolean; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number };
+
+// peças em caixas (parede com abertura vira pedaços em volta do vão)
+function caixas(o: Props3D): Caixa[] {
+  const out: Caixa[] = [], T = o.espParede;
+  let z = 0;
+  for (const pav of o.pavs) {
+    const zp = z, { dx, dy } = o.desloc[pav.id] ?? { dx: 0, dy: 0 }, sig = o.sg.get(pav.id) ?? '';
+    const lajes = o.pl.filter(q => q.pav === pav.id);
+    z += pav.altura + Math.max(0, ...lajes.map(o.espLaje));
+    for (const p of o.ps.filter(q => q.pav === pav.id)) {
+      const a = Math.min(p.a, p.b), b = Math.max(p.a, p.b), cod = `${sig}-P${p.num}`;
+      const txt = `${cod} · parede ${(b - a).toFixed(2)} × ${p.H.toFixed(2)} m${p.recortes.length ? ' · ' + p.recortes.map(r => r.tipo).join(', ') : ''} · ${pav.nome}`.replace(/(\d)\.(\d)/g, '$1,$2');
+      const ped: [number, number, number, number][] = [];
+      let s = a;
+      for (const r of [...p.recortes].sort((m, n) => m.dl - n.dl)) {
+        const u0 = Math.max(a, a + r.dl), u1 = Math.min(b, a + r.dl + r.w), h0 = r.base, h1 = r.base + r.h;
+        if (u0 > s + 1e-3) ped.push([s, u0, 0, p.H]);
+        if (h0 > 1e-3) ped.push([u0, u1, 0, h0]);
+        if (h1 < p.H - 1e-3) ped.push([u0, u1, h1, p.H]);
+        s = Math.max(s, u1);
+      }
+      if (b > s + 1e-3) ped.push([s, b, 0, p.H]);
+      for (const [s0, s1, h0, h1] of ped) {
+        const c = p.c + (p.o === 'H' ? dy : dx);
+        const [x0, x1, y0, y1] = p.o === 'H' ? [s0 + dx, s1 + dx, c - T / 2, c + T / 2] : [c - T / 2, c + T / 2, s0 + dy, s1 + dy];
+        out.push({ pav: pav.id, tipo: 'parede', cod, txt, ab: p.recortes.length > 0, grossa: false, x0, y0, z0: zp + h0, x1, y1, z1: zp + h1 });
+      }
+    }
+    for (const q of lajes) {
+      const e = o.espLaje(q), cod = `${sig}-L${q.num}`;
+      out.push({ pav: pav.id, tipo: 'laje', cod, txt: `${cod} · laje ${q.comp.toFixed(2)} × ${q.larg.toFixed(2)} m · ${Math.round(e * 100)} cm · sobre o ${pav.nome}`.replace(/(\d)\.(\d)/g, '$1,$2'), ab: false, grossa: e >= 0.16 - 1e-6,
+        x0: Math.min(q.x0, q.x1) + dx, x1: Math.max(q.x0, q.x1) + dx, y0: Math.min(q.y0, q.y1) + dy, y1: Math.max(q.y0, q.y1) + dy, z0: zp + pav.altura, z1: zp + pav.altura + e });
+    }
+  }
+  return out;
+}
+
+export default function Vista3D(props: Props3D) {
+  const ref = useRef<HTMLDivElement>(null);
+  const cx = useMemo(() => caixas(props), [props]);
+  const [vis, setVis] = useState<Record<string, boolean>>({});
+  const [so, setSo] = useState<string | null>(null);
+  const [verL, setVerL] = useState(true), [verP, setVerP] = useState(true), [sep, setSep] = useState(0);
+  const [sel, setSel] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
+  const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void } | null>(null);
+
+  useEffect(() => {
+    const el = ref.current!; const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
+    const R = new THREE.WebGLRenderer({ antialias: true }); R.setPixelRatio(Math.min(devicePixelRatio, 2)); el.appendChild(R.domElement);
+    const S = new THREE.Scene(); S.background = new THREE.Color(escuro ? 0x1b2027 : 0xeef1f5);
+    const C = new THREE.PerspectiveCamera(40, 1, 0.1, 1000); C.up.set(0, 0, 1);
+    const O = new OrbitControls(C, R.domElement); O.enableDamping = true;
+    S.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.1)); const sol = new THREE.DirectionalLight(0xffffff, 1.3); sol.position.set(-30, -40, 60); S.add(sol);
+    const box = new THREE.BoxGeometry(1, 1, 1), aresta = new THREE.EdgesGeometry(box);
+    const M = { parede: new THREE.MeshLambertMaterial({ color: 0xd9d3c7 }), ab: new THREE.MeshLambertMaterial({ color: 0xe0a458 }), laje: new THREE.MeshLambertMaterial({ color: 0x8fa9c7 }), laje16: new THREE.MeshLambertMaterial({ color: 0x5f87b5 }), sel: new THREE.MeshLambertMaterial({ color: 0xd6336c }) };
+    const EM = new THREE.LineBasicMaterial({ color: 0x2b2b2b, transparent: true, opacity: 0.3 });
+    const grupos = new Map<string, { p: THREE.Group; l: THREE.Group }>(); const pick: THREE.Mesh[] = [];
+    for (const pv of props.pavs) { const g = { p: new THREE.Group(), l: new THREE.Group() }; grupos.set(pv.id, g); S.add(g.p, g.l); }
+    const G = 0.008, bb = new THREE.Box3();
+    for (const c of cx) {
+      const m = new THREE.Mesh(box, c.tipo === 'laje' ? (c.grossa ? M.laje16 : M.laje) : c.ab ? M.ab : M.parede);
+      m.scale.set(Math.max(c.x1 - c.x0 - G, 0.01), Math.max(c.y1 - c.y0 - G, 0.01), c.z1 - c.z0);
+      m.position.set((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, (c.z0 + c.z1) / 2);
+      m.userData = { cod: c.cod, txt: c.txt, mat: m.material };
+      m.add(new THREE.LineSegments(aresta, EM));
+      const g = grupos.get(c.pav)!; (c.tipo === 'laje' ? g.l : g.p).add(m); pick.push(m);
+      bb.expandByPoint(new THREE.Vector3(c.x0, c.y0, c.z0)).expandByPoint(new THREE.Vector3(c.x1, c.y1, c.z1));
+    }
+    const ctr = bb.getCenter(new THREE.Vector3()), tam = bb.getSize(new THREE.Vector3());
+    const chao = new THREE.Mesh(new THREE.PlaneGeometry(tam.x + 30, tam.y + 30), new THREE.MeshLambertMaterial({ color: escuro ? 0x262d36 : 0xdfe4ea }));
+    chao.position.set(ctr.x, ctr.y, bb.min.z - 0.01); S.add(chao);
+    const centrar = () => { const d = Math.max(tam.x, tam.y, tam.z) * 1.6; C.position.set(ctr.x - d * 0.55, ctr.y - d * 1.1, ctr.z + d * 0.7); O.target.copy(ctr); O.update(); };
+    centrar();
+    const marcar = (cod: string | null) => { for (const m of pick) m.material = m.userData.cod === cod ? M.sel : m.userData.mat; };
+    api.current = { grupos, marcar, centrar };
+    const rs = () => { const w = el.clientWidth, h = el.clientHeight; R.setSize(w, h); C.aspect = w / h; C.updateProjectionMatrix(); };
+    const ro = new ResizeObserver(rs); ro.observe(el); rs();
+    const rc = new THREE.Raycaster(), mp = new THREE.Vector2(); let dn: [number, number] | null = null;
+    const down = (e: PointerEvent) => { dn = [e.clientX, e.clientY]; };
+    const up = (e: PointerEvent) => {
+      if (!dn || Math.hypot(e.clientX - dn[0], e.clientY - dn[1]) > 5) return;
+      const r = R.domElement.getBoundingClientRect(); mp.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+      rc.setFromCamera(mp, C);
+      const h = rc.intersectObjects(pick.filter(m => m.parent!.visible), false)[0];
+      const t = h ? (h.object.userData.txt as string) : null; setSel(t); marcar(h ? h.object.userData.cod : null);
+    };
+    R.domElement.addEventListener('pointerdown', down); R.domElement.addEventListener('pointerup', up);
+    let raf = 0; const loop = () => { raf = requestAnimationFrame(loop); O.update(); R.render(S, C); }; loop();
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); el.removeChild(R.domElement); api.current = null; };
+  }, [cx, props.pavs]);
+
+  // visibilidade e separação
+  useEffect(() => {
+    const a = api.current; if (!a) return;
+    props.pavs.forEach((pv, i) => { const g = a.grupos.get(pv.id)!; const v = so ? so === pv.id : vis[pv.id] !== false;
+      g.p.visible = v && verP; g.l.visible = v && verL; g.p.position.z = g.l.position.z = i * sep; });
+  }, [vis, so, verL, verP, sep, props.pavs, cx]);
+
+  const achar = () => {
+    const k = busca.trim().toUpperCase(); if (!k) return;
+    const c = cx.find(x => x.cod.toUpperCase() === k); if (!c) { setSel(`Não achei a peça ${k}`); return; }
+    setSo(null); setVis(v => ({ ...v, [c.pav]: true })); if (c.tipo === 'laje') setVerL(true); else setVerP(true);
+    api.current?.marcar(c.cod); setSel(c.txt);
+  };
+
+  return <div className="vista3d">
+    <div className="v3-painel noprint">
+      <div className="botoes">{props.pavs.map(pv => <button key={pv.id} className={(so ? so === pv.id : vis[pv.id] !== false) ? 'on' : ''}
+        onClick={() => so ? setSo(pv.id) : setVis(v => ({ ...v, [pv.id]: v[pv.id] === false }))}>{pv.nome}</button>)}</div>
+      <div className="botoes">
+        <button className={verP ? 'on' : ''} onClick={() => setVerP(!verP)}>Paredes</button>
+        <button className={verL ? 'on' : ''} onClick={() => setVerL(!verL)}>Lajes</button>
+        <button className={so ? 'on' : ''} onClick={() => setSo(so ? null : props.pavs[0]?.id ?? null)} title="Mostra um pavimento por vez (toque no nome para trocar)">Um pavimento só</button>
+        <button onClick={() => api.current?.centrar()}>Centralizar</button>
+      </div>
+      <label className="v3-sep">Separar pavimentos <input type="range" min={0} max={6} step={0.1} value={sep} onChange={e => setSep(+e.target.value)} /></label>
+      <div className="botoes"><input placeholder="Achar peça (ex.: 1-P84, T-L128)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
+      <div className="v3-leg"><span><i style={{ background: '#d9d3c7' }} />parede</span><span><i style={{ background: '#e0a458' }} />parede com porta/janela</span><span><i style={{ background: '#8fa9c7' }} />laje</span><span><i style={{ background: '#5f87b5' }} />laje 16 cm ou mais</span></div>
+      <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · toque numa peça para ver o código.</p>
+    </div>
+    <div className="v3-tela" ref={ref}>{sel && <div className="v3-info">{sel}</div>}</div>
+  </div>;
+}

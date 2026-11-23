@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
 import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
@@ -6,6 +6,7 @@ import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro,
 import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
 import { gerarIfc } from './engine/ifc.ts';
+const Vista3D = lazy(() => import('./Vista3D.tsx'));
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
@@ -27,7 +28,7 @@ import qrcode from 'qrcode-generator';
 import { escurecerDxf } from './engine/cores.ts';
 import type { Projeto, Config, Pasta } from './db.ts';
 
-type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento' | 'acompanhamento';
+type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento' | 'acompanhamento' | 'v3d';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
 // mesma planta em DWG (converte o DXF gerado)
 const baixarDwg = async (nome: string, dxf: string) => {
@@ -436,7 +437,17 @@ export default function App() {
   }, [leitura, pavs, quadro, regras, aj]);
   const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
   const [modoImp, setModoImp] = useState<'folhas' | 'etiquetas'>('folhas');
-  const [pavsImp, setPavsImp] = useState<string[]>([]);   // imprimir só estes pavimentos (vazio = todos)
+  const [pavsImp, setPavsImp] = useState<string[]>([]);
+  // deslocamento de cada pavimento para ficar em cima do de baixo (mesmo encaixe da laje): 3D e IFC
+  const desloc3d = useMemo(() => {
+    const d: Record<string, { dx: number; dy: number }> = {};
+    ativos.forEach((p, i) => { if (!i) { d[p.id] = { dx: 0, dy: 0 }; return; } const b = ativos[i - 1], db = d[b.id], en = calc.encaixes[p.id];
+      d[p.id] = en ? { dx: db.dx + en.x - p.box.x0 + b.box.x0, dy: db.dy + en.y - p.box.y0 + b.box.y0 } : { dx: db.dx + b.box.x0 - p.box.x0, dy: db.dy + b.box.y0 - p.box.y0 }; });
+    return d;
+  }, [ativos, calc]);
+  const espParede3d = (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025) + 0.01;
+  const props3d = useMemo(() => ({ pavs: ativos, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos) }),
+    [ativos, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
   const [notaRev, setNotaRev] = useState('');
@@ -505,7 +516,7 @@ export default function App() {
       montadas={Object.values(montagem).filter(m => m.status === 'montada').length} total={prod?.pecas.length ?? 0}
       sair={() => { setQrAtivo(false); history.replaceState(null, '', location.pathname); }} />;
   }
-  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['fundacao', '10. Fundação'], ['orcamento', '11. Orçamento'], ['acompanhamento', '12. Produção e obra']];
+  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['fundacao', '10. Fundação'], ['orcamento', '11. Orçamento'], ['acompanhamento', '12. Produção e obra'], ['v3d', '13. Ver em 3D']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
     <div className="app">
@@ -1056,6 +1067,12 @@ export default function App() {
           <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl).map((l, i) => ({ ...l, paredes: l.paredes + calc.orcExtra.filter(x => x.pav === ativos[i].id).reduce((s, x) => s + x.area, 0) }))} ativos={ativos} pl={calc.pl} areaPav={calc.areaPav} regras={regras} setRegras={setRegras} nome={projNome || nome} />
           </>
         )}
+        {aba === 'v3d' && leitura && (
+          <section className="card">
+            <h2>Ver em 3D</h2>
+            {calc.ps.length || calc.pl.length ? <Suspense fallback={<p>Carregando o 3D…</p>}><Vista3D {...props3d} /></Suspense> : <p>Marque as plantas na aba Desenhos para ver o 3D.</p>}
+          </section>
+        )}
         {aba === 'impressao' && leitura && (
           <section>
             <div className="card noprint">
@@ -1079,13 +1096,9 @@ export default function App() {
                 <button onClick={() => baixarDwg(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries((pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos).map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2))}>Baixar DWG da modulação</button>
                 <button onClick={() => baixarPdf(nome.replace(/\.dxf$/i, '') + '-modulacao.dxf', exportarDxf(pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos, calc.ps, calc.pl, (regras.motor ?? 1) >= 2 && leitura ? Object.fromEntries((pavsImp.length ? ativos.filter(p => pavsImp.includes(p.id)) : ativos).map(p => [p.id, { prims: arqDe(p.box), textos: leitura.textos.filter(t => t.x > p.box.x0 - 0.6 && t.x < p.box.x1 + 0.6 && t.y > p.box.y0 - 0.6 && t.y < p.box.y1 + 0.6) }])) : {}, (regras.motor ?? 1) >= 2 ? calc.vigas : [], regras.vigaLargura, (regras.motor ?? 1) >= 2), { titulo: 'MODULAÇÃO', sub: projNome || nome.replace(/\.dxf$/i, '') }, true)}>Baixar PDF da modulação</button>
                 {(regras.motor ?? 1) >= 2 && <button title="Paredes, portas, janelas e lajes em 3D, cada peça com o código da etiqueta (abre no visualizador 3D do sistema de gestão, Revit, BIMvision…)" onClick={() => {
-                  // deslocamento de cada pavimento para ficar em cima do de baixo (mesmo encaixe da laje)
-                  const desloc: Record<string, { dx: number; dy: number }> = {};
-                  ativos.forEach((p, i) => { if (!i) { desloc[p.id] = { dx: 0, dy: 0 }; return; } const b = ativos[i - 1], d = desloc[b.id], en = calc.encaixes[p.id];
-                    desloc[p.id] = en ? { dx: d.dx + en.x - p.box.x0 + b.box.x0, dy: d.dy + en.y - p.box.y0 + b.box.y0 } : { dx: d.dx + b.box.x0 - p.box.x0, dy: d.dy + b.box.y0 - p.box.y0 }; });
                   const n = (projNome || nome).replace(/\.(dxf|dwg|pdf|json)$/i, '');
                   baixar(n + (pavsImp.length ? ' - ' + ativos.filter(p => pavsImp.includes(p.id)).map(p => p.nome).join(', ') : '') + '.ifc',
-                    gerarIfc({ nome: n, pavs: ativos, so: pavsImp, desloc, ps: calc.ps, pl: calc.pl, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025) + 0.01, sg: siglas(ativos) }), 'application/x-step');
+                    gerarIfc({ ...props3d, nome: n, so: pavsImp }), 'application/x-step');
                 }}>Baixar IFC (3D)</button>}
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-paineis.csv', exportarCsv(calc.ps, ativos, calc.pl, (regras.motor ?? 1) >= 2 ? quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj)) : []) + ((regras.motor ?? 1) >= 2 ? csvTrelicas(ativos, calc, aj, regras.perda ?? 10) : ''), 'text/csv')}>Baixar lista de painéis (CSV)</button>
                 {prod && <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-producao.csv', csvProducao(prod, ativos), 'text/csv')}>Baixar planilha de produção (CSV)</button>}

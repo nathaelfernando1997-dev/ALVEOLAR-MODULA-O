@@ -261,3 +261,13 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .so-etq textarea { width: 100%; font: inherit; }
 .pavs-imp { align-items: center; gap: 12px; margin-top: 6px; }
 .pavs-imp label { display: inline-flex; align-items: center; gap: 4px; }
+.vista3d { display: flex; flex-direction: column; gap: 8px; }
+.v3-painel .botoes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.v3-painel input:not([type=range]) { min-width: 220px; }
+.v3-sep { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.v3-sep input { flex: 1; max-width: 320px; }
+.v3-leg { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; opacity: .85; }
+.v3-leg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.v3-tela { position: relative; height: min(72vh, 820px); min-height: 360px; border-radius: 8px; overflow: hidden; }
+.v3-info { position: absolute; left: 10px; bottom: 10px; background: rgba(255,255,255,.92); color: #222; border: 1px solid #ccd; border-radius: 6px; padding: 5px 9px; font-size: 13px; pointer-events: none; }
+.v3-painel .botoes button.on { background: #1f4e79; border-color: #1f4e79; color: #fff; }
