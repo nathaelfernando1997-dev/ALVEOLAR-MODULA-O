@@ -192,7 +192,9 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const podeH = a.apoio.o && a.apoio.l, podeV = a.apoio.s && a.apoio.n;
     // projeção da laje (beiral) do lado de fora: até onde a laje vai além da parede
     // o beiral não pode entrar em outro ambiente com laje
-    const invade = (x0: number, x1: number, y0: number, y1: number) => ambs.some(b => b !== a && b.pav === a.pav && !fora.includes(b.id) &&
+    // laje mais alta (ambiente com pé-direito próprio) pode avançar por cima da laje mais baixa do lado
+    const altA = aj.peAmb?.[a.id] ?? 0, maisBaixo = (b: Ambiente) => (aj.peAmb?.[b.id] ?? 0) < altA - 0.3;
+    const invade = (x0: number, x1: number, y0: number, y1: number) => ambs.some(b => b !== a && b.pav === a.pav && !fora.includes(b.id) && !maisBaixo(b) &&
       Math.min(b.x1, x1) - Math.max(b.x0, x0) > 0.05 && Math.min(b.y1, y1) - Math.max(b.y0, y0) > 0.05);
     const latOk = <B extends { c: number }>(l: 'o' | 'l' | 's' | 'n', b: B | null): B | null => {
       if (!b) return null;
@@ -203,7 +205,7 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
       const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? -1 : 1;
       const [r0, r1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
       // lado de fora: fora da planta ou encostado num ambiente sem laje (corredor, área externa marcada sem laje)
-      const semLajeAoLado = ambs.some(b => b !== a && b.pav === a.pav && fora.includes(b.id) && (
+      const semLajeAoLado = ambs.some(b => b !== a && b.pav === a.pav && (fora.includes(b.id) || maisBaixo(b)) && (
         lado === 'o' ? Math.abs(b.x1 - a.x0) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.5 * (a.y1 - a.y0)
         : lado === 'l' ? Math.abs(b.x0 - a.x1) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.5 * (a.y1 - a.y0)
         : lado === 's' ? Math.abs(b.y1 - a.y0) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.5 * (a.x1 - a.x0)

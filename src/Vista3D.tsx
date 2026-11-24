@@ -66,30 +66,44 @@ export default function Vista3D(props: Props3D) {
 
   useEffect(() => {
     const el = ref.current!; const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
-    const R = new THREE.WebGLRenderer({ antialias: true }); R.setPixelRatio(Math.min(devicePixelRatio, 2)); el.appendChild(R.domElement);
-    const S = new THREE.Scene(); S.background = new THREE.Color(escuro ? 0x1b2027 : 0xeef1f5);
-    const C = new THREE.PerspectiveCamera(40, 1, 0.1, 1000); C.up.set(0, 0, 1);
-    const O = new OrbitControls(C, R.domElement); O.enableDamping = true;
-    S.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.1)); const sol = new THREE.DirectionalLight(0xffffff, 1.3); sol.position.set(-30, -40, 60); S.add(sol);
+    const R = new THREE.WebGLRenderer({ antialias: true, alpha: true }); R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x000000, 0);
+    R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.9; el.appendChild(R.domElement);
+    const S = new THREE.Scene();   // fundo em degradê vem do CSS (.v3-tela)
+    const C = new THREE.PerspectiveCamera(35, 1, 0.1, 2000); C.up.set(0, 0, 1);
+    const O = new OrbitControls(C, R.domElement); O.enableDamping = true; O.dampingFactor = 0.08; O.maxPolarAngle = Math.PI * 0.495;
+    const hemi = new THREE.HemisphereLight(0xf4f7fb, escuro ? 0x2a2f36 : 0xc8c2b6, escuro ? 1.2 : 1.25); hemi.position.set(0, 0, 1); S.add(hemi);
+    const sol = new THREE.DirectionalLight(0xfff4e6, escuro ? 2.0 : 2.6); sol.castShadow = true; sol.shadow.mapSize.set(4096, 4096); sol.shadow.bias = -0.0004; sol.shadow.normalBias = 0.02; sol.shadow.radius = 4; S.add(sol, sol.target);
+    const luz2 = new THREE.DirectionalLight(0xdfe8f5, 0.6); luz2.position.set(40, 30, 25); S.add(luz2);   // luz de preenchimento do outro lado
     const box = new THREE.BoxGeometry(1, 1, 1), aresta = new THREE.EdgesGeometry(box);
-    const M = { parede: new THREE.MeshLambertMaterial({ color: 0xd9d3c7 }), ab: new THREE.MeshLambertMaterial({ color: 0xe0a458 }), laje: new THREE.MeshLambertMaterial({ color: 0x8fa9c7 }), laje16: new THREE.MeshLambertMaterial({ color: 0x5f87b5 }), sel: new THREE.MeshLambertMaterial({ color: 0xd6336c }) };
-    const EM = new THREE.LineBasicMaterial({ color: 0x2b2b2b, transparent: true, opacity: 0.3 });
+    const mat = (c: number, r = 0.92) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0 });
+    const M = { parede: mat(0xece6db), ab: mat(0xddd3c2), laje: mat(0xa7afb8, 0.85), laje16: mat(0x87929e, 0.85), sel: mat(0x2f7de1, 0.6) };
+    const EM = new THREE.LineBasicMaterial({ color: escuro ? 0x0d1014 : 0x55524c, transparent: true, opacity: escuro ? 0.5 : 0.32 });
     const grupos = new Map<string, { p: THREE.Group; l: THREE.Group }>(); const pick: THREE.Mesh[] = [];
     for (const pv of props.pavs) { const g = { p: new THREE.Group(), l: new THREE.Group() }; grupos.set(pv.id, g); S.add(g.p, g.l); }
-    const G = 0.008, bb = new THREE.Box3();
+    const G = 0.006, bb = new THREE.Box3();
     for (const c of cx) {
       const m = new THREE.Mesh(box, c.tipo === 'laje' ? (c.grossa ? M.laje16 : M.laje) : c.ab ? M.ab : M.parede);
       m.scale.set(Math.max(c.x1 - c.x0 - G, 0.01), Math.max(c.y1 - c.y0 - G, 0.01), c.z1 - c.z0);
       m.position.set((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, (c.z0 + c.z1) / 2);
+      m.castShadow = m.receiveShadow = true;
       m.userData = { cod: c.cod, txt: c.txt, mat: m.material };
       m.add(new THREE.LineSegments(aresta, EM));
       const g = grupos.get(c.pav)!; (c.tipo === 'laje' ? g.l : g.p).add(m); pick.push(m);
       bb.expandByPoint(new THREE.Vector3(c.x0, c.y0, c.z0)).expandByPoint(new THREE.Vector3(c.x1, c.y1, c.z1));
     }
-    const ctr = bb.getCenter(new THREE.Vector3()), tam = bb.getSize(new THREE.Vector3());
-    const chao = new THREE.Mesh(new THREE.PlaneGeometry(tam.x + 30, tam.y + 30), new THREE.MeshLambertMaterial({ color: escuro ? 0x262d36 : 0xdfe4ea }));
-    chao.position.set(ctr.x, ctr.y, bb.min.z - 0.01); S.add(chao);
-    const centrar = () => { const d = Math.max(tam.x, tam.y, tam.z) * 1.6; C.position.set(ctr.x - d * 0.55, ctr.y - d * 1.1, ctr.z + d * 0.7); O.target.copy(ctr); O.update(); };
+    const ctr = bb.getCenter(new THREE.Vector3()), tam = bb.getSize(new THREE.Vector3()), raio = Math.max(tam.x, tam.y, tam.z, 1);
+    // sol de fim de tarde vindo da frente-esquerda; a sombra cobre o prédio todo
+    sol.position.set(ctr.x - raio * 0.8, ctr.y - raio * 1.1, ctr.z + raio * 1.3); sol.target.position.copy(ctr);
+    const sc = sol.shadow.camera; sc.left = sc.bottom = -raio * 1.1; sc.right = sc.top = raio * 1.1; sc.near = 0.5; sc.far = raio * 5; sc.updateProjectionMatrix();
+    // chão: piso claro que recebe sombra + malha de 1 m bem leve
+    const LC = Math.max(tam.x, tam.y) + 40;
+    const chao = new THREE.Mesh(new THREE.PlaneGeometry(LC * 3, LC * 3), new THREE.MeshStandardMaterial({ color: escuro ? 0x20262e : 0xe9ecef, roughness: 1 }));
+    chao.position.set(ctr.x, ctr.y, bb.min.z - 0.012); chao.receiveShadow = true; S.add(chao);
+    const grade = new THREE.GridHelper(Math.ceil(LC), Math.ceil(LC), escuro ? 0x39424d : 0xd3d8de, escuro ? 0x2b323b : 0xdde1e6);
+    grade.rotation.x = Math.PI / 2; grade.position.set(ctr.x, ctr.y, bb.min.z - 0.008);
+    (grade.material as THREE.Material).transparent = true; (grade.material as THREE.Material).opacity = 0.7; S.add(grade);
+    S.fog = new THREE.Fog(escuro ? 0x1b2027 : 0xe9ecef, raio * 4, raio * 9);
+    const centrar = () => { const d = raio * 1.5; C.position.set(ctr.x - d * 0.55, ctr.y - d * 1.1, ctr.z + d * 0.7); O.target.copy(ctr); O.update(); };
     centrar();
     const marcar = (cod: string | null) => { for (const m of pick) m.material = m.userData.cod === cod ? M.sel : m.userData.mat; };
     api.current = { grupos, marcar, centrar };
@@ -106,7 +120,7 @@ export default function Vista3D(props: Props3D) {
     };
     R.domElement.addEventListener('pointerdown', down); R.domElement.addEventListener('pointerup', up);
     let raf = 0; const loop = () => { raf = requestAnimationFrame(loop); O.update(); R.render(S, C); }; loop();
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); el.removeChild(R.domElement); api.current = null; };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EM.dispose(); chao.geometry.dispose(); grade.dispose(); el.removeChild(R.domElement); api.current = null; };
   }, [cx, props.pavs]);
 
   // visibilidade e separação
@@ -135,7 +149,7 @@ export default function Vista3D(props: Props3D) {
       </div>
       <label className="v3-sep">Separar pavimentos <input type="range" min={0} max={6} step={0.1} value={sep} onChange={e => setSep(+e.target.value)} /></label>
       <div className="botoes"><input placeholder="Achar peça (ex.: 1-P84, T-L128)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
-      <div className="v3-leg"><span><i style={{ background: '#d9d3c7' }} />parede</span><span><i style={{ background: '#e0a458' }} />parede com porta/janela</span><span><i style={{ background: '#8fa9c7' }} />laje</span><span><i style={{ background: '#5f87b5' }} />laje 16 cm ou mais</span></div>
+      <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span></div>
       <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · toque numa peça para ver o código.</p>
     </div>
     <div className="v3-tela" ref={ref}>{sel && <div className="v3-info">{sel}</div>}</div>

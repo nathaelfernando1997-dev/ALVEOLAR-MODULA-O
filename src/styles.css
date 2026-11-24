@@ -267,8 +267,10 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .v3-sep { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .v3-sep input { flex: 1; max-width: 320px; }
 .v3-leg { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; opacity: .85; }
-.v3-leg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
-.v3-tela { position: relative; height: min(72vh, 820px); min-height: 360px; border-radius: 8px; overflow: hidden; }
+.v3-leg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; border: 1px solid #0003; margin-right: 4px; vertical-align: -1px; }
+.v3-tela { position: relative; height: min(72vh, 820px); min-height: 360px; border-radius: 10px; overflow: hidden; border: 1px solid #d8dde3;
+  background: linear-gradient(180deg, #c9d7e6 0%, #eef2f6 58%, #e6eaee 100%); }
+@media (prefers-color-scheme: dark) { .v3-tela { border-color: #2c333c; background: linear-gradient(180deg, #11161c 0%, #1b2027 60%, #1b2027 100%); } }
 .v3-info { position: absolute; left: 10px; bottom: 10px; background: rgba(255,255,255,.92); color: #222; border: 1px solid #ccd; border-radius: 6px; padding: 5px 9px; font-size: 13px; pointer-events: none; }
 .v3-painel .botoes button.on { background: #1f4e79; border-color: #1f4e79; color: #fff; }
 /* fundação em passos */
