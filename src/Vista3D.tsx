@@ -85,7 +85,7 @@ export default function Vista3D(props: Props3D) {
       const m = new THREE.Mesh(box, c.tipo === 'laje' ? (c.grossa ? M.laje16 : M.laje) : c.ab ? M.ab : M.parede);
       m.scale.set(Math.max(c.x1 - c.x0 - G, 0.01), Math.max(c.y1 - c.y0 - G, 0.01), c.z1 - c.z0);
       m.position.set((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, (c.z0 + c.z1) / 2);
-      m.castShadow = m.receiveShadow = true;
+      m.castShadow = true; m.receiveShadow = c.tipo === 'laje';   // parede não recebe sombra: a luz rasante fazia riscos (acne) nas faces
       m.userData = { cod: c.cod, txt: c.txt, mat: m.material };
       m.add(new THREE.LineSegments(aresta, EM));
       const g = grupos.get(c.pav)!; (c.tipo === 'laje' ? g.l : g.p).add(m); pick.push(m);
