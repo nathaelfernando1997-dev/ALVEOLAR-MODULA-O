@@ -917,7 +917,7 @@ export default function App() {
             const sgF = siglas(ativos), codF = (p: Painel) => codigoParede(p, sgF);
             const eb = regras.esperaBorda ?? 0.2, ee = regras.esperaEspac ?? 1.2, es = esperasPaineis(psf, codF, eb, ee);
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
-            const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box);
+            const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box).filter(q => q.layer === camada || q.layer === 'PAREDE');   // fundação: só as paredes (planta limpa, como no Eberick)
             const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = '';
             const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}), qtd: pts.length }, qe = quantEstaca(oe), dfT = fundacaoTecnico(ob, oe);
             const setEstaca = (k: keyof typeof ESTACA_PADRAO, v: number) => setRegras({ ...regras, estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), [k]: v } });
