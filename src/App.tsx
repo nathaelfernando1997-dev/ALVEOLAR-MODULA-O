@@ -181,6 +181,8 @@ export default function App() {
   };
 
   const leitura = useMemo(() => (dxf ? ler(dxf, camada) : null), [dxf, camada]);
+  // arquitetura sem as letras explodidas em linhas (texto do projeto vira só sujeira na planta)
+  const arqLimpa = useMemo(() => (leitura ? semLetras(leitura.prims, camada) : []), [leitura, camada]);
 
   // carrega um DXF (texto) com a configuração salva, ou monta a configuração inicial
   // mescla ajustes salvos de outra versão do mesmo arquivo: cada desenho é reconhecido pela posição (não pelo número),
@@ -508,7 +510,7 @@ export default function App() {
     }
     return out;
   };
-  const arqDe = (box: Box): Prim[] => leitura ? [...leitura.prims.filter(p => p.pts.every(q => q[0] > box.x0 - 0.6 && q[0] < box.x1 + 0.6 && q[1] > box.y0 - 0.6 && q[1] < box.y1 + 0.6)),
+  const arqDe = (box: Box): Prim[] => leitura ? [...arqLimpa.filter(p => p.pts.every(q => q[0] > box.x0 - 0.6 && q[0] < box.x1 + 0.6 && q[1] > box.y0 - 0.6 && q[1] < box.y1 + 0.6)),
     ...(aj.paredesManuais || []).filter(m => { const [x, y] = m.o === 'H' ? [(m.a + m.b) / 2, m.c] : [m.c, (m.a + m.b) / 2]; return x > box.x0 - 0.6 && x < box.x1 + 0.6 && y > box.y0 - 0.6 && y < box.y1 + 0.6; }).flatMap(paredeDesenho)] : [];
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
@@ -871,7 +873,7 @@ export default function App() {
             const sgF = siglas(ativos), codF = (p: Painel) => codigoParede(p, sgF);
             const eb = regras.esperaBorda ?? 0.2, ee = regras.esperaEspac ?? 1.2, es = esperasPaineis(psf, codF, eb, ee);
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
-            const base = nome.replace(/\.dxf$/i, ''), arqF = semLetras(arqDe(pf.box), camada);
+            const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box);
             const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = '';
             const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}), qtd: pts.length }, qe = quantEstaca(oe), dfT = fundacaoTecnico(ob, oe);
             const setEstaca = (k: keyof typeof ESTACA_PADRAO, v: number) => setRegras({ ...regras, estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), [k]: v } });
