@@ -371,3 +371,38 @@ export function detalhesSvg(r: { esp: number; lajeEsp: number; apoio: number; ap
     T(600, 560 + le + 115, 'posição e comprimento: folha de treliças', 28, '#7a3fb0', 'middle'));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 ${3 * BW + 140} ${2 * BH + 80}">${s.join('')}</svg>`;
 }
+
+// tira da arquitetura as letras "explodidas" em linhas (nome de ambiente, área, cotas, tags) e os pontinhos soltos.
+// Letra = grupo de traços ligados, pequeno (< 25 cm) e com quina ou curva forte; traço reto sozinho só sai se está colado numa letra.
+// Tracejado de porta (arco) e de projeção ficam: são traços quase retos e afastados entre si.
+export function semLetras(arq: Prim[], camadaParede = ''): Prim[] {
+  const T = 0.003, kk = (q: number[]) => `${Math.round(q[0] / T)}|${Math.round(q[1] / T)}`;
+  const par = arq.map((_, i) => i), f = (i: number): number => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  const grid = new Map<string, number>();
+  arq.forEach((p, i) => { for (const q of [p.pts[0], p.pts[p.pts.length - 1]]) { const x = Math.round(q[0] / T), y = Math.round(q[1] / T);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const j = grid.get(`${x + dx}|${y + dy}`); if (j !== undefined) par[f(i)] = f(j); }
+    grid.set(`${x}|${y}`, i); } });
+  const comp = new Map<number, number[]>(); arq.forEach((_, i) => { const r = f(i), a = comp.get(r); if (a) a.push(i); else comp.set(r, [i]); });
+  const giro = (ax: number, ay: number, bx: number, by: number) => Math.abs(((Math.atan2(by, bx) - Math.atan2(ay, ax) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+  const letra = (ids: number[]) => {
+    const pontas = new Map<string, [number[], number[]][]>(); let tot = 0, mx = 0;
+    for (const i of ids) { const v = arq[i].pts;
+      for (let j = 1; j < v.length - 1; j++) { const t = giro(v[j][0] - v[j - 1][0], v[j][1] - v[j - 1][1], v[j + 1][0] - v[j][0], v[j + 1][1] - v[j][1]); tot += t; mx = Math.max(mx, t); }
+      if (v.length < 2) continue;
+      for (const [q, o] of [[v[0], v[1]], [v[v.length - 1], v[v.length - 2]]]) { const k = kk(q); pontas.set(k, [...(pontas.get(k) ?? []), [q, o]]); } }
+    for (const l of pontas.values()) { if (l.length >= 3) return true;
+      if (l.length === 2) { const [[q, o1], [, o2]] = l; const t = giro(q[0] - o1[0], q[1] - o1[1], o2[0] - q[0], o2[1] - q[1]); tot += t; mx = Math.max(mx, t); } }
+    return mx > 35 * Math.PI / 180 || tot > 80 * Math.PI / 180;
+  };
+  const peq: { ids: number[]; b: number[]; c: boolean }[] = [];
+  for (const ids of comp.values()) {
+    if (ids.some(i => arq[i].layer === camadaParede)) continue;
+    const xs = ids.flatMap(i => arq[i].pts.map(q => q[0])), ys = ids.flatMap(i => arq[i].pts.map(q => q[1]));
+    const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], tam = Math.max(b[2] - b[0], b[3] - b[1]);
+    if (tam < 0.25) peq.push({ ids, b, c: tam < 0.03 || letra(ids) });
+  }
+  const cert = peq.filter(p => p.c).map(p => p.b), M = 0.06;
+  const tira = new Set<number>();
+  for (const p of peq) if (p.c || cert.some(c => p.b[0] - M < c[2] && c[0] < p.b[2] + M && p.b[1] - M < c[3] && c[1] < p.b[3] + M)) p.ids.forEach(i => tira.add(i));
+  return arq.filter((_, i) => !tira.has(i));
+}
