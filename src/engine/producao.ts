@@ -1,7 +1,7 @@
 // Informações de produção e montagem: etiqueta e orientação de cada painel, sequência de montagem,
 // peso e cargas (romaneio), escoramento das lajes e conferência automática.
 import type { Painel, Pavimento, Regras } from './model.ts';
-import { areaPainel } from './model.ts';
+import { areaPainel, larguraMaxDe } from './model.ts';
 import type { LajeAmb, PainelLaje } from './lajes.ts';
 import { areaLaje } from './lajes.ts';
 
@@ -146,7 +146,9 @@ export function conferencia(pavs: Pavimento[], ps: Painel[], lj: LajeAmb[], r: R
   const out: Alerta[] = [], nomePav = new Map(pavs.map(p => [p.id, p.nome]));
   for (const p of ps) {
     const onde = `${nomePav.get(p.pav)} · painel ${p.num}`;
-    if (p.larg > r.larguraMax + 1e-6) {
+    const alta = larguraMaxDe(r, p.H) < r.larguraMax;
+    if (alta && p.larg > larguraMaxDe(r, p.H) + 1e-6) out.push({ nivel: 'erro', onde, texto: `largura ${br(p.larg)} m acima de ${br(larguraMaxDe(r, p.H))} m (painel com ${br(p.H)} m de altura)` });
+    else if (p.larg > r.larguraMax + 1e-6) {
       if (r.larguraExcecao && p.larg <= r.larguraExcecao + 1e-6) out.push({ nivel: 'atencao', onde, texto: `largura ${br(p.larg)} m acima de ${br(r.larguraMax)} m — fabricar por exceção (autorizada até ${br(r.larguraExcecao)} m)` });
       else out.push({ nivel: 'erro', onde, texto: `largura ${br(p.larg)} m acima do máximo de ${br(r.larguraMax)} m` });
     }

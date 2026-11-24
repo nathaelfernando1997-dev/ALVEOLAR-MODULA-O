@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, chaveNumParede, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { areaPainel, larguraMaxDe, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, chaveNumParede, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, semLetras, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
@@ -386,11 +386,23 @@ export default function App() {
     // - em volta de área descoberta (laje impermeável sem cobertura): a parede sobe até o topo da platibanda
     // pé-direito próprio de ambiente (ex.: sala de 4,00): os painéis em volta dele sobem; no orçamento entra a área a mais
     const peEsp = Object.entries(aj.peAmb || {}).map(([id, H]) => ({ L: vazio.lajes.find(a => a.id === id), H })).filter((x): x is { L: LajeAmb; H: number } => !!x.L && x.H > 0);
-    for (const P of vazio.ps) {
+    const sobePe = (ps: Painel[]) => { for (const P of ps) {
       const m = (P.a + P.b) / 2, d = 0.3;
       const lados: [number, number][] = P.o === 'H' ? [[m, P.c - d], [m, P.c + d]] : [[P.c - d, m], [P.c + d, m]];
       const alvo = Math.max(0, ...peEsp.filter(({ L }) => L.pav === P.pav && lados.some(([x, y]) => x > L.x0 && x < L.x1 && y > L.y0 && y < L.y1)).map(x => x.H));
       if (alvo > P.H) { P.H = alvo; P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(alvo)} m: pé-direito do ambiente`; }
+    } };
+    sobePe(vazio.ps);
+    // parede que subiu e passou da largura de painel alto (acima de 3,00 m: até 3,00 de largura): divide a parede de novo
+    const Halto: Record<string, { a: number; b: number; H: number }[]> = {};
+    if (vazio.ps.some(P => P.larg > larguraMaxDe(regras, P.H) + 1e-6))
+      for (const P of vazio.ps) if (larguraMaxDe(regras, P.H) < regras.larguraMax) (Halto[P.trecho] ??= []).push({ a: P.a, b: P.b, H: P.H });
+    if (Object.keys(Halto).length) {
+      const tr = vazio.ts.filter(t => Halto[t.id] !== undefined), r2 = paineis(tr, regras, aj, Halto);
+      vazio.ps = [...vazio.ps.filter(P => Halto[P.trecho] === undefined), ...r2.paineis];
+      vazio.vaos = [...vazio.vaos.filter(v => Halto[v.trecho] === undefined), ...r2.vaos];
+      for (const pv of ativos) if (aj.telhado?.[pv.id]) aplicarTelhado(r2.paineis.filter(P => P.pav === pv.id), aj.telhado[pv.id], aj.alturaPainel);
+      sobePe(r2.paineis);
     }
     for (const { L, H } of peEsp) for (const t of vazio.ts.filter(t => t.pav === L.pav && H > t.H)) {
       const lim = t.o === 'H' ? [L.y0, L.y1] : [L.x0, L.x1], [s0, s1] = t.o === 'H' ? [L.x0, L.x1] : [L.y0, L.y1];
@@ -665,7 +677,7 @@ export default function App() {
             <h3>Paredes</h3>
             <div className="grade">
               {([
-                ['larguraMax', 'Largura máxima do painel (m)'], ['larguraExcecao', 'Exceção: fabricar painel mais largo até (m) — 0 = não'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['isoporLarg', 'Isopor: largura (m)'], ['isoporAlt', 'Isopor: altura (m)'], ['isoporComp', 'Isopor: comprimento da barra (m)'], ['isoporEspaco', 'Concreto entre um isopor e outro (m)'], ['capeamento', 'Capeamento em cima e embaixo do isopor (m)'], ['perda', 'Perda no isopor e no concreto (%)'], ['folga', 'Diminuir de cada painel (m)'],
+                ['larguraMax', 'Largura máxima do painel (m)'], ['larguraExcecao', 'Exceção: fabricar painel mais largo até (m) — 0 = não'], ['alturaAlta', 'Parede alta: altura acima de (m)'], ['larguraAlta', 'Parede alta: largura máxima do painel (m) — 0 = não limita'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['isoporLarg', 'Isopor: largura (m)'], ['isoporAlt', 'Isopor: altura (m)'], ['isoporComp', 'Isopor: comprimento da barra (m)'], ['isoporEspaco', 'Concreto entre um isopor e outro (m)'], ['capeamento', 'Capeamento em cima e embaixo do isopor (m)'], ['perda', 'Perda no isopor e no concreto (%)'], ['folga', 'Diminuir de cada painel (m)'],
                 ['boneca', 'Boneca de transporte nas laterais e embaixo (m)'], ['acrescimoLargura', 'Vão de porta/janela maior em (m)'],
                 ['janelaDesce', 'Janela: recorte desce e sobe (m)'], ['espMin', 'Espessura mínima de parede (m)'], ['espMax', 'Espessura máxima de parede (m)'],
                 ['minParede', 'Trecho mínimo de parede (m)'], ['naoFabricar', 'Marcar "n fabricar" abaixo de (m)'],

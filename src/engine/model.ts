@@ -10,6 +10,8 @@ export interface Regras {
   estaca?: { furo: number; comp: number; armDiam: number; armComp: number; barras: number; bitLong: number; bitEstr: number; espEstr: number; transpEstr: number; barra: number };   // estaca escavada
   esperaBorda?: number;    // esperas dos painéis na fundação: distância da ponta do painel (m)
   esperaEspac?: number;    // esperas: espaçamento máximo entre elas (m)      // planta de fundação: espaçamento máximo entre pontos ao longo da parede (0 = só cantos, encontros, pontas e colunas)
+  larguraAlta?: number;    // painel mais alto que alturaAlta: largura máxima menor (3,00); 0 = não limita
+  alturaAlta?: number;     // 3,00 (pé-direito acima disso é parede alta)
   larguraExcecao?: number; // painel acima da largura máxima, até esta medida, é fabricado por exceção (só aviso na conferência)
   coluna: number;          // 0,15 entre painéis
   folga: number;           // 0,05 tirado de cada painel
@@ -67,6 +69,7 @@ export interface Regras {
 // a não ser que o usuário tenha desligado o cálculo novo nele
 export function regrasDoSalvo(s?: Partial<Regras>): Regras {
   const r = { ...REGRAS_PADRAO, ...s };
+  if (s && s.larguraAlta === undefined) r.larguraAlta = 0;   // projeto salvo antes da regra: não muda sozinho (liga na aba Regras)
   if (s?.isoporComp === 3) r.isoporComp = REGRAS_PADRAO.isoporComp;   // 3 m era o padrão antigo (antes da medida informada)
   // painel de laje: o padrão antigo era 3,00 x 5,00; a regra da Alveolar é no máximo 2,50 x 4,00
   if (s?.lajeComp === 5) r.lajeComp = REGRAS_PADRAO.lajeComp;
@@ -77,8 +80,11 @@ export function regrasDoSalvo(s?: Partial<Regras>): Regras {
   return { ...r, motor: s?.motorFixo ? (s.motor ?? 1) : REGRAS_PADRAO.motor, paredeDominante: s ? !!s.paredeDominante : true };
 }
 
+// largura máxima do painel pela altura: parede mais alta que o pé-direito comum (3,00) tem limite menor
+export const larguraMaxDe = (r: Regras, H: number) => r.larguraAlta && H > (r.alturaAlta ?? 3) + 1e-6 ? Math.min(r.larguraMax, r.larguraAlta) : r.larguraMax;
+
 export const REGRAS_PADRAO: Regras = {
-  larguraMax: 3.5, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
+  larguraMax: 3.5, larguraAlta: 3.0, alturaAlta: 3.0, coluna: 0.15, folga: 0.05, boneca: 0.10, acrescimoLargura: 0.10, janelaDesce: 0.05,
   espMin: 0.12, espMax: 0.27, minParede: 0.12, naoFabricar: 0.25,
   pinarAuto: false, lajeComp: 4.0, lajeLarg: 2.5, lajeApoio: 0.06, lajeApoioBorda: 0.10, lajeFolga: 0.02, lajeEsp: 0.15, platibanda: 0.40,
   vigaAltura: 0.30, vigaLargura: 0.15, vigaApoio: 0.20, vigaPisoAbaixo: 0.45, motor: 2, paredeDominante: true, espacoMax: 0.17, isoporLarg: 0.12, isoporAlt: 0.09, isoporComp: 4.0, isoporEspaco: 0.03, capeamento: 0.025, perda: 10, vaoViga: 5.0, beiral: 1.0,
@@ -593,7 +599,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     let base: number, h: number;
     if (janela) { base = q.peit - r.janelaDesce; h = q.alt + 2 * r.janelaDesce; }
     else { base = r.boneca; h = q.alt; }   // porta: boneca embaixo + altura do quadro
-    const inteiro = (!janela && base + h >= Hh - 1e-6) || w > r.larguraMax - 2 * r.boneca;
+    const inteiro = (!janela && base + h >= Hh - 1e-6) || w > larguraMaxDe(r, Hh) - 2 * r.boneca;
     if (inteiro) { w = Math.max(w, v.b - v.a); }
     return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt, key };   // mesmo topo do recorte (porta = boneca + altura)
   }
@@ -646,7 +652,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
       for (const t of [...res]) {
         if (!res.includes(t) || t.e - t.s >= 0.5 || t.vaos.length || aj.naoPinar?.includes(t.id)) continue;
         const cs = res.filter(x => x !== t && x.pav === t.pav && x.o === t.o && Math.abs(x.c - t.c) < 0.05 && !x.vaos.some(v => v.inteiro) &&
-          (Math.abs(x.s - t.e) <= r.coluna + 0.1 || Math.abs(t.s - x.e) <= r.coluna + 0.1) && Math.max(x.e, t.e) - Math.min(x.s, t.s) - r.folga <= r.larguraMax);
+          (Math.abs(x.s - t.e) <= r.coluna + 0.1 || Math.abs(t.s - x.e) <= r.coluna + 0.1) && Math.max(x.e, t.e) - Math.min(x.s, t.s) - r.folga <= larguraMaxDe(r, Math.max(x.H, t.H)));
         // prefere o lado em que a parede juntada fica do tamanho das paralelas vizinhas (mesmo início e fim)
         const nota = (x: Trecho) => { const a = Math.min(x.s, t.s), b = Math.max(x.e, t.e);
           return res.filter(y => y.pav === t.pav && y.o === t.o && Math.abs(y.c - t.c) > 0.3 && Math.abs(y.s - a) < 0.1 && Math.abs(y.e - b) < 0.1).length; };
@@ -670,7 +676,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
         if (!res.includes(t)) continue;
         const nx = proximo(t);
         if (!nx || nx.s - t.e > r.coluna + 0.2) continue;
-        if (nx.e - t.s - r.folga > r.larguraMax) continue;
+        if (nx.e - t.s - r.folga > larguraMaxDe(r, Math.max(t.H, nx.H))) continue;
         if (t.vaos.some(v => v.inteiro) || nx.vaos.some(v => v.inteiro)) continue;
         if (aj.naoPinar?.includes(t.id)) continue;
         junta(t, nx); mudou = true;
@@ -745,7 +751,7 @@ export function aplicarTelhado(ps: Painel[], t: Telhado, manuais: Record<string,
 }
 export interface VaoInteiro { trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; tipo: string; sobe?: boolean; topo?: number; H?: number }
 
-export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel[]; vaos: VaoInteiro[] } {
+export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<string, { a: number; b: number; H: number }[]> = {}): { paineis: Painel[]; vaos: VaoInteiro[] } {
   const P: Painel[] = []; const VI: VaoInteiro[] = [];
   for (const t of ts) {
     const subs: [number, number, Vao[]][] = [];
@@ -763,17 +769,29 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
       let edges: number[];
       const manual = [...(aj.cortes[t.id] || []).map(d => ({ x: t.s + d, col: false })), ...((aj.colunas || {})[t.id] || []).map(d => ({ x: t.s + d, col: true }))]
         .filter(c => c.x > sa + 0.05 && c.x < sb - 0.05).sort((a, b) => a.x - b.x);
-      if (manual.length) edges = [sa, ...manual.flatMap(c => c.col ? [c.x - r.coluna / 2, c.x + r.coluna / 2] : [c.x, c.x]), sb];
-      else {
-        let n = 1;
-        if (!aj.naoDividir.includes(t.id)) while ((Lr - (n - 1) * r.coluna) / n - r.folga > r.larguraMax) n++;
+      // divide [ia, ib] em partes iguais até caber na largura lmax (o corte foge das portas e janelas)
+      const divide = (ia: number, ib: number, lmax: number) => {
+        const L = ib - ia; let n = 1;
+        if (!aj.naoDividir.includes(t.id)) while ((L - (n - 1) * r.coluna) / n - r.folga > lmax) n++;
         const cuts: number[] = [];
         for (let i = 1; i < n; i++) {
-          let m = sa + i * (Lr - (n - 1) * r.coluna) / n + (i - 1) * r.coluna + r.coluna / 2;
+          let m = ia + i * (L - (n - 1) * r.coluna) / n + (i - 1) * r.coluna + r.coluna / 2;
           for (const o of ops) if (o.x0 - r.coluna / 2 < m && m < o.x1 + r.coluna / 2) m = m - o.x0 < o.x1 - m ? o.x0 - r.coluna / 2 : o.x1 + r.coluna / 2;
           cuts.push(m);
         }
-        edges = [sa, ...cuts.flatMap(m => [m - r.coluna / 2, m + r.coluna / 2]), sb];
+        return [ia, ...cuts.flatMap(m => [m - r.coluna / 2, m + r.coluna / 2]), ib];
+      };
+      edges = manual.length ? [sa, ...manual.flatMap(c => c.col ? [c.x - r.coluna / 2, c.x + r.coluna / 2] : [c.x, c.x]), sb] : divide(sa, sb, larguraMaxDe(r, t.H));
+      // parede alta (pé-direito do ambiente): o pedaço que fica no trecho alto respeita a largura de painel alto
+      const altos = Halto[t.id];
+      if (altos?.length) {
+        const e2: number[] = [];
+        for (let i = 0; i < edges.length; i += 2) {
+          const ia = edges[i], ib = edges[i + 1], H = Math.max(0, ...altos.filter(x => Math.min(ib, x.b) - Math.max(ia, x.a) > 0.05).map(x => x.H));
+          const lm = larguraMaxDe(r, Math.max(t.H, H));
+          e2.push(...(ib - ia - r.folga > lm ? divide(ia, ib, lm) : [ia, ib]));
+        }
+        edges = e2;
       }
       for (let i = 0; i < edges.length; i += 2) {
         const pa = edges[i], pb = edges[i + 1], larg = pb - pa - r.folga;
@@ -835,8 +853,9 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
         if (P.some(x => x.pav === p.pav && x.o !== p.o && x.c > fim - 0.02 && x.c < q.a + 0.02 && x.a < p.c + 0.3 && x.a + x.larg > p.c - 0.3)) continue;
         const e = gap - max;
         let ep = e / 2, eq = e / 2;
-        if (p.larg + ep > r.larguraMax) { eq += ep - Math.max(0, r.larguraMax - p.larg); ep = Math.max(0, r.larguraMax - p.larg); }
-        if (q.larg + eq > r.larguraMax) { const sobra = q.larg + eq - r.larguraMax; eq -= sobra; ep += Math.min(sobra, Math.max(0, r.larguraMax - p.larg - ep)); }
+        const mp = larguraMaxDe(r, p.H), mq = larguraMaxDe(r, q.H);
+        if (p.larg + ep > mp) { eq += ep - Math.max(0, mp - p.larg); ep = Math.max(0, mp - p.larg); }
+        if (q.larg + eq > mq) { const sobra = q.larg + eq - mq; eq -= sobra; ep += Math.min(sobra, Math.max(0, mp - p.larg - ep)); }
         p.larg += ep; q.a -= eq; q.larg += eq; for (const rc of q.recortes) rc.dl += eq;
         if (q.a - (p.a + p.larg) > max + 0.005) q.aviso = (q.aviso ? q.aviso + ' · ' : '') + `espaço de ${Math.round((q.a - p.a - p.larg) * 100)} cm até o painel vizinho (máx. ${Math.round(max * 100)}) — painéis no limite de largura`;
         if (p.aviso === 'n fabricar' && p.larg >= r.naoFabricar) p.aviso = undefined;
