@@ -1752,7 +1752,7 @@ function csvProducao(prod: Prod, ativos: Pavimento[]): string {
 // detalhamento da armação (paredes e lajes), caderno da fábrica e lista de compra do aço
 function CardArmacao({ ativos, calc, regras, aj, setAj, nome }: { ativos: Pavimento[]; calc: Calc; regras: Regras; aj: Ajustes; setAj: (a: Ajustes) => void; nome: string }) {
   const [msg, setMsg] = useState(''); const [ocupado, setOcupado] = useState(false);
-  const o = aj.arm || {}, liberado = o.liberado ?? true, trelBorda16 = o.trelBorda16 ?? true, pavs = o.pavs ?? ativos.map(p => p.id);
+  const o = aj.arm || {}, liberado = o.liberado ?? true, trelBorda16 = o.trelBorda16 ?? true, pavs = o.pavs ?? ativos.map(p => p.id), revisao = o.revisao ?? '00';
   const muda = (x: Partial<NonNullable<Ajustes['arm']>>) => setAj({ ...aj, arm: { ...o, ...x } });
   const titulo = nome.replace(/\.(dxf|dwg|pdf|json)$/i, ''), nomesPav = ativos.filter(p => pavs.includes(p.id)).map(p => p.nome);
   const obra = titulo + (nomesPav.length && nomesPav.length < ativos.length ? ' - ' + nomesPav.join(', ') : '');
@@ -1764,7 +1764,7 @@ function CardArmacao({ ativos, calc, regras, aj, setAj, nome }: { ativos: Pavime
       const sg = siglas(ativos);
       const E = { obra, resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', pavs: ativos.map(p => ({ id: p.id, nome: p.nome })),
         ps: calc.ps.filter(p => pavs.includes(p.pav)), pl: calc.pl.filter(p => pavs.includes(p.pav)), vigas: calc.vigas.filter(v => v.tipo === 'trelica'), regras,
-        espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, codP: (p: Painel) => codigoParede(p, sg), codL: (p: PainelLaje) => codigoLaje(p, sg), liberado, trelBorda16 };
+        espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, codP: (p: Painel) => codigoParede(p, sg), codL: (p: PainelLaje) => codigoLaje(p, sg), liberado, trelBorda16, revisao };
       const arq = titulo + (nomesPav.length < ativos.length ? ' - ' + nomesPav.join(' ') : '');
       if (o2 === 'paredes' || o2 === 'lajes') {
         const d = detalhar(E, o2 === 'lajes');
@@ -1788,6 +1788,7 @@ function CardArmacao({ ativos, calc, regras, aj, setAj, nome }: { ativos: Pavime
     <div className="botoes">{ativos.map(p => <label key={p.id}><input type="checkbox" checked={pavs.includes(p.id)} onChange={e => muda({ pavs: e.target.checked ? [...pavs, p.id] : pavs.filter(x => x !== p.id) })} /> {p.nome}</label>)}</div>
     <label><input type="checkbox" checked={liberado} onChange={e => muda({ liberado: e.target.checked })} /> Folhas liberadas para produção</label>
     <label><input type="checkbox" checked={trelBorda16} onChange={e => muda({ trelBorda16: e.target.checked })} /> Lajes de 16 cm ou mais: treliça nas 2 laterais de cada painel</label>
+    <label>Revisão das folhas <input style={{ width: 60 }} value={revisao} onChange={e => muda({ revisao: e.target.value.slice(0, 3) })} /> <small>(aumente a cada versão mandada para a fábrica)</small></label>
     <div className="botoes">
       <button disabled={ocupado} onClick={() => gerar('paredes')}>Baixar armação das PAREDES (PDF)</button>
       <button disabled={ocupado} onClick={() => gerar('lajes')}>Baixar armação das LAJES (PDF)</button>
