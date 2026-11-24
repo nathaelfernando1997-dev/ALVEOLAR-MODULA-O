@@ -407,6 +407,7 @@ export interface Ajustes {
   naoPinar?: string[];                     // trechos onde a pinagem automática não deve ser feita
   lajeFora?: string[];                     // ambientes sem laje (vazio, área externa)
   lajeGiro?: string[];                     // ambientes com o sentido dos painéis invertido
+  paredeNumFixa?: Record<string, number>;  // numeração das paredes congelada (chaveNumParede -> número): etiquetas já impressas não mudam
   lajeNumFixa?: Record<string, number>;    // numeração das lajes congelada (chaveNumLaje -> número): etiquetas já impressas não mudam
   fundExtra?: { pav: string; x: number; y: number }[];     // pontos de fundação acrescentados à mão
   fundRemover?: { pav: string; x: number; y: number }[];   // pontos de fundação tirados à mão
@@ -845,14 +846,24 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes): { paineis: Painel
   return { paineis: P, vaos: VI };
 }
 
-export function numerar(P: Painel[], ordemPav: string[]) {
+// chave da numeração fixa: pavimento, direção, eixo e pontas do painel (painel que mudou de lugar ou de tamanho ganha número novo)
+export const chaveNumParede = (p: Painel) => `${p.pav}|${p.o}|${p.c.toFixed(2)}|${Math.min(p.a, p.b).toFixed(2)}|${Math.max(p.a, p.b).toFixed(2)}`;
+export function numerar(P: Painel[], ordemPav: string[], fixa?: Record<string, number>) {
   let n = 0;
+  const seq: Painel[] = [];
   for (const pav of ordemPav) {
     const ps = P.filter(p => p.pav === pav).sort((p, q) => {
       const cy = (x: Painel) => x.o === 'H' ? x.c : (x.a + x.b) / 2, cx = (x: Painel) => x.o === 'H' ? (x.a + x.b) / 2 : x.c;
       return Math.round(-cy(p)) - Math.round(-cy(q)) || cx(p) - cx(q);
     });
-    for (const p of ps) p.num = ++n;
+    for (const p of ps) { p.num = ++n; seq.push(p); }
+  }
+  // numeração fixa (etiquetas já impressas): painel igual mantém o número; painel novo ganha número depois do maior
+  if (fixa && Object.keys(fixa).length) {
+    let prox = Math.max(0, ...Object.values(fixa));
+    const usados = new Set<number>();
+    for (const p of seq) { const f = fixa[chaveNumParede(p)]; p.num = f && !usados.has(f) ? f : 0; if (p.num) usados.add(p.num); }
+    for (const p of seq) if (!p.num) p.num = ++prox;
   }
   return P.sort((a, b) => a.num - b.num);
 }

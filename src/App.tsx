@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { areaPainel, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, chaveNumParede, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
@@ -410,7 +410,7 @@ export default function App() {
         }
       }
     }
-    numerar(vazio.ps, ativos.map(p => p.id));
+    numerar(vazio.ps, ativos.map(p => p.id), aj.paredeNumFixa);
     numerarLajes(vazio.pl, ativos.map(p => p.id), aj.lajeNumFixa);
     { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv }));
       // treliças pedidas nos painéis compridos: ao longo do painel, uma em cada lateral e as outras distribuídas (numeradas depois das de parede)
@@ -779,6 +779,14 @@ export default function App() {
                   </div>}
                   <AcoesLaje regras={regras} amb={calc.lajes.find(a => a.id === ambSel) || null} lajeSel={lajeSel} calc={calc} aj={aj} setAj={setAj} pav={pavAtual} espPadrao={(regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025)} />
                 </>}
+              {aba === 'modulacao' && <div className="card acoes">
+                <h3>Numeração das paredes</h3>
+                {aj.paredeNumFixa
+                  ? <><p className="dica">Numeração fixa: a parede que não mudou mantém o número (etiqueta já impressa vale). Parede nova ou que mudou de tamanho ganha número depois do último ({Math.max(0, ...Object.values(aj.paredeNumFixa))}).</p>
+                    <button onClick={() => { if (confirm('Soltar a numeração? As paredes voltam a ser numeradas em sequência e os números podem mudar.')) { const { paredeNumFixa: _, ...r } = aj; setAj(r as typeof aj); } }}>Soltar numeração</button></>
+                  : <><p className="dica">Depois de imprimir as etiquetas, fixe a numeração: se a modulação mudar, só as paredes novas ganham número novo.</p>
+                    <button onClick={() => setAj({ ...aj, paredeNumFixa: Object.fromEntries(calc.ps.map(p => [chaveNumParede(p), p.num])) })}>Fixar numeração atual</button></>}
+              </div>}
               {aba === 'modulacao' && <div className="card acoes">
                 <h3>Paredes desenhadas</h3>
                 <button className={modoParede ? 'on' : ''} onClick={() => { setModoParede(modoParede ? null : 'ok'); setSel(null); setVaoSel(null); }}>{modoParede ? (modoParede === 'ok' ? 'Clique no começo da parede… (clique aqui para parar)' : 'Clique no fim da parede…') : 'Desenhar parede (clique no começo e no fim)'}</button>
