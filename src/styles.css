@@ -271,3 +271,21 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .v3-tela { position: relative; height: min(72vh, 820px); min-height: 360px; border-radius: 8px; overflow: hidden; }
 .v3-info { position: absolute; left: 10px; bottom: 10px; background: rgba(255,255,255,.92); color: #222; border: 1px solid #ccd; border-radius: 6px; padding: 5px 9px; font-size: 13px; pointer-events: none; }
 .v3-painel .botoes button.on { background: #1f4e79; border-color: #1f4e79; color: #fff; }
+/* fundação em passos */
+.passos-fund .botoes button { flex: 1; }
+.furo { border: 1px solid #dee2e6; border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.tab-furo input { width: 4em; }
+.tab-furo select { width: 100%; }
+.tab-loc tr.on td { background: #e7f5ff; font-weight: bold; }
+.res-fund p { margin: 6px 0; }
+.res-fund .bola { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 2px; }
+.res-fund .aviso, .card .aviso { background: #fdeaea; color: #a40000; border-radius: 5px; padding: 6px 8px; }
+label.check { display: flex; gap: 6px; align-items: flex-start; }
+details.card > summary { cursor: pointer; }
+details > summary { cursor: pointer; margin: 4px 0; }
+label.check { flex-direction: row !important; align-items: center; }
+label.check input { width: auto !important; margin: 0; }
+.desenho-a3 .cargas-tab { gap: 5mm; }
+.desenho-a3 .cargas-tab .tab-loc { font-size: 7.5pt; }
+.desenho-a3 .cargas-tab .tab-loc th, .desenho-a3 .cargas-tab .tab-loc td { padding: 0.6mm 1.6mm; }
+.folha.a2 .cargas-tab .tab-loc { font-size: 10pt; }

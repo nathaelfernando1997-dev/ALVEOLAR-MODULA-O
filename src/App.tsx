@@ -17,6 +17,11 @@ import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
 import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, pesoBitola, ESTACA_PADRAO, quantEstaca, fundacaoTecnico, dxfFundacaoDetalhe } from './engine/fundacao.ts';
+import { SOLOS, TIPOS_ESTACA, FUND_VAZIA, resumo as resumoCap, lerNs } from './engine/sondagem.ts';
+import type { DadosFund, Solo, Furo } from './engine/sondagem.ts';
+import { cargasFundacao, cargaAlavanca, CARGA_PAV } from './engine/cargasFund.ts';
+import type { CargaPav } from './engine/cargasFund.ts';
+import { modeloParede } from './engine/modeloParede.ts';
 import { ZoomSvg, alternarPainel } from './Zoom.tsx';
 import { plantaPortal } from './engine/portal.ts';
 import * as db from './db.ts';
@@ -102,7 +107,11 @@ function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
 
 export default function App() {
   const [aba, setAbaEstado] = useState<Aba>('arquivo');
-  const [verFund, setVerFund] = useState<'pontos' | 'locacao' | 'esperas' | 'bloco' | 'estaca' | 'folhas'>('pontos');
+  const [verFund, setVerFund] = useState<'pontos' | 'locacao' | 'esperas' | 'bloco' | 'estaca' | 'folhas' | 'cargas'>('pontos');
+  const [passoFund, setPassoFund] = useState<1 | 2 | 3 | 4>(1);
+  // resultado do cálculo da fundação (cargas + modelo parede sobre estacas); a chave diz com que dados foi feito
+  const [resFund, setResFund] = useState<null | { chave: string; R: Record<number, number>; lev: Record<number, number>; rec: Record<number, number>; trechos: { t: number; Tparede: number; Tporta: number; Ttopo: number }[]; tot: { paredes: number; lajes: number; uso: number; outros: number }; portas: number; ok: boolean }>(null);
+  const [calcFund, setCalcFund] = useState(false);
   const [papelFund, setPapelFund] = useState<'a3' | 'a2'>('a2');
   const [parteFund, setParteFund] = useState<'todas' | 'plantas' | 'detalhe'>('todas');
   const [modoFund, setModoFund] = useState<null | 'add' | 'rem' | 'mover' | 'origem' | { x: number; y: number }>(null);
@@ -867,6 +876,32 @@ export default function App() {
             const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}), qtd: pts.length }, qe = quantEstaca(oe), dfT = fundacaoTecnico(ob, oe);
             const setEstaca = (k: keyof typeof ESTACA_PADRAO, v: number) => setRegras({ ...regras, estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), [k]: v } });
             const setBloco = (k: keyof typeof BLOCO_PADRAO, v: number) => setRegras({ ...regras, bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), [k]: v } });
+            // ---- sondagem, estaca e cálculo das cargas (passos 2 e 3)
+            const fund: DadosFund = { ...FUND_VAZIA, ...(aj.fund || {}) };
+            const setFund = (f: Partial<DadosFund>) => setAj({ ...aj, fund: { ...fund, ...f } });
+            const setFuro = (i: number, f: Partial<Furo>) => setFund({ furos: fund.furos.map((x, j) => j === i ? { ...x, ...f } : x) });
+            const capTab = fund.furos.some(f => f.n.length >= 2) ? resumoCap(fund.furos.filter(f => f.n.length >= 2), oe.furo, fund.tipo) : [];
+            const capL = capTab.find(r => Math.abs(r.L - oe.comp) < 1e-6) ?? null;
+            const pavCarga = Object.fromEntries(ativos.map((p, i) => [p.id, fund.pavCarga?.[p.id] ?? (i === ativos.length - 1 ? 'forro' : 'piso')])) as Record<string, CargaPav>;
+            const chaveFund = JSON.stringify([pts.map(p => [p.n, +p.x.toFixed(3), +p.y.toFixed(3)]), pavCarga, !!fund.baldrame, fund.furos, fund.tipo, oe.furo, oe.comp, calc.ps.length, calc.pl.length, calc.ts.length]);
+            const resOk = !!resFund && resFund.chave === chaveFund;
+            const TELA25 = 20.5, TELA10 = 41.4, CINTA = 31;   // CINTA: 2 ø8 da cinta da porta (kN)   // kN: tração que a tela ø4.2 (2 capas) aguenta nos 40 cm de baixo, c/25 e c/10
+            const sit = (n: number): 'ok' | 'ponta' | 'fs' => { const R = resFund?.R[n] ?? 0; return !capL || R <= capL.Padm + 1e-6 ? 'ok' : R <= capL.Pfs + 1e-6 ? 'ponta' : 'fs'; };
+            const corSit = { ok: '#2b8a3e', ponta: '#e8590c', fs: '#c92a2a' } as const;
+            const calcular = () => {
+              if (!capL) return; setCalcFund(true);
+              setTimeout(() => { try {
+                const C = cargasFundacao({ pavs: ativos, desloc: desloc3d, ts: calc.ts, ps: calc.ps, pl: calc.pl, vigas: calc.vigas, regras, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, pavCarga, baldrame: !!fund.baldrame });
+                const op = { baldrame: !!fund.baldrame, Rl: capL.Rl, Rp: capL.Rp, L: oe.comp, D: oe.furo };
+                const m1 = modeloParede(C, pts, op), m2 = modeloParede(C, pts, { ...op, Ec: 8e6 });   // curto e longo prazo (fluência): vale o pior
+                const R: Record<number, number> = {}, rec: Record<number, number> = {};
+                for (const p of pts) { R[p.n] = Math.max(m1.R[p.n] ?? 0, m2.R[p.n] ?? 0); rec[p.n] = Math.max(m1.rec[p.n] ?? 0, m2.rec[p.n] ?? 0); }
+                const trechosR = m1.trechos.map((t, i) => ({ t: t.t, Tparede: Math.max(t.Tparede, m2.trechos[i].Tparede), Tporta: Math.max(t.Tporta, m2.trechos[i].Tporta), Ttopo: Math.max(t.Ttopo, m2.trechos[i].Ttopo) }));
+                const portas = C.ts.reduce((s, t) => s + t.vaos.filter(v => v.tipo?.startsWith('P') || v.base < 0.15 && (v.topo ?? v.base + v.h) < (t.H ?? 3) - 0.3).length, 0);
+                setResFund({ chave: chaveFund, R, lev: cargaAlavanca(C, pts), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
+                setVerFund('cargas');
+              } finally { setCalcFund(false); } }, 30);
+            };
             const n2 = (v: number) => v.toFixed(2).replace('.', ',');
             const tabBloco = <div className="bloco-tabs">
               <table className="tab-loc"><thead><tr><th>Pos.</th><th>Quant. por bloco</th><th>Ø (mm)</th><th>Comp. (cm)</th><th>Blocos</th><th>Quant. total</th><th>Comp. total (m)</th><th>Peso (kg)</th></tr></thead>
@@ -891,7 +926,10 @@ export default function App() {
                 return `<line x1="${Q.X(x0)}" y1="${Q.Y(y0)}" x2="${Q.X(x1)}" y2="${Q.Y(y1)}" stroke="${p.num % 2 ? '#1971c2' : '#e8590c'}" stroke-width="${0.12 * Q.k}" opacity=".55"/>` +
                   (p.o === 'H' ? `<text x="${Q.X(m)}" y="${Q.Y(p.c) - 18}" font-size="${0.1 * Q.k}" text-anchor="middle" fill="#333">${codF(p)}</text>` : `<text x="${Q.X(p.c) - 18}" y="${Q.Y(m)}" font-size="${0.1 * Q.k}" text-anchor="middle" fill="#333" transform="rotate(-90 ${Q.X(p.c) - 18} ${Q.Y(m)})">${codF(p)}</text>`); }).join('') +
               es.map(e => `<g stroke="#c92a2a" stroke-width="3"><line x1="${Q.X(e.x) - 7}" y1="${Q.Y(e.y) - 7}" x2="${Q.X(e.x) + 7}" y2="${Q.Y(e.y) + 7}"/><line x1="${Q.X(e.x) - 7}" y1="${Q.Y(e.y) + 7}" x2="${Q.X(e.x) + 7}" y2="${Q.Y(e.y) - 7}"/></g>`).join('');
-            const svg = verFund === 'locacao' ? arqSvg(q, arqF) + svgLocacao(loc, q.X, q.Y, q.k) : verFund === 'esperas' ? svgEsperas(q) : svgPontos(q);
+            const svgCargas = (Q: typeof q) => arqSvg(Q, arqF) +
+              tf.map(t => t.o === 'H' ? `<line x1="${Q.X(t.s)}" y1="${Q.Y(t.c)}" x2="${Q.X(t.e)}" y2="${Q.Y(t.c)}" stroke="#868e96" stroke-width="${t.esp * Q.k}" opacity=".35"/>` : `<line x1="${Q.X(t.c)}" y1="${Q.Y(t.s)}" x2="${Q.X(t.c)}" y2="${Q.Y(t.e)}" stroke="#868e96" stroke-width="${t.esp * Q.k}" opacity=".35"/>`).join('') +
+              pts.map(p => { const c = corSit[sit(p.n)]; return `<rect x="${Q.X(p.x) - 0.25 * Q.k}" y="${Q.Y(p.y) - 0.25 * Q.k}" width="${0.5 * Q.k}" height="${0.5 * Q.k}" fill="${c}" fill-opacity=".15" stroke="${c}" stroke-width="3"/><circle cx="${Q.X(p.x)}" cy="${Q.Y(p.y)}" r="${oe.furo / 2 * Q.k}" fill="#fff" stroke="${c}" stroke-width="3"/><text x="${Q.X(p.x) + 0.3 * Q.k}" y="${Q.Y(p.y) - 0.12 * Q.k}" font-size="${0.17 * Q.k}" fill="${c}" font-weight="bold">B${p.n}</text><text x="${Q.X(p.x) + 0.3 * Q.k}" y="${Q.Y(p.y) + 0.1 * Q.k}" font-size="${0.15 * Q.k}" fill="#222">${resFund ? br((resFund.R[p.n] ?? 0) / 9.81, 1) + ' tf' : ''}</text>`; }).join('');
+            const svg = verFund === 'locacao' ? arqSvg(q, arqF) + svgLocacao(loc, q.X, q.Y, q.k) : verFund === 'esperas' ? svgEsperas(q) : verFund === 'cargas' && resOk ? svgCargas(q) : svgPontos(q);
             // clique na planta (ferramentas de edição)
             const perto = (x: number, y: number) => pts.map(p => ({ p, d: Math.hypot(p.x - x, p.y - y) })).sort((a, b) => a.d - b.d)[0];
             const noEixo = (x: number, y: number) => {
@@ -929,16 +967,34 @@ export default function App() {
             const linhasTab = loc.pts.map(p => <tr key={p.n}><td>B{p.n}</td><td>{p.eixo}</td><td>{br(p.X)}</td><td>{br(p.Y)}</td><td>{p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</td></tr>);
             const metade = Math.ceil(linhasTab.length / 2);
             const tabela = (l: typeof linhasTab) => <table className="tab-loc"><thead><tr><th>Ponto</th><th>Eixo</th><th>X (m)</th><th>Y (m)</th><th>Tipo</th></tr></thead><tbody>{l}</tbody></table>;
+            const totF = resOk ? 6 : 4;
+            const linhasCarga = pts.map(p => <tr key={p.n}><td>B{p.n}</td><td>{br((resFund?.lev[p.n] ?? 0) / 9.81, 1)}</td><td><b>{br((resFund?.R[p.n] ?? 0) / 9.81, 1)}</b></td><td>{br(resFund?.rec[p.n] ?? 0, 1)}</td><td style={{ color: corSit[sit(p.n)] }}>{sit(p.n) === 'ok' ? 'atende' : sit(p.n) === 'ponta' ? (fund.criterio === 'rt' ? 'atende FS 2 (critério RT)' : 'passa da regra da ponta') : 'FS menor que 2'}</td></tr>);
+            const nColC = linhasCarga.length > 90 ? 4 : linhasCarga.length > 40 ? 3 : 2, porColC = Math.ceil(linhasCarga.length / nColC);
+            const tabCarga = (l: typeof linhasCarga) => <table className="tab-loc"><thead><tr><th>Bloco</th><th>Sem a parede (tf)</th><th>Carga (tf)</th><th>Recalque (mm)</th><th>Situação</th></tr></thead><tbody>{l}</tbody></table>;
+            const folhasCarga = resOk && capL ? <>
+              <div className={`folha ${papelFund}`}><div className="desenho-a3"><SvgFolha vb={qL.vb} html={svgCargas(qL)} /></div>{carimbo('PLANTA DE CARGAS NAS ESTACAS', 3, totF, `Carga característica no topo da estaca (tf), com a parede redistribuindo · estaca ${TIPOS_ESTACA.find(t => t[0] === fund.tipo)?.[1].toLowerCase()} ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m · admissível ${br(capL.Padm / 9.81, 1)} tf`)}</div>
+              <div className={`folha ${papelFund}`}><div className="desenho-a3 tabelas"><h2>Quadro de cargas e verificação (NBR 6122)</h2>
+                <p>Estaca {TIPOS_ESTACA.find(t => t[0] === fund.tipo)?.[1].toLowerCase()} ø{Math.round(oe.furo * 100)} × {br(oe.comp)} m · admissível <b>{br(capL.Padm / 9.81, 1)} tf</b> ({capL.governa}) · ruptura ÷ 2 = {br(capL.Pfs / 9.81, 1)} tf · {fund.baldrame ? 'com viga baldrame 15 × 40' : 'sem baldrame: a parede apoia nos blocos'} · cargas: {ativos.map(p => `${p.nome}: ${CARGA_PAV[pavCarga[p.id]].nome.toLowerCase()}`).join(' · ')}</p>
+                <div className="duas cargas-tab">{Array.from({ length: nColC }, (_, i) => <div key={i}>{tabCarga(linhasCarga.slice(i * porColC, (i + 1) * porColC))}</div>)}</div>
+                <p className="dica">"Sem a parede" = carga dividida só entre as estacas vizinhas da mesma parede. "Carga" = com a parede trabalhando como viga entre as estacas (pior entre curto e longo prazo). Não inclui caixa d'água.</p>
+              </div>{carimbo('QUADRO DE CARGAS', 4, totF, fund.criterio === 'rt' ? 'Comprimento da estaca adotado pelo responsável técnico' : 'Valores característicos (sem majorar)')}</div>
+            </> : null;
             const folhas = <div className={'folhas folhas-a3' + (verFund === 'folhas' ? '' : ' so-imp')}>
-              {parteFund !== 'detalhe' && <><div className={`folha ${papelFund}`}><div className="desenho-a3"><SvgFolha vb={qL.vb} html={arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k)} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, 4)}</div>
-              <div className={`folha ${papelFund}`}><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, 4)}</div>
+              {parteFund !== 'detalhe' && <><div className={`folha ${papelFund}`}><div className="desenho-a3"><SvgFolha vb={qL.vb} html={arqSvg(qL, arqF) + svgLocacao(loc, qL.X, qL.Y, qL.k)} /></div>{carimbo('PLANTA DE LOCAÇÃO', 1, totF)}</div>
+              <div className={`folha ${papelFund}`}><div className="desenho-a3 tabelas"><h2>Coordenadas dos pontos (a partir da origem)</h2><div className="duas">{tabela(linhasTab.slice(0, metade))}{tabela(linhasTab.slice(metade))}</div></div>{carimbo('TABELA DE LOCAÇÃO', 2, totF)}</div>
+              {folhasCarga}
               <div className={`folha ${papelFund}`}><div className="desenho-a3"><SvgFolha vb={qE.vb} html={svgEsperas(qE)} /></div>{carimbo(`ESPERAS DOS PAINÉIS (${es.length}) · ${br(eb)} m das pontas · máx. ${br(ee)} m entre elas`, 3, 4)}</div></>}
-              {parteFund !== 'plantas' && <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: dfT }} /></div>{carimbo(`BLOCOS E ESTACAS — ${ob.qtd} blocos ${Math.round(ob.lado * 100)}x${Math.round(ob.lado * 100)}x${Math.round(ob.alt * 100)} · estacas ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m`, 4, 4, 'Medidas em cm · estaca ESC 1:50 · seção 1:10 · bloco 1:20 (impresso em A3)')}</div>}
+              {parteFund !== 'plantas' && <div className="folha a3"><div className="desenho-a3 bloco-folha"><svg viewBox="0 0 400 255" preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: dfT }} /></div>{carimbo(`BLOCOS E ESTACAS — ${ob.qtd} blocos ${Math.round(ob.lado * 100)}x${Math.round(ob.lado * 100)}x${Math.round(ob.alt * 100)} · estacas ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m`, totF, totF, 'Medidas em cm · estaca ESC 1:50 · seção 1:10 · bloco 1:20 (impresso em A3)')}</div>}
             </div>;
             return <>
             <section className="mod noprint">
 <Divisor />
               <div className="lado">
+                <div className="card passos-fund">
+                  <div className="botoes">{([[1, '1. Pontos'], [2, '2. Solo e estaca'], [3, '3. Cargas'], [4, '4. Folhas']] as const).map(([k, t]) => <button key={k} className={passoFund === k ? 'on' : ''} onClick={() => { setPassoFund(k); setModoFund(null); if (k === 3 && resOk) setVerFund('cargas'); else if (k !== 4 && verFund === 'cargas') setVerFund('pontos'); }}>{t}</button>)}</div>
+                  <p className="dica">{passoFund === 1 ? 'Onde vão os blocos: os pontos saem das paredes do térreo; acerte à mão se precisar.' : passoFund === 2 ? 'Lance a sondagem (SPT metro a metro) e escolha a estaca. O sistema mostra quanto ela aguenta pela NBR 6122.' : passoFund === 3 ? 'Diga o que tem em cima de cada pavimento e calcule: a carga de cada estaca já com a parede ajudando.' : 'Folhas para imprimir e o detalhe da ferragem.'}</p>
+                </div>
+                {passoFund === 1 && <>
                 <div className="card acoes">
                   <h3>Pontos de fundação (para o Eberick)</h3>
                   <p>{pf.nome}: <b>{pts.length} pontos</b></p>
@@ -951,11 +1007,13 @@ export default function App() {
                   </div>
                   {dicaModo && <p className="dica"><b>{dicaModo}</b> (clique de novo no botão para parar)</p>}
                   {(doPav(aj.fundExtra).length > 0 || doPav(aj.fundRemover).length > 0) && <button onClick={() => setAj({ ...aj, fundExtra: (aj.fundExtra || []).filter(e => e.pav !== pf.id), fundRemover: (aj.fundRemover || []).filter(e => e.pav !== pf.id) })}>Voltar aos pontos automáticos ({doPav(aj.fundExtra).length} acrescentados, {doPav(aj.fundRemover).length} tirados)</button>}
+                  <details><summary>Baixar arquivos (DXF, DWG, PDF, CSV)</summary><div className="acoes">
                   <button onClick={() => baixar(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF), 'application/dxf')}>Baixar planta de fundação (DXF)</button>
                   <button onClick={() => baixarDwg(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF))}>Baixar planta de fundação (DWG)</button>
                   <button onClick={() => baixarPdf(base + '-fundacao.dxf', dxfFundacao(pf, tf, pts, arqF), { titulo: 'PLANTA DE FUNDAÇÃO', sub: `${projNome || base} · ${pf.nome}` })}>Baixar planta de fundação (PDF)</button>
                   <button onClick={() => baixar(base + '-pontos-fundacao.csv', csvFundacao(pts), 'text/csv')}>Baixar tabela de pontos (CSV)</button>
                   <p className="dica">DXF em metros, nas mesmas coordenadas do projeto. No Eberick, importe como arquitetura (unidade: metros) e lance os pilares/blocos nos pontos.</p>
+                  </div></details>
                 </div>
                 <div className="card acoes">
                   <h3>Planta de locação</h3>
@@ -967,13 +1025,113 @@ export default function App() {
                   </div>}
                   {og && <p className="dica">Ex.: divisa 1,50 m à esquerda do ponto → X = -1,50; 2,00 m abaixo → Y = -2,00.</p>}
                   {og && <button onClick={() => setAj({ ...aj, fundOrigem: undefined })}>Voltar a origem para o canto de baixo à esquerda</button>}
+                  <details><summary>Baixar arquivos (DXF, DWG, PDF, CSV)</summary><div className="acoes">
                   <button onClick={() => baixar(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc), 'application/dxf')}>Baixar planta de locação (DXF)</button>
                   <button onClick={() => baixarDwg(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc))}>Baixar planta de locação (DWG)</button>
                   <button onClick={() => baixarPdf(base + '-locacao.dxf', dxfLocacao(pf, loc, arqF, origemDesc), { titulo: 'PLANTA DE LOCAÇÃO', sub: `${projNome || base} · ${pf.nome}` })}>Baixar planta de locação (PDF)</button>
                   <button onClick={() => baixar(base + '-locacao.csv', csvLocacao(loc), 'text/csv')}>Baixar coordenadas da locação (CSV)</button>
+                  </div></details>
                 </div>
+                </>}
+                {passoFund === 2 && <>
+                  <div className="card acoes">
+                    <h3>Sondagem</h3>
+                    {fund.furos.length === 0 && <p className="dica">Nenhum furo lançado. Acrescente um furo para cada sondagem do laudo.</p>}
+                    {fund.furos.map((f, i) => <div key={i} className="furo">
+                      <div className="botoes"><input value={f.nome} onChange={e => setFuro(i, { nome: e.target.value })} style={{ width: '7em' }} /><button onClick={() => setFund({ furos: fund.furos.filter((_, j) => j !== i) })}>Tirar furo</button></div>
+                      <label>SPT metro a metro (pode colar do laudo: 4 12 10 7…)<input key={'n' + i + f.n.join(',')} defaultValue={f.n.join(' ')} onBlur={e => { const n = lerNs(e.target.value); setFuro(i, { n, solo: n.map((_, k) => f.solo[k] ?? f.solo[f.solo.length - 1] ?? 'argila') }); }} /></label>
+                      <table className="tab-loc tab-furo"><thead><tr><th>Metro</th><th>N</th><th>Solo</th></tr></thead><tbody>
+                        {f.n.map((v, k) => <tr key={k}><td>{k}–{k + 1}</td><td><input type="number" value={v} onChange={e => { const n = [...f.n]; n[k] = parseInt(e.target.value) || 0; setFuro(i, { n }); }} /></td>
+                          <td><select value={f.solo[k] ?? 'argila'} onChange={e => { const ant = f.solo[k] ?? 'argila', so = [...f.solo]; so[k] = e.target.value as Solo; for (let z = k + 1; z < f.n.length && (f.solo[z] ?? 'argila') === ant; z++) so[z] = e.target.value as Solo; setFuro(i, { solo: so }); }}>{SOLOS.map(s => <option key={s}>{s}</option>)}</select></td></tr>)}
+                      </tbody></table>
+                    </div>)}
+                    <button onClick={() => setFund({ furos: [...fund.furos, { nome: 'SP-' + String(fund.furos.length + 1).padStart(2, '0'), n: [], solo: [] }] })}>Acrescentar furo</button>
+                    <p className="dica">Trocar o solo de um metro troca também os de baixo que estavam iguais (escolha de cima para baixo).</p>
+                    <details><summary>Abrir ou salvar os dados da fundação (JSON)</summary><div className="acoes">
+                      <label className="botao">Abrir dados da fundação (JSON)<input type="file" accept=".json" hidden onChange={async e => { const fl = e.target.files?.[0]; if (!fl) return; try {
+                        const j = JSON.parse(await fl.text()), f = (j.fund ?? j.config?.ajustes?.fund ?? j.ajustes?.fund) as DadosFund | undefined;
+                        if (!f?.furos) throw new Error('não tem dados de fundação');
+                        setAj({ ...aj, fund: f, ...(j.fundExtra ? { fundExtra: j.fundExtra } : {}), ...(j.fundRemover ? { fundRemover: j.fundRemover } : {}) }); if (j.estaca) setRegras({ ...regras, estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), ...j.estaca } }); setResFund(null);
+                        alert(`Fundação aplicada: ${f.furos.length} furo(s) de sondagem${j.estaca ? `, estaca ø${Math.round((j.estaca.furo ?? oe.furo) * 100)} × ${br(j.estaca.comp ?? oe.comp)} m` : ''}. ${j.fundExtra || j.fundRemover ? ' Pontos de fundação ajustados conforme o arquivo.' : ''} Paredes e lajes não foram mexidas.`);
+                      } catch (er) { alert('Arquivo inválido: ' + (er as Error).message); } e.target.value = ''; }} /></label>
+                      <button onClick={() => baixar(base + '-fundacao.json', JSON.stringify({ fund, estaca: { furo: oe.furo, comp: oe.comp }, fundExtra: aj.fundExtra, fundRemover: aj.fundRemover }, null, 1), 'application/json')}>Salvar dados da fundação (JSON)</button>
+                    </div></details>
+                  </div>
+                  <div className="card acoes">
+                    <h3>Estaca</h3>
+                    <label>Tipo<select value={fund.tipo} onChange={e => setFund({ tipo: e.target.value as DadosFund['tipo'] })}>{TIPOS_ESTACA.map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></label>
+                    <div className="grade">
+                      <label>Diâmetro (m)<input type="number" step="0.05" value={oe.furo} onChange={e => setEstaca('furo', parseFloat(e.target.value) || 0.3)} /></label>
+                      <label>Comprimento (m)<input type="number" step="1" value={oe.comp} onChange={e => setEstaca('comp', parseFloat(e.target.value) || 1)} /></label>
+                    </div>
+                    {capTab.length > 0 ? <>
+                      <table className="tab-loc"><thead><tr><th>Comp.</th><th>Admissível</th><th>Ruptura ÷ 2</th><th>Quem manda</th></tr></thead><tbody>
+                        {capTab.map(r => <tr key={r.L} className={Math.abs(r.L - oe.comp) < 1e-6 ? 'on' : ''} style={{ cursor: 'pointer' }} onClick={() => setEstaca('comp', r.L)}><td>{r.L} m</td><td><b>{br(r.Padm / 9.81, 1)} tf</b></td><td>{br(r.Pfs / 9.81, 1)} tf</td><td className="dica">{r.Padm < r.Pfs - 1e-6 ? 'regra da ponta · ' : ''}{r.governa}</td></tr>)}
+                      </tbody></table>
+                      <p className="dica">Clique numa linha para escolher o comprimento. Admissível = o menor entre os furos e os dois métodos (Aoki-Velloso e Décourt-Quaresma), NBR 6122: fator de segurança 2{fund.tipo === 'escavada' ? ' e, na escavada, a ponta leva no máximo 20% da carga' : ''}. O primeiro metro não conta no atrito.</p>
+                    </> : <p className="dica">Lance a sondagem para ver quanto a estaca aguenta.</p>}
+                  </div>
+                </>}
+                {passoFund === 3 && <div className="card acoes">
+                  <h3>O que tem em cima de cada pavimento</h3>
+                  {ativos.map(p => <label key={p.id}>{p.nome}<select value={pavCarga[p.id]} onChange={e => setFund({ pavCarga: { ...pavCarga, [p.id]: e.target.value as CargaPav } })}>{(Object.keys(CARGA_PAV) as CargaPav[]).map(k => <option key={k} value={k}>{CARGA_PAV[k].nome}</option>)}</select></label>)}
+                  <label className="check"><input type="checkbox" checked={!!fund.baldrame} onChange={e => setFund({ baldrame: e.target.checked })} /> Tem viga baldrame 15 × 40 embaixo das paredes (sem ela, a parede apoia direto nos blocos)</label>
+                  {!capL && <p className="dica"><b>Falta a sondagem</b> (passo 2) para saber quanto a estaca aguenta.</p>}
+                  <button className="principal" disabled={!capL || calcFund} onClick={calcular}>{calcFund ? 'Calculando…' : resOk ? 'Calcular de novo' : 'Calcular as cargas nas estacas'}</button>
+                  {resFund && !resOk && <p className="dica"><b>Os dados mudaram</b>: calcule de novo.</p>}
+                  {resOk && capL && (() => {
+                    const v = pts.map(p => resFund!.R[p.n] ?? 0), mx = Math.max(...v), nOk = pts.filter(p => sit(p.n) === 'ok').length, nP = pts.filter(p => sit(p.n) === 'ponta').length, nF = pts.filter(p => sit(p.n) === 'fs').length;
+                    const T = resFund!.trechos, Tp = Math.max(0, ...T.map(t => t.Tparede)), Td = Math.max(0, ...T.map(t => t.Tporta));
+                    const n10 = T.filter(t => t.Tparede > TELA25).length, nX = T.filter(t => t.Tparede > TELA10).length;
+                    const tt = resFund!.tot, totT = (tt.paredes + tt.lajes + tt.uso + tt.outros) / 9.81;
+                    return <div className="res-fund">
+                      <p>Carga total: <b>{br(totT, 0)} tf</b> <span className="dica">(paredes {br(tt.paredes / 9.81, 0)} · lajes {br(tt.lajes / 9.81, 0)} · uso {br(tt.uso / 9.81, 0)} · vigas e baldrame {br(tt.outros / 9.81, 0)})</span></p>
+                      <p>Maior carga numa estaca: <b>{br(mx / 9.81, 1)} tf</b> · admissível <b>{br(capL.Padm / 9.81, 1)} tf</b> (ø{Math.round(oe.furo * 100)} × {br(oe.comp)} m) · recalque máx. {br(Math.max(...pts.map(p => resFund!.rec[p.n] ?? 0)), 1)} mm</p>
+                      <p><span className="bola" style={{ background: '#2b8a3e' }} /> {nOk} atendem · <span className="bola" style={{ background: '#e8590c' }} /> {nP} passam da regra da ponta · <span className="bola" style={{ background: '#c92a2a' }} /> {nF} passam da ruptura ÷ 2</p>
+                      {nF > 0 && <p className="aviso">{nF} estaca(s) com fator de segurança menor que 2: aumente o comprimento ou ponha 2 estacas nesses blocos.</p>}
+                      {nP > 0 && nF === 0 && <label className="check"><input type="checkbox" checked={fund.criterio === 'rt'} onChange={e => setFund({ criterio: e.target.checked ? 'rt' : 'norma' })} /> Manter {br(oe.comp)} m por decisão do responsável técnico (atende o fator de segurança 2, não atende a regra da ponta)</label>}
+                      <h3>Base das paredes</h3>
+                      {fund.baldrame ? <p>Baldrame: tração máx. <b>{br(Tp / 9.81, 1)} tf</b> → aço embaixo ≈ <b>{br(1.4 * Tp / 43.5, 2)} cm²</b>.</p> : <>
+                        <p>Tração máx. no pé da parede: <b>{br(Tp / 9.81, 1)} tf</b>{n10 ? <> · <b>{n10} trecho(s)</b> precisam da tela ø4.2 c/10 nos 40 cm de baixo (em vez de c/25)</> : ' · a tela normal do painel dá conta'}.</p>
+                        {nX > 0 && <p className="aviso">{nX} trecho(s) passam até da tela c/10: ponha uma cinta armada no pé da parede ou o baldrame.</p>}
+                        {resFund!.portas > 0 && <p>Portas: <b>{resFund!.portas}</b> com cinta 14 × 10 na base (2 ø8 + estribo ø5 c/15) · tração máx. {br(Td / 9.81, 1)} tf.</p>}
+                        {Td > CINTA && <p className="aviso">A cinta das portas precisa de mais aço: ≈ {br(1.4 * Td / 43.5, 2)} cm² ({Math.ceil(1.4 * Td / 43.5 / 0.785)} ø10 ou {Math.ceil(1.4 * Td / 43.5 / 1.227)} ø12.5), ou use o baldrame.</p>}
+                      </>}
+                      <p className="dica">A carga de cada estaca aparece na planta (Cargas nas estacas) e sai no quadro das folhas (passo 4).</p>
+                    </div>;
+                  })()}
+                </div>}
+                {passoFund === 4 && <>
                 <div className="card acoes">
-                  <h3>Esperas dos painéis</h3>
+                  <h3>Folhas para imprimir</h3>
+                  <label>Tamanho da folha (locação, coordenadas e esperas)<select value={papelFund} onChange={e => setPapelFund(e.target.value as 'a3' | 'a2')}><option value="a2">A2 deitado</option><option value="a3">A3 deitado</option></select></label>
+                  <p className="dica">Locação, tabela de coordenadas{resOk ? ', planta e quadro de cargas' : ''}, esperas, bloco e estaca, com carimbo. O detalhe do bloco e da estaca sai sempre em A3 (escalas 1:50, 1:20 e 1:10). Na impressão escolha o papel <b>A2</b> ou <b>A3</b> e <i>Salvar como PDF</i> (ou mande para a gráfica).</p>
+                  <button onClick={() => { setVerFund('folhas'); setParteFund('plantas'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir locação, coordenadas{resOk ? ', cargas' : ''} e esperas ({papelFund.toUpperCase()})</button>
+                  <button onClick={() => { setVerFund('folhas'); setParteFund('detalhe'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir detalhe do bloco e da estaca (A3)</button>
+                </div>
+                <details className="card acoes"><summary><b>Bloco de coroamento</b></summary>
+                  <p><b>{ob.qtd} blocos</b> (um em cada ponto) · {n2(qb.concTotal)} m³ · {n2(qb.kg)} kg de aço · {qb.barras12} barras</p>
+                  <div className="grade">
+                    {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)'], ['estaca', 'Estaca: diâmetro (m) — 0 = sem estaca']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
+                      <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={ob[k]} onChange={e => setBloco(k, parseFloat(e.target.value) || 0)} /></label>)}
+                  </div>
+                  <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
+                  <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
+                  <button onClick={() => baixarPdf(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), { titulo: 'DETALHE DO BLOCO E DA ESTACA', sub: `${projNome || base} · ${pf.nome}`, obs: 'Medidas em cm' })}>Baixar detalhe do bloco e da estaca (PDF)</button>
+                  <p className="dica">Gaiola: {ob.barras} estribos quadrados fechados em cada direção (N1 e N2), de {n2(ob.armLado * 100)} × {n2(ob.armAlt * 100)} cm, com gancho de {n2(ob.gancho * 100)} cm em cada ponta. Comprimento de cada estribo: {Math.round(qb.comp * 100)} cm.</p>
+                </details>
+                <details className="card acoes"><summary><b>Estaca</b></summary>
+                  <p><b>{oe.qtd} estacas</b> · furo ø{Math.round(oe.furo * 100)} × {br(oe.comp)} m · {br(qe.concTotal)} m³ · aço {br((qe.kgLong + qe.kgEstr) * oe.qtd)} kg</p>
+                  <div className="grade">
+                    {([['furo', 'Furo: diâmetro (m)'], ['comp', 'Furo: profundidade (m)'], ['armDiam', 'Armação: diâmetro (m)'], ['armComp', 'Armação: comprimento (m)'], ['noBloco', 'Armação: quanto entra no bloco (m)'], ['barras', 'Ferros longitudinais (quant.)'], ['bitLong', 'Ferros: bitola (mm)'], ['bitEstr', 'Estribos: bitola (mm)'], ['espEstr', 'Estribos: a cada (m)'], ['transpEstr', 'Estribos: transpasse (m)'], ['barra', 'Barra comercial (m)']] as [keyof typeof ESTACA_PADRAO, string][]).map(([k, t]) =>
+                      <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={oe[k]} onChange={e => setEstaca(k, parseFloat(e.target.value) || 0)} /></label>)}
+                  </div>
+                  <p className="dica">{oe.barras} N3 ø{oe.bitLong.toFixed(1)} C={Math.round(oe.armComp * 100)} · {qe.nEstr} estribos N4 ø{oe.bitEstr.toFixed(1)} c/{Math.round(oe.espEstr * 100)} C={Math.round(qe.cEstr * 100)} (circular ø{Math.round(oe.armDiam * 100)}).</p>
+                  <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
+                  <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
+                  <button onClick={() => baixarPdf(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), { titulo: 'DETALHE DO BLOCO E DA ESTACA', sub: `${projNome || base} · ${pf.nome}`, obs: 'Medidas em cm' })}>Baixar detalhe do bloco e da estaca (PDF)</button>
+                </details>
+                <details className="card acoes"><summary><b>Esperas dos painéis</b></summary>
                   <p><b>{es.length} esperas</b> em {psf.length} painéis</p>
                   <div className="grade">
                     <label>Distância da ponta do painel (m)<input type="number" step="0.01" value={eb} onChange={e => setRegras({ ...regras, esperaBorda: parseFloat(e.target.value) || 0 })} /></label>
@@ -984,46 +1142,15 @@ export default function App() {
                   <button onClick={() => baixarDwg(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee))}>Baixar planta das esperas (DWG)</button>
                   <button onClick={() => baixarPdf(base + '-esperas.dxf', dxfEsperas(pf, tf, psf, es, codF, arqF, eb, ee), { titulo: 'PLANTA DAS ESPERAS DOS PAINÉIS', sub: `${projNome || base} · ${pf.nome}` })}>Baixar planta das esperas (PDF)</button>
                   <button onClick={() => baixar(base + '-esperas.csv', csvEsperas(es, loc.ox, loc.oy), 'text/csv')}>Baixar tabela das esperas (CSV)</button>
-                </div>
-                <div className="card acoes">
-                  <h3>Bloco de coroamento</h3>
-                  <p><b>{ob.qtd} blocos</b> (um em cada ponto) · {n2(qb.concTotal)} m³ · {n2(qb.kg)} kg de aço · {qb.barras12} barras</p>
-                  <div className="grade">
-                    {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)'], ['estaca', 'Estaca: diâmetro (m) — 0 = sem estaca']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
-                      <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={ob[k]} onChange={e => setBloco(k, parseFloat(e.target.value) || 0)} /></label>)}
-                  </div>
-                  <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
-                  <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
-                  <button onClick={() => baixarPdf(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), { titulo: 'DETALHE DO BLOCO E DA ESTACA', sub: `${projNome || base} · ${pf.nome}`, obs: 'Medidas em cm' })}>Baixar detalhe do bloco e da estaca (PDF)</button>
-                  <p className="dica">Gaiola: {ob.barras} estribos quadrados fechados em cada direção (N1 e N2), de {n2(ob.armLado * 100)} × {n2(ob.armAlt * 100)} cm, com gancho de {n2(ob.gancho * 100)} cm em cada ponta. Comprimento de cada estribo: {Math.round(qb.comp * 100)} cm.</p>
-                </div>
-                <div className="card acoes">
-                  <h3>Estaca</h3>
-                  <p><b>{oe.qtd} estacas</b> · furo ø{Math.round(oe.furo * 100)} × {br(oe.comp)} m · {br(qe.concTotal)} m³ · aço {br((qe.kgLong + qe.kgEstr) * oe.qtd)} kg</p>
-                  <div className="grade">
-                    {([['furo', 'Furo: diâmetro (m)'], ['comp', 'Furo: profundidade (m)'], ['armDiam', 'Armação: diâmetro (m)'], ['armComp', 'Armação: comprimento (m)'], ['noBloco', 'Armação: quanto entra no bloco (m)'], ['barras', 'Ferros longitudinais (quant.)'], ['bitLong', 'Ferros: bitola (mm)'], ['bitEstr', 'Estribos: bitola (mm)'], ['espEstr', 'Estribos: a cada (m)'], ['transpEstr', 'Estribos: transpasse (m)'], ['barra', 'Barra comercial (m)']] as [keyof typeof ESTACA_PADRAO, string][]).map(([k, t]) =>
-                      <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={oe[k]} onChange={e => setEstaca(k, parseFloat(e.target.value) || 0)} /></label>)}
-                  </div>
-                  <p className="dica">{oe.barras} N3 ø{oe.bitLong.toFixed(1)} C={Math.round(oe.armComp * 100)} · {qe.nEstr} estribos N4 ø{oe.bitEstr.toFixed(1)} c/{Math.round(oe.espEstr * 100)} C={Math.round(qe.cEstr * 100)} (circular ø{Math.round(oe.armDiam * 100)}).</p>
-                  <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
-                  <button onClick={() => baixarDwg(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe))}>Baixar detalhe do bloco e da estaca (DWG)</button>
-                  <button onClick={() => baixarPdf(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), { titulo: 'DETALHE DO BLOCO E DA ESTACA', sub: `${projNome || base} · ${pf.nome}`, obs: 'Medidas em cm' })}>Baixar detalhe do bloco e da estaca (PDF)</button>
-                </div>
-                <div className="card acoes">
-                  <h3>Folhas para imprimir</h3>
-                  <label>Tamanho da folha (locação, coordenadas e esperas)<select value={papelFund} onChange={e => setPapelFund(e.target.value as 'a3' | 'a2')}><option value="a2">A2 deitado</option><option value="a3">A3 deitado</option></select></label>
-                  <p className="dica">Locação, tabela de coordenadas, esperas, bloco e estaca, com carimbo. O detalhe do bloco e da estaca sai sempre em A3 (escalas 1:50, 1:20 e 1:10). Na impressão escolha o papel <b>A2</b> ou <b>A3</b> e <i>Salvar como PDF</i> (ou mande para a gráfica).</p>
-                  <button onClick={() => { setVerFund('folhas'); setParteFund('plantas'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir locação, coordenadas e esperas ({papelFund.toUpperCase()})</button>
-                  <button onClick={() => { setVerFund('folhas'); setParteFund('detalhe'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir detalhe do bloco e da estaca (A3)</button>
-                </div>
-                <div className="card acoes">
-                  <h3>Pontos</h3>
+                </details>
+                <details className="card acoes"><summary><b>Pontos</b></summary>
                   <p className="dica">Coordenadas a partir da origem.</p>
                   {loc.pts.map(p => <div key={p.n} className="dica">B{p.n} · eixo {p.eixo} · X {br(p.X)} · Y {br(p.Y)} · {p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</div>)}
-                </div>
+                </details>
+                </>}
               </div>
               <div className="planta">
-                <div className="botoes">{([['pontos', 'Pontos de fundação'], ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['bloco', 'Bloco e estaca'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
+                <div className="botoes">{([['pontos', 'Pontos de fundação'], ...(resOk ? [['cargas', 'Cargas nas estacas']] as const : []), ['locacao', 'Planta de locação'], ['esperas', 'Esperas dos painéis'], ['bloco', 'Bloco e estaca'], ['folhas', 'Folhas para imprimir']] as const).map(([k, t]) => <button key={k} className={verFund === k ? 'on' : ''} onClick={() => { setVerFund(k); if (k !== 'pontos') setModoFund(null); }}>{t}</button>)}</div>
                 {(verFund === 'bloco' || verFund === 'estaca') && <div className="bloco-tela"><ZoomSvg vb="0 0 400 255"><g dangerouslySetInnerHTML={{ __html: dfT }} /></ZoomSvg></div>}
                 {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <ZoomSvg key={verFund} vb={q.vb} metro={q.k}><g dangerouslySetInnerHTML={{ __html: svg }} />
                   {modoFund && verFund === 'pontos' && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(174,62,201,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
@@ -1031,7 +1158,7 @@ export default function App() {
                     const v = pt.matrixTransform((e.target as SVGGraphicsElement).getScreenCTM()!.inverse()); clique(q.iX(v.x), q.iY(v.y)); }} />}
                   {typeof modoFund === 'object' && modoFund && <circle cx={q.X(modoFund.x)} cy={q.Y(modoFund.y)} r={0.3 * q.k} fill="none" stroke="#ae3ec9" strokeWidth={6} />}
                 </ZoomSvg>}
-                {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <p className="dica">{verFund === 'esperas' ? 'Painéis do térreo (azul e laranja alternados) com as esperas (x vermelho).' : 'Pontos de fundação nas paredes do térreo: verde = canto, encontro, ponta ou coluna · laranja = intermediário · roxo = acrescentado à mão. Mudou as paredes, a planta acompanha.'}</p>}
+                {verFund !== 'folhas' && verFund !== 'bloco' && verFund !== 'estaca' && <p className="dica">{verFund === 'cargas' && resOk ? 'Carga de cada estaca (tf), já com a parede ajudando: verde = atende · laranja = passa da regra da ponta · vermelho = fator de segurança menor que 2.' : verFund === 'esperas' ? 'Painéis do térreo (azul e laranja alternados) com as esperas (x vermelho).' : 'Pontos de fundação nas paredes do térreo: verde = canto, encontro, ponta ou coluna · laranja = intermediário · roxo = acrescentado à mão. Mudou as paredes, a planta acompanha.'}</p>}
               </div>
             </section>
             {folhas}

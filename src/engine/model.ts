@@ -427,6 +427,7 @@ export interface Ajustes {
   telhado?: Record<string, Telhado>;
   bonecaLateral?: Record<string, number>;  // boneca lateral própria do trecho (m), ex.: porta/vidro na parede toda — o painel sai inteiro e as bonecas saem depois da montagem       // por pavimento: telhado em caimento (paredes no sentido do caimento saem chanfradas)
   peAmb?: Record<string, number>;          // pé-direito próprio de um ambiente (sala de 4 m, pé-direito duplo): as paredes em volta sobem até ele
+  fund?: import('./sondagem.ts').DadosFund;   // fundação: sondagem, tipo de estaca, carga dos pavimentos, baldrame
 }
 export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: [], cortes: {}, colunas: {}, altura: {}, vaoTipo: {}, naoPinar: [], lajeFora: [], lajeGiro: [] };
 
