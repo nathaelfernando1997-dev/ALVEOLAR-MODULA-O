@@ -202,10 +202,23 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const cands = (lado: 'o' | 'l' | 's' | 'n') => {
       const o: 'H' | 'V' = lado === 'o' || lado === 'l' ? 'V' : 'H', ed = { o: a.x0, l: a.x1, s: a.y0, n: a.y1 }[lado], dir = lado === 'o' || lado === 's' ? -1 : 1;
       const [r0, r1] = o === 'V' ? [a.y0, a.y1] : [a.x0, a.x1];
-      if (a.externo && !a.externo[lado]) return [];
+      // lado de fora: fora da planta ou encostado num ambiente sem laje (corredor, área externa marcada sem laje)
+      const semLajeAoLado = ambs.some(b => b !== a && b.pav === a.pav && fora.includes(b.id) && (
+        lado === 'o' ? Math.abs(b.x1 - a.x0) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.5 * (a.y1 - a.y0)
+        : lado === 'l' ? Math.abs(b.x0 - a.x1) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.5 * (a.y1 - a.y0)
+        : lado === 's' ? Math.abs(b.y1 - a.y0) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.5 * (a.x1 - a.x0)
+        : Math.abs(b.y0 - a.y1) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.5 * (a.x1 - a.x0)));
+      if (a.externo && !a.externo[lado] && !semLajeAoLado) return [];
       // cálculo novo: a linha tem que acompanhar boa parte do lado da laje (beiral de verdade);
       // pedaço solto de outro desenho (contorno do poço, jardim) não vira beiral
-      return bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 2.5 && Math.min(b.b, r1) - Math.max(b.a, r0) > (novo ? Math.max(0.3, 0.6 * (r1 - r0)) : 0.3))
+      // contorno com quina: a perna que sai da ponta diz para que lado o contorno abre (a linha vale só para a laje desse lado)
+      const permitido = (b: LinhaProjeto) => {
+        const pernas = bordas.filter(h => h.o !== b.o && (Math.abs(h.c - b.a) < 0.05 || Math.abs(h.c - b.b) < 0.05) && (Math.abs(h.a - b.c) < 0.05 || Math.abs(h.b - b.c) < 0.05));
+        if (!pernas.length) return true;
+        const paraMais = pernas.some(h => Math.abs(h.a - b.c) < 0.05), paraMenos = pernas.some(h => Math.abs(h.b - b.c) < 0.05);
+        return dir < 0 ? paraMais || !paraMenos : paraMenos || !paraMais;   // lado o/s: o contorno tem que abrir para + ; lado l/n: para −
+      };
+      return bordas.filter(b => b.o === o && dir * (b.c - ed) > 0.1 && dir * (b.c - ed) <= 2.5 && Math.min(b.b, r1) - Math.max(b.a, r0) > (novo ? Math.max(0.3, 0.6 * (r1 - r0)) : 0.3) && permitido(b))
         .sort((p, q) => Math.abs(p.c - ed) - Math.abs(q.c - ed));
     };
     // com várias linhas de projeção, fica a que fecha o contorno com a do lado vizinho (quina); senão a mais perto
