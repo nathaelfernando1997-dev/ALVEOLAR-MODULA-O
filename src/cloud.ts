@@ -145,11 +145,16 @@ export async function enviarInfoPecas(projeto: string, rows: { peca: string; dad
 // aponta para o projeto atual (tabela private.obra_alias, ver supabase/obra_alias.sql). Sem ligação: null
 export async function resolverObra(projeto: string, chave: string): Promise<{ obra: string; chave: string } | null> {
   if (!sb) return null;
-  try {
-    const { data, error } = await sb.rpc('resolver_obra', { p_projeto: projeto, p_chave: chave });
-    const r = Array.isArray(data) ? data[0] : data;
-    return error || !r?.projeto ? null : { obra: r.projeto, chave: r.chave };
-  } catch { return null; }
+  // rede lenta/instável (obra): tenta de novo antes de desistir
+  for (let i = 0; i < 4; i++) {
+    try {
+      const { data, error } = await sb.rpc('resolver_obra', { p_projeto: projeto, p_chave: chave });
+      if (!error) { const r = Array.isArray(data) ? data[0] : data; return r?.projeto ? { obra: r.projeto, chave: r.chave } : null; }
+      if (/does not exist|não existe|PGRST202/i.test(error.message + (error.code ?? ''))) return null;   // função ainda não criada
+    } catch { /* sem rede: tenta de novo */ }
+    await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+  }
+  return null;
 }
 export async function infoPeca(projeto: string, chave: string, peca: string): Promise<InfoPeca | null> {
   if (!sb) return null;

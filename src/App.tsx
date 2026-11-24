@@ -2064,7 +2064,7 @@ const nomeEtapa = (e?: cloud.Etapa | null) => e === 'problema' ? 'Problema' : ET
 // etiqueta antiga: se o código da obra foi ligado a outro projeto (projeto apagado/substituído), abre o projeto atual
 function PecaQRLigada({ obra, chave, peca }: { obra: string; chave: string; peca: string }) {
   const [alvo, setAlvo] = useState<{ obra: string; chave: string } | null | undefined>(undefined);
-  useEffect(() => { let ok = true; cloud.resolverObra(obra, chave).then(r => { if (ok) setAlvo(r); }); const t = setTimeout(() => ok && setAlvo(a => a === undefined ? null : a), 4000); return () => { ok = false; clearTimeout(t); }; }, [obra, chave]);
+  useEffect(() => { let ok = true; cloud.resolverObra(obra, chave).then(r => { if (ok) setAlvo(r); }); return () => { ok = false; }; }, [obra, chave]);
   if (alvo === undefined) return <div className="qr-tela"><p>Abrindo a peça {peca}…</p></div>;
   return alvo ? <PecaQR obra={alvo.obra} chave={alvo.chave} peca={peca} /> : <PecaQR obra={obra} chave={chave} peca={peca} />;
 }
