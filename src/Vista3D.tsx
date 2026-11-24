@@ -13,6 +13,7 @@ export interface Props3D {
   espLaje: (p: PainelLaje) => number;
   espParede: number;
   sg: Map<string, string>;
+  peLaje?: (p: PainelLaje) => number | undefined;   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
 }
 
 type Caixa = { pav: string; tipo: 'parede' | 'laje'; cod: string; txt: string; ab: boolean; grossa: boolean; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number };
@@ -47,7 +48,7 @@ function caixas(o: Props3D): Caixa[] {
     for (const q of lajes) {
       const e = o.espLaje(q), cod = `${sig}-L${q.num}`;
       out.push({ pav: pav.id, tipo: 'laje', cod, txt: `${cod} · laje ${q.comp.toFixed(2)} × ${q.larg.toFixed(2)} m · ${Math.round(e * 100)} cm · sobre o ${pav.nome}`.replace(/(\d)\.(\d)/g, '$1,$2'), ab: false, grossa: e >= 0.16 - 1e-6,
-        x0: Math.min(q.x0, q.x1) + dx, x1: Math.max(q.x0, q.x1) + dx, y0: Math.min(q.y0, q.y1) + dy, y1: Math.max(q.y0, q.y1) + dy, z0: zp + pav.altura, z1: zp + pav.altura + e });
+        x0: Math.min(q.x0, q.x1) + dx, x1: Math.max(q.x0, q.x1) + dx, y0: Math.min(q.y0, q.y1) + dy, y1: Math.max(q.y0, q.y1) + dy, z0: zp + (o.peLaje?.(q) ?? pav.altura), z1: zp + (o.peLaje?.(q) ?? pav.altura) + e });
     }
   }
   return out;

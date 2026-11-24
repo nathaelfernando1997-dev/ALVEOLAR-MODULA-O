@@ -13,6 +13,7 @@ export interface OpIfc {
   espLaje: (p: PainelLaje) => number;             // espessura da laje (m)
   espParede: number;                              // espessura das paredes (m)
   sg: Map<string, string>;                        // sigla do pavimento na etiqueta (T, 1, 2…)
+  peLaje?: (p: PainelLaje) => number | undefined; // altura da laje no ambiente com pé-direito próprio
 }
 
 // texto IFC: ASCII; acentos em \X2\hhhh\X0\
@@ -104,7 +105,7 @@ export function gerarIfc(o: OpIfc): string {
     const hPav = pav.altura;
     for (const q of o.pl.filter(q => q.pav === pav.id)) {
       const x0 = Math.min(q.x0, q.x1), x1 = Math.max(q.x0, q.x1), y0 = Math.min(q.y0, q.y1), y1 = Math.max(q.y0, q.y1), esp = o.espLaje(q), cod = `${sig}-L${q.num}`;
-      const plL = loc(plSt, x0 + dx, y0 + dy, hPav);
+      const plL = loc(plSt, x0 + dx, y0 + dy, o.peLaje?.(q) ?? hPav);
       const s = e(`IFCSLAB(${guid()},$,${txt(`${cod} · laje ${q.comp.toFixed(2).replace('.', ',')} × ${q.larg.toFixed(2).replace('.', ',')} m`)},$,$,${plL},${caixa(x1 - x0 - 0.006, y1 - y0 - 0.006, esp, esp >= 0.16 - 1e-6 ? S.laje16 : S.laje, (x1 - x0) / 2, (y1 - y0) / 2)},${txt(cod)},.FLOOR.)`);
       dentro.push(s); comMat.push(s);
       props(s, 'Alveolar_Painel', [['Codigo', lab(cod)], ['Laje sobre', lab(pav.nome)], ['Comprimento', len(q.comp)], ['Largura', len(q.larg)], ['Espessura', len(esp)], ['Sentido dos alveolos', lab(q.sentido === 'H' ? 'X' : 'Y')]]);

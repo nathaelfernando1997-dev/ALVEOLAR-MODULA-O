@@ -455,7 +455,7 @@ export default function App() {
     return d;
   }, [ativos, calc]);
   const espParede3d = (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025) + 0.01;
-  const props3d = useMemo(() => ({ pavs: ativos, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos) }),
+  const props3d = useMemo(() => ({ pavs: ativos, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => aj.peAmb?.[p.amb] }),
     [ativos, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
