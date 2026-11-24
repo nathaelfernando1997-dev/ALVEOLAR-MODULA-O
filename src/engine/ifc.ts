@@ -85,7 +85,7 @@ export function gerarIfc(o: OpIfc): string {
     for (const p of o.ps.filter(q => q.pav === pav.id)) {
       const a = Math.min(p.a, p.b), b = Math.max(p.a, p.b), Lp = b - a, cod = `${sig}-P${p.num}`;
       const [x, y, xd] = p.o === 'H' ? [a + dx, p.c + dy, X] : [p.c + dx, a + dy, Y];
-      const plW = loc(plSt, x, y, 0, xd);
+      const plW = loc(plSt, x, y, p.z0 ?? 0, xd);
       const w = e(`IFCWALL(${guid()},$,${txt(`${cod} · painel ${Lp.toFixed(2).replace('.', ',')} × ${p.H.toFixed(2).replace('.', ',')} m`)},$,$,${plW},${caixa(Lp - 0.006, T, p.H, p.recortes.length ? S.parAb : S.parede, (Lp - 0.006) / 2 + 0.003)},${txt(cod)},.SOLIDWALL.)`);
       dentro.push(w); comMat.push(w);
       props(w, 'Alveolar_Painel', [['Codigo', lab(cod)], ['Pavimento', lab(pav.nome)], ['Comprimento', len(Lp)], ['Altura', len(p.H)], ['Espessura', len(T)], ['Aberturas', lab(p.recortes.map(r => r.tipo).join(', ') || 'nenhuma')]]);

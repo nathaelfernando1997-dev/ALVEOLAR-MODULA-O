@@ -433,6 +433,38 @@ export default function App() {
         }
       }
     }
+    // tira: ambiente com pé-direito próprio (sala de 4,50) do lado de um ambiente mais baixo e sem parede na divisa
+    // (vão livre): painel baixo em cima da laje do ambiente mais baixo, fechando até a laje alta
+    for (const { L, H } of peEsp) {
+      const pav = ativos.find(a => a.id === L.pav); if (!pav || H <= pav.altura + 0.05) continue;
+      const Ht = H - pav.altura - espLaje; if (Ht < 0.1) continue;
+      const lados: { o: 'H' | 'V'; c: number; s: number; e: number; fora: number }[] = [
+        { o: 'H', c: L.y0, s: L.x0, e: L.x1, fora: -1 }, { o: 'H', c: L.y1, s: L.x0, e: L.x1, fora: 1 },
+        { o: 'V', c: L.x0, s: L.y0, e: L.y1, fora: -1 }, { o: 'V', c: L.x1, s: L.y0, e: L.y1, fora: 1 }];
+      for (const ld of lados) {
+        const ponto = (u: number, d: number): [number, number] => ld.o === 'H' ? [u, ld.c + ld.fora * d] : [ld.c + ld.fora * d, u];
+        const meia = (o: 'H' | 'V', c: number, u: number) => (vazio.ts.find(t => t.pav === L.pav && t.o === o && Math.abs(t.c - c) < 0.15 && u > t.s - 0.2 && u < t.e + 0.2)?.esp ?? 0.1) / 2;
+        // começa e termina na face das paredes do lado (que já sobem até a laje alta)
+        const s0 = ld.s + meia(ld.o === 'H' ? 'V' : 'H', ld.s, ld.c), s1 = ld.e - meia(ld.o === 'H' ? 'V' : 'H', ld.e, ld.c);
+        // trechos já fechados por painel que subiu até a laje alta
+        const cheios = vazio.ps.filter(P => P.pav === L.pav && P.o === ld.o && Math.abs(P.c - ld.c) < 0.15 && P.H >= H - 0.02).map(P => [P.a - regras.coluna, P.b + regras.coluna] as [number, number]).sort((a, b) => a[0] - b[0]);
+        const livres: [number, number][] = []; let u = s0;
+        for (const [a, b] of cheios) { if (a > u) livres.push([u, Math.min(a, s1)]); u = Math.max(u, b); }
+        if (u < s1) livres.push([u, s1]);
+        for (const [a0, b0] of livres) {
+          if (b0 - a0 < 0.3) continue;
+          const m = (a0 + b0) / 2, [px, py] = ponto(m, 0.3);
+          if (!vazio.pl.some(Q => Q.pav === L.pav && Q.amb !== L.id && (aj.peAmb?.[Q.amb] ?? 0) < H - 0.3 && px > Math.min(Q.x0, Q.x1) && px < Math.max(Q.x0, Q.x1) && py > Math.min(Q.y0, Q.y1) && py < Math.max(Q.y0, Q.y1))) continue;   // só em cima de laje mais baixa
+          const n = Math.max(1, Math.ceil((b0 - a0 - regras.folga + regras.coluna) / (larguraMaxDe(regras, Ht) + regras.folga + regras.coluna)));
+          const w = (b0 - a0 - (n - 1) * regras.coluna) / n;
+          for (let k = 0; k < n; k++) {
+            const a = a0 + k * (w + regras.coluna), b = a + w, tid = `${L.id}|tira|${ld.o}|${ld.c.toFixed(2)}`;
+            vazio.ps.push({ num: 0, trecho: tid, pav: L.pav, o: ld.o, c: ld.c, a, b, larg: w - regras.folga, H: Ht, comp: w, recortes: [], z0: pav.altura + espLaje, chave: `${tid}@${a.toFixed(2)}`,
+              aviso: `tira em cima da laje (de ${br(pav.altura + espLaje)} a ${br(H)} m): fecha a diferença até a laje do pé-direito de ${br(H)} m` });
+          }
+        }
+      }
+    }
     numerar(vazio.ps, ativos.map(p => p.id), aj.paredeNumFixa);
     numerarLajes(vazio.pl, ativos.map(p => p.id), aj.lajeNumFixa);
     { let nv = 0, nt = 0; vazio.vigas = sugerirVigas(ativos, vazio.ts, vazio.ps, vazio.vaos, vazio.lajes, regras, pisos).map(v => ({ ...v, n: v.tipo === 'trelica' ? ++nt : ++nv }));

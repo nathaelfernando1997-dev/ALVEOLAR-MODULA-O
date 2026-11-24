@@ -42,7 +42,8 @@ function caixas(o: Props3D): Caixa[] {
       for (const [s0, s1, h0, h1] of ped) {
         const c = p.c + (p.o === 'H' ? dy : dx);
         const [x0, x1, y0, y1] = p.o === 'H' ? [s0 + dx, s1 + dx, c - T / 2, c + T / 2] : [c - T / 2, c + T / 2, s0 + dy, s1 + dy];
-        out.push({ pav: pav.id, tipo: 'parede', cod, txt, ab: p.recortes.length > 0, grossa: false, x0, y0, z0: zp + h0, x1, y1, z1: zp + h1 });
+        const zb = zp + (p.z0 ?? 0);
+        out.push({ pav: pav.id, tipo: 'parede', cod, txt, ab: p.recortes.length > 0, grossa: false, x0, y0, z0: zb + h0, x1, y1, z1: zb + h1 });
       }
     }
     for (const q of lajes) {
