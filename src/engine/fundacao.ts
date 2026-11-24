@@ -312,8 +312,8 @@ export function csvEsperas(es: Espera[], ox = 0, oy = 0): string {
 
 // ---------- detalhamento do bloco de coroamento ----------
 // gaiola: n estribos quadrados fechados em cada direção (lado da armadura x altura da armadura), com gancho nas pontas
-export interface OpBloco { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho: number; estaca: number; qtd: number }
-export const BLOCO_PADRAO: Omit<OpBloco, 'qtd'> = { lado: 0.5, alt: 0.5, armLado: 0.44, armAlt: 0.44, barras: 4, bitola: 8.0, barra: 12, gancho: 0.08, estaca: 0.30 };
+export interface OpBloco { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho: number; estaca: number; qtd: number; estrH?: number; bitH?: number }
+export const BLOCO_PADRAO: Omit<OpBloco, 'qtd'> & { estrH: number; bitH: number } = { lado: 0.5, alt: 0.5, armLado: 0.44, armAlt: 0.44, barras: 4, bitola: 8.0, barra: 12, gancho: 0.08, estaca: 0.30, estrH: 0, bitH: 6.3 };
 export const pesoBitola = (mm: number) => 0.006165 * mm * mm;   // kg/m (aço CA-50)
 
 export function quantBloco(o: OpBloco) {

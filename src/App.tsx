@@ -967,6 +967,26 @@ export default function App() {
             const linhasTab = loc.pts.map(p => <tr key={p.n}><td>B{p.n}</td><td>{p.eixo}</td><td>{br(p.X)}</td><td>{br(p.Y)}</td><td>{p.tipo === 'L' ? 'canto (L)' : p.tipo === 'T' ? 'encontro (T)' : p.tipo === 'X' ? 'cruzamento' : p.tipo}</td></tr>);
             const metade = Math.ceil(linhasTab.length / 2);
             const tabela = (l: typeof linhasTab) => <table className="tab-loc"><thead><tr><th>Ponto</th><th>Eixo</th><th>X (m)</th><th>Y (m)</th><th>Tipo</th></tr></thead><tbody>{l}</tbody></table>;
+            const baixarPranchas = async () => {
+              const P = await import('./engine/pranchasFund.ts'), { paginasParaPdf } = await import('./engine/folhaDoc.ts');
+              const I = { obra: projNome || base, resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', empresa: 'Estruttura Projetos e Construções', data: new Date().toLocaleDateString('pt-BR'), revisao: aj.arm?.revisao };
+              const n = pts.length, ehBase = resOk && !fund.baldrame && !!resFund;
+              const tipoE = TIPOS_ESTACA.find(t => t[0] === fund.tipo)?.[1].toLowerCase() ?? '';
+              const nomes = ['FUND-01', 'FUND-02', ...(resOk ? ['FUND-02'] : []), ...(ehBase ? ['FUND-03'] : []), 'FUND-04', 'FUND-05', 'FUND-06'];
+              const tot = String(nomes.length).padStart(2, '0'); let k = 0; const fol = () => `${nomes[k]} · ${String(++k).padStart(2, '0')}/${tot}`;
+              const pags = [P.folhaEstacaBloco(I, oe, ob, n, n, [{ L: oe.comp, n }], { baldrame: !!fund.baldrame }, fol())];
+              const cab = `${n} estacas ${tipoE} ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m${capL ? ` · admissível ${br(capL.Padm / 9.81, 1)} tf` : ''} · ${pf.nome}`;
+              const cargasQ = resOk && resFund ? pts.map(p => ({ n: p.n, R: resFund.R[p.n] ?? 0, sit: sit(p.n) === 'ok' ? 'atende' : sit(p.n) === 'ponta' ? (fund.criterio === 'rt' ? 'atende FS 2 (critério RT)' : 'passa da regra da ponta') : 'FS menor que 2' })) : null;
+              const f2 = fol(), f2b = cargasQ ? fol() : ''; pags.push(...P.folhasLocacao(I, loc, arqF.map(p => p.pts as [number, number][]), cargasQ, cab, [f2, f2b]));
+              if (ehBase && resFund) {
+                const grupos = new Map<string, { nome: string; w: number; q: number }>();
+                for (const t of tf) for (const v of t.vaos) if (v.tipo?.startsWith('P') || v.base < 0.15 && (v.topo ?? v.base + v.h) < t.H - 0.3) { const w = Math.round((v.b - v.a) * 100), kk = (v.tipo || 'P') + w; const g = grupos.get(kk) ?? { nome: v.tipo || 'porta', w, q: 0 }; g.q++; grupos.set(kk, g); }
+                const T = resFund.trechos, Hs = tf.map(t => t.H).sort((a, b) => a - b);
+                pags.push(P.folhaBaseParedes(I, { portas: [...grupos.values()], LW: tf.reduce((s, t) => s + t.e - t.s, 0), tela10: T.some(t => t.Tparede > TELA25), nTrechosTela: T.filter(t => t.Tparede > TELA25).length, nTrechosCinta: T.filter(t => t.Tparede > TELA10).length, Tporta: Math.max(0, ...T.map(t => t.Tporta)), Tparede: Math.max(0, ...T.map(t => t.Tparede)), H: Hs[Math.floor(Hs.length / 2)] ?? 3 }, fol()));
+              }
+              pags.push(...P.folhasBloco3D(I, oe, ob, [fol(), fol(), fol()]));
+              baixarBin(`${projNome || base} - Fundacao (pranchas).pdf`, paginasParaPdf(pags), 'application/pdf');
+            };
             const totF = resOk ? 6 : 4;
             const linhasCarga = pts.map(p => <tr key={p.n}><td>B{p.n}</td><td>{br((resFund?.lev[p.n] ?? 0) / 9.81, 1)}</td><td><b>{br((resFund?.R[p.n] ?? 0) / 9.81, 1)}</b></td><td>{br(resFund?.rec[p.n] ?? 0, 1)}</td><td style={{ color: corSit[sit(p.n)] }}>{sit(p.n) === 'ok' ? 'atende' : sit(p.n) === 'ponta' ? (fund.criterio === 'rt' ? 'atende FS 2 (critério RT)' : 'passa da regra da ponta') : 'FS menor que 2'}</td></tr>);
             const nColC = linhasCarga.length > 90 ? 4 : linhasCarga.length > 40 ? 3 : 2, porColC = Math.ceil(linhasCarga.length / nColC);
@@ -1051,10 +1071,10 @@ export default function App() {
                       <label className="botao">Abrir dados da fundação (JSON)<input type="file" accept=".json" hidden onChange={async e => { const fl = e.target.files?.[0]; if (!fl) return; try {
                         const j = JSON.parse(await fl.text()), f = (j.fund ?? j.config?.ajustes?.fund ?? j.ajustes?.fund) as DadosFund | undefined;
                         if (!f?.furos) throw new Error('não tem dados de fundação');
-                        setAj({ ...aj, fund: f, ...(j.fundExtra ? { fundExtra: j.fundExtra } : {}), ...(j.fundRemover ? { fundRemover: j.fundRemover } : {}) }); if (j.estaca) setRegras({ ...regras, estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), ...j.estaca } }); setResFund(null);
+                        setAj({ ...aj, fund: f, ...(j.fundExtra ? { fundExtra: j.fundExtra } : {}), ...(j.fundRemover ? { fundRemover: j.fundRemover } : {}) }); if (j.estaca || j.bloco) setRegras({ ...regras, ...(j.estaca ? { estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), ...j.estaca } } : {}), ...(j.bloco ? { bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), ...j.bloco } } : {}) }); setResFund(null);
                         alert(`Fundação aplicada: ${f.furos.length} furo(s) de sondagem${j.estaca ? `, estaca ø${Math.round((j.estaca.furo ?? oe.furo) * 100)} × ${br(j.estaca.comp ?? oe.comp)} m` : ''}. ${j.fundExtra || j.fundRemover ? ' Pontos de fundação ajustados conforme o arquivo.' : ''} Paredes e lajes não foram mexidas.`);
                       } catch (er) { alert('Arquivo inválido: ' + (er as Error).message); } e.target.value = ''; }} /></label>
-                      <button onClick={() => baixar(base + '-fundacao.json', JSON.stringify({ fund, estaca: { furo: oe.furo, comp: oe.comp }, fundExtra: aj.fundExtra, fundRemover: aj.fundRemover }, null, 1), 'application/json')}>Salvar dados da fundação (JSON)</button>
+                      <button onClick={() => baixar(base + '-fundacao.json', JSON.stringify({ fund, estaca: regras.estaca ?? { furo: oe.furo, comp: oe.comp }, bloco: regras.bloco, fundExtra: aj.fundExtra, fundRemover: aj.fundRemover }, null, 1), 'application/json')}>Salvar dados da fundação (JSON)</button>
                     </div></details>
                   </div>
                   <div className="card acoes">
@@ -1108,11 +1128,14 @@ export default function App() {
                   <p className="dica">Locação, tabela de coordenadas{resOk ? ', planta e quadro de cargas' : ''}, esperas, bloco e estaca, com carimbo. O detalhe do bloco e da estaca sai sempre em A3 (escalas 1:50, 1:20 e 1:10). Na impressão escolha o papel <b>A2</b> ou <b>A3</b> e <i>Salvar como PDF</i> (ou mande para a gráfica).</p>
                   <button onClick={() => { setVerFund('folhas'); setParteFund('plantas'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir locação, coordenadas{resOk ? ', cargas' : ''} e esperas ({papelFund.toUpperCase()})</button>
                   <button onClick={() => { setVerFund('folhas'); setParteFund('detalhe'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir detalhe do bloco e da estaca (A3)</button>
+                  <h3>Pranchas da fundação (PDF)</h3>
+                  <p className="dica">Em preto e branco, com carimbo: FUND-01 estaca e bloco · FUND-02 locação{resOk ? ' e quadro de cargas' : ''}{resOk && !fund.baldrame ? ' · FUND-03 cinta das portas e base das paredes' : ''} · bloco em 3D (vista, peças e montagem).{!resOk ? ' Calcule as cargas (passo 3) para sair também o quadro de cargas e a base das paredes.' : ''}</p>
+                  <button className="principal" onClick={baixarPranchas}>Baixar pranchas da fundação (PDF)</button>
                 </div>
                 <details className="card acoes"><summary><b>Bloco de coroamento</b></summary>
                   <p><b>{ob.qtd} blocos</b> (um em cada ponto) · {n2(qb.concTotal)} m³ · {n2(qb.kg)} kg de aço · {qb.barras12} barras</p>
                   <div className="grade">
-                    {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)'], ['estaca', 'Estaca: diâmetro (m) — 0 = sem estaca']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
+                    {([['lado', 'Bloco: lado (m)'], ['alt', 'Bloco: altura (m)'], ['armLado', 'Ferragem: lado (m)'], ['armAlt', 'Ferragem: altura (m)'], ['barras', 'Barras em cada direção'], ['bitola', 'Bitola (mm)'], ['gancho', 'Gancho em cada ponta (m)'], ['barra', 'Barra comercial (m)'], ['estaca', 'Estaca: diâmetro (m) — 0 = sem estaca'], ['estrH', 'Estribos deitados por fora (quant.)'], ['bitH', 'Estribos deitados: bitola (mm)']] as [keyof typeof BLOCO_PADRAO, string][]).map(([k, t]) =>
                       <label key={k}>{t}<input type="number" step={k === 'barras' ? 1 : 0.01} value={ob[k]} onChange={e => setBloco(k, parseFloat(e.target.value) || 0)} /></label>)}
                   </div>
                   <button onClick={() => baixar(base + '-bloco-estaca.dxf', dxfFundacaoDetalhe(ob, oe), 'application/dxf')}>Baixar detalhe do bloco e da estaca (DXF)</button>
