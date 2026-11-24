@@ -8,7 +8,7 @@ import type { Prim } from './dxf.ts';
 export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual';
 export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number }
 
-const TOL = 0.15;
+const TOL = 0.15, JUNTA = 0.5;   // pontos a menos de 50 cm viram um furo só
 
 export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { extra?: { x: number; y: number }[]; remover?: { x: number; y: number }[] } = {}): PontoFund[] {
   type Q = { x: number; y: number; tipo?: TipoPonto; esp: number };
@@ -59,6 +59,20 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
   for (const e of ed.extra || []) if (!qs.some(q => Math.hypot(q.x - e.x, q.y - e.y) < 0.05)) {
     const t = ts.find(t => t.o === 'H' ? Math.abs(t.c - e.y) < 0.1 && e.x > t.s - TOL && e.x < t.e + TOL : Math.abs(t.c - e.x) < 0.1 && e.y > t.s - TOL && e.y < t.e + TOL);
     qs.push({ x: e.x, y: e.y, esp: t?.esp ?? 0.15, tipo: 'manual' });
+  }
+  // pontos muito perto um do outro (ex.: coluna de painel colada num encontro, ponto acrescentado do lado de um automático):
+  // é um furo só, o bloco pega as duas paredes. Fica o ponto mais importante (canto/encontro/à mão); empate = no meio
+  const peso = (t?: TipoPonto) => t === 'manual' ? 4 : t === 'L' || t === 'T' || t === 'X' ? 3 : t === 'intermediário' ? 1 : 2;
+  for (let mudou = true; mudou;) {
+    mudou = false;
+    for (let i = 0; i < qs.length && !mudou; i++) for (let j = i + 1; j < qs.length; j++) {
+      const a = qs[i], b = qs[j];
+      if (Math.hypot(a.x - b.x, a.y - b.y) >= JUNTA) continue;
+      const pa = peso(a.tipo), pb = peso(b.tipo);
+      if (pb > pa) { a.x = b.x; a.y = b.y; a.tipo = b.tipo; }
+      else if (pa === pb) { a.x = (a.x + b.x) / 2; a.y = (a.y + b.y) / 2; }
+      a.esp = Math.max(a.esp, b.esp); qs.splice(j, 1); mudou = true; break;
+    }
   }
   // numeração: de cima para baixo, da esquerda para a direita
   qs.sort((p, q) => Math.abs(p.y - q.y) > TOL ? q.y - p.y : p.x - q.x);
