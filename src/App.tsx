@@ -504,7 +504,7 @@ export default function App() {
   const pavAtual = ativos.find(p => p.id === pavSel) || ativos[0];
 
   // QR com a chave da obra: tela de marcação sem login
-  if (qr?.k && cloud.nuvemConfigurada) return <PecaQR obra={qr.obra} chave={qr.k} peca={qr.peca} />;
+  if (qr?.k && cloud.nuvemConfigurada) return <PecaQRLigada obra={qr.obra} chave={qr.k} peca={qr.peca} />;
   if (cloud.nuvemConfigurada && (!checou || !sess || recuperando)) return <Login carregando={!checou} recuperando={recuperando} fimRecuperacao={() => setRecuperando(false)} />;
   if (qr && qrAtivo) {
     const pc = prod?.pecas.find(x => x.codigo === qr.peca);
@@ -2060,6 +2060,14 @@ const ETAPAS: { k: cloud.Etapa; t: string; bt: string; cor: string; ic: string; 
 ];
 const corEtapa = (e?: cloud.Etapa | null) => e === 'problema' ? '#e03131' : ETAPAS.find(x => x.k === e)?.cor ?? '#adb5bd';
 const nomeEtapa = (e?: cloud.Etapa | null) => e === 'problema' ? 'Problema' : ETAPAS.find(x => x.k === e)?.t ?? 'Sem marcação';
+
+// etiqueta antiga: se o código da obra foi ligado a outro projeto (projeto apagado/substituído), abre o projeto atual
+function PecaQRLigada({ obra, chave, peca }: { obra: string; chave: string; peca: string }) {
+  const [alvo, setAlvo] = useState<{ obra: string; chave: string } | null | undefined>(undefined);
+  useEffect(() => { let ok = true; cloud.resolverObra(obra, chave).then(r => { if (ok) setAlvo(r); }); const t = setTimeout(() => ok && setAlvo(a => a === undefined ? null : a), 4000); return () => { ok = false; clearTimeout(t); }; }, [obra, chave]);
+  if (alvo === undefined) return <div className="qr-tela"><p>Abrindo a peça {peca}…</p></div>;
+  return alvo ? <PecaQR obra={alvo.obra} chave={alvo.chave} peca={peca} /> : <PecaQR obra={obra} chave={chave} peca={peca} />;
+}
 
 function PecaQR({ obra, chave, peca }: { obra: string; chave: string; peca: string }) {
   const [nome, setNome] = useState(() => { try { return localStorage.getItem('alv-nome') || ''; } catch { return ''; } });
