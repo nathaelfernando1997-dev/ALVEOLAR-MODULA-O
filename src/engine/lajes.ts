@@ -189,11 +189,17 @@ export function modularLajes(ambs: Ambiente[], r: Regras, aj: Ajustes, ts: Trech
     const cx0 = faceDe('o'), cx1 = faceDe('l'), cy0 = faceDe('s'), cy1 = faceDe('n');
     const lx = cx1 - cx0, ly = cy1 - cy0;
     const incluida = !fora.includes(a.id);
-    const podeH = a.apoio.o && a.apoio.l, podeV = a.apoio.s && a.apoio.n;
     // projeção da laje (beiral) do lado de fora: até onde a laje vai além da parede
     // o beiral não pode entrar em outro ambiente com laje
     // laje mais alta (ambiente com pé-direito próprio) pode avançar por cima da laje mais baixa do lado
     const altA = aj.peAmb?.[a.id] ?? 0, maisBaixo = (b: Ambiente) => (aj.peAmb?.[b.id] ?? 0) < altA - 0.3;
+    // pé-direito alto encostado numa laje mais baixa sem parede na divisa: a tira em cima da laje de baixo apoia a laje alta
+    const tiraNo = (l: 'o' | 'l' | 's' | 'n') => altA > 0 && ambs.some(b => b !== a && b.pav === a.pav && !fora.includes(b.id) && maisBaixo(b) && (
+      l === 'o' ? Math.abs(b.x1 - a.x0) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.5 * (a.y1 - a.y0)
+      : l === 'l' ? Math.abs(b.x0 - a.x1) < 0.05 && Math.min(b.y1, a.y1) - Math.max(b.y0, a.y0) > 0.5 * (a.y1 - a.y0)
+      : l === 's' ? Math.abs(b.y1 - a.y0) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.5 * (a.x1 - a.x0)
+      : Math.abs(b.y0 - a.y1) < 0.05 && Math.min(b.x1, a.x1) - Math.max(b.x0, a.x0) > 0.5 * (a.x1 - a.x0)));
+    const podeH = (a.apoio.o || tiraNo('o')) && (a.apoio.l || tiraNo('l')), podeV = (a.apoio.s || tiraNo('s')) && (a.apoio.n || tiraNo('n'));
     const invade = (x0: number, x1: number, y0: number, y1: number) => ambs.some(b => b !== a && b.pav === a.pav && !fora.includes(b.id) && !maisBaixo(b) &&
       Math.min(b.x1, x1) - Math.max(b.x0, x0) > 0.05 && Math.min(b.y1, y1) - Math.max(b.y0, y0) > 0.05);
     const latOk = <B extends { c: number }>(l: 'o' | 'l' | 's' | 'n', b: B | null): B | null => {
