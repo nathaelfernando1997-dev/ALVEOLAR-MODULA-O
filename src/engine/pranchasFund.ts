@@ -330,8 +330,8 @@ export function folhaCanaleta(I: InfoProj, c: Canaleta, arq: XY[][], blocos: { x
   // ---- quadro
   const lin = [['Canaleta 14 × 19 × 39', 'un', String(c.un)], ['Comprimento corrido', 'm', br(c.L, 1)], ['Graute', 'm³', br(c.graute, 2)], [`Aço CA-50 ø${c.aco.bit} (${c.aco.barras} barras)`, 'kg', br(c.aco.kg, 0)]];
   tabela(d, 270, 196, 'QUANTITATIVO DA BASE DE CANALETA', lin, ['ITEM', 'UN', 'QUANT.'], [62, 14, 22]);
-  const notas = ['1. Medidas em centímetros. A canaleta corre embaixo de todas as paredes do térreo, inclusive embaixo das portas;',
-    '    não passa nos vãos sem parede (ex.: frente da garagem). Nos cantos e encontros as fiadas se cruzam (não deixar junta corrida).',
+  const notas = ['1. Medidas em centímetros. A canaleta corre embaixo de todas as paredes do térreo e NÃO passa no vão das portas (a boneca de baixo',
+    '    é retirada): para dos dois lados, só embaixo da parede. Nem nos vãos sem parede (frente da garagem). Nos encontros a fiada horizontal passa.',
     '2. Assentar sobre os blocos de fundação já concretados, nivelada, com argamassa 1 cm. Entre blocos apoia no terreno compactado.',
     `3. Armar com ${c.aco.barras} ø${c.aco.bit} corridos, traspasse de 50 cm e dobrados nos cantos (L de 40 cm). Grautear por inteiro.`,
     '4. Os painéis assentam em cima da canaleta com argamassa; as esperas do bloco atravessam a canaleta (furar o fundo no lugar delas).',
