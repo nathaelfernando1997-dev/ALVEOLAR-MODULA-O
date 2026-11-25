@@ -82,6 +82,14 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
       const a = qs[i], b = qs[j], d = Math.hypot(a.x - b.x, a.y - b.y);
       if (d >= junta || a.par === b) continue;
       const pa = peso(a.tipo), pb = peso(b.tipo);
+      // emenda entre painéis (coluna): a ponta dos dois painéis tem que ficar em cima do bloco — só junta se cair dentro do bloco;
+      // senão vira bloco de 2 estacas (pega a emenda e o outro ponto) ou fica cada um com o seu bloco
+      if ((a.tipo === 'coluna' || b.tipo === 'coluna') && d > 0.175) {
+        if (a.par || b.par) continue;
+        if (d < dEst) { const ux = (b.x - a.x) / d, uy = (b.y - a.y) / d, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+          a.x = mx - ux * dEst / 2; a.y = my - uy * dEst / 2; b.x = mx + ux * dEst / 2; b.y = my + uy * dEst / 2; }
+        a.par = b; b.par = a; mudou = true; break;
+      }
       // dois encontros de parede perto um do outro: bloco de 2 estacas (uma embaixo de cada parede), não uma estaca no meio
       if (pa === 3 && pb === 3 && d >= JUNTA && !a.par && !b.par) {
         if (d < dEst) { const ux = (b.x - a.x) / d, uy = (b.y - a.y) / d, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;   // afasta até o mínimo entre estacas
