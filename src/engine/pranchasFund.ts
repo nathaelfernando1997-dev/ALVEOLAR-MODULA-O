@@ -325,15 +325,15 @@ export function folhaCanaleta(I: InfoProj, c: Canaleta, arq: XY[][], blocos: { x
   cotaH(d, W(0), W(14), Hh(-14) + 1, '14'); cotaV(d, W(-6), Hh(19), Hh(0), '19');
   const cham = (x: number, y: number, xt: number, yt: number, t: string) => { d.L(x, y, xt, yt, 0.18); d.Cf(x, y, 0.4); d.T(xt + 1, yt + 0.8, t, 2.1); };
   cham(W(9), Hh(6.5), W(26), Hh(10), `${c.aco.barras} ø${c.aco.bit} corridos (CA-50)`);
-  cham(W(7), Hh(14), W(26), Hh(16), 'graute fgk ≥ 20 MPa');
+  cham(W(7), Hh(14), W(26), Hh(16), 'concreto C25 (enchimento)');
   cham(W(1.2), Hh(10), W(-22), Hh(26), 'canaleta 14 × 19 × 39');
   // ---- quadro
-  const lin = [['Canaleta 14 × 19 × 39', 'un', String(c.un)], ['Comprimento corrido', 'm', br(c.L, 1)], ['Graute', 'm³', br(c.graute, 2)], [`Aço CA-50 ø${c.aco.bit} (${c.aco.barras} barras)`, 'kg', br(c.aco.kg, 0)]];
+  const lin = [['Canaleta 14 × 19 × 39', 'un', String(c.un)], ['Comprimento corrido', 'm', br(c.L, 1)], ['Concreto de enchimento C25', 'm³', br(c.concreto, 2)], [`Aço CA-50 ø${c.aco.bit} (${c.aco.barras} barras)`, 'kg', br(c.aco.kg, 0)]];
   tabela(d, 270, 196, 'QUANTITATIVO DA BASE DE CANALETA', lin, ['ITEM', 'UN', 'QUANT.'], [62, 14, 22]);
   const notas = ['1. Medidas em centímetros. A canaleta corre embaixo de todas as paredes do térreo e NÃO passa no vão das portas (a boneca de baixo',
     '    é retirada): para dos dois lados, só embaixo da parede. Nem nos vãos sem parede (frente da garagem). Nos encontros a fiada horizontal passa.',
     '2. Assentar sobre os blocos de fundação já concretados, nivelada, com argamassa 1 cm. Entre blocos apoia no terreno compactado.',
-    `3. Armar com ${c.aco.barras} ø${c.aco.bit} corridos, traspasse de 50 cm e dobrados nos cantos (L de 40 cm). Grautear por inteiro.`,
+    `3. Armar com ${c.aco.barras} ø${c.aco.bit} corridos, traspasse de 50 cm e dobrados nos cantos (L de 40 cm). Concretar a canaleta por inteiro (vibrar).`,
     '4. Os painéis assentam em cima da canaleta com argamassa; as esperas do bloco atravessam a canaleta (furar o fundo no lugar delas).',
     `5. Quantidade com 5% de perdas. Peso considerado na carga das estacas: ${br(c.kNm, 2)} kN/m.`];
   d.T(20, 256, 'NOTAS', 3, { b: true }); notas.forEach((t, i) => d.T(20, 262 + i * 3.9, t, 2.2));
