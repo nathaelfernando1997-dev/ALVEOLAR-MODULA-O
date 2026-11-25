@@ -755,7 +755,7 @@ export function aplicarTelhado(ps: Painel[], t: Telhado, manuais: Record<string,
 }
 export interface VaoInteiro { trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; tipo: string; sobe?: boolean; topo?: number; H?: number }
 
-export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<string, { a: number; b: number; H: number }[]> = {}, forc: Record<string, { x: number; alto: 1 | -1 }[]> = {}): { paineis: Painel[]; vaos: VaoInteiro[] } {
+export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<string, { a: number; b: number; H: number }[]> = {}, forc: Record<string, { a: number; b: number }[]> = {}): { paineis: Painel[]; vaos: VaoInteiro[] } {
   const P: Painel[] = []; const VI: VaoInteiro[] = [];
   for (const t of ts) {
     const subs: [number, number, Vao[]][] = [];
@@ -786,9 +786,11 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<stri
         return [ia, ...cuts.flatMap(m => [m - r.coluna / 2, m + r.coluna / 2]), ib];
       };
       // corte obrigatório (ex.: parede que muda de altura no encontro com outra): divide ali e modula cada lado
-      const fc = (forc[t.id] || []).map(f => f.x).filter(x => x > sa + 0.3 && x < sb - 0.3).sort((a, b) => a - b);
+      // (a: onde termina o painel de antes, b: onde começa o de depois — o espaço entre eles é o fechamento do encontro)
+      const fc = (forc[t.id] || []).filter(f => f.a > sa + 0.3 && f.b < sb - 0.3).sort((x, y) => x.a - y.a);
+      const lim = [sa, ...fc.flatMap(f => [f.a, f.b]), sb];
       edges = manual.length ? [sa, ...manual.flatMap(c => c.col ? [c.x - r.coluna / 2, c.x + r.coluna / 2] : [c.x, c.x]), sb]
-        : [sa, ...fc, sb].slice(0, -1).flatMap((x, i, A) => divide(x, i + 1 < A.length ? A[i + 1] : sb, larguraMaxDe(r, t.H)));
+        : lim.filter((_, i) => i % 2 === 0).flatMap((x, i) => divide(x, lim[2 * i + 1], larguraMaxDe(r, t.H)));
       // parede alta (pé-direito do ambiente): o pedaço que fica no trecho alto respeita a largura de painel alto
       const altos = Halto[t.id];
       if (altos?.length) {
@@ -867,9 +869,8 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<stri
         if (P.some(x => x.pav === p.pav && x.o !== p.o && x.c > fim - 0.02 && x.c < q.a + 0.02 && x.a < p.c + 0.3 && x.a + x.larg > p.c - 0.3)) continue;
         const e = gap - max;
         let ep = e / 2, eq = e / 2;
-        // corte obrigatório entre eles (parede que muda de altura no encontro): o painel alto fica na face da parede, só o baixo cresce
-        const fz = (forc[p.trecho] || []).find(f => p.trecho === q.trecho && f.x > fim - 0.02 && f.x < q.a + 0.02 + r.folga);
-        if (fz) { if (fz.alto === 1) { ep = e; eq = 0; } else { ep = 0; eq = e; } }
+        // fechamento do encontro (parede que muda de altura ali): os painéis ficam nas faces da parede que cruza, não crescem
+        if (p.trecho === q.trecho && (forc[p.trecho] || []).some(f => f.a > fim - 0.02 && f.b < q.a + 0.02 + r.folga)) continue;
         const mp = larguraMaxDe(r, p.H), mq = larguraMaxDe(r, q.H);
         if (p.larg + ep > mp) { eq += ep - Math.max(0, mp - p.larg); ep = Math.max(0, mp - p.larg); }
         if (q.larg + eq > mq) { const sobra = q.larg + eq - mq; eq -= sobra; ep += Math.min(sobra, Math.max(0, mp - p.larg - ep)); }
