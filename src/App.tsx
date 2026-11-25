@@ -922,7 +922,8 @@ export default function App() {
             // planta de fundação: paredes do pavimento mais baixo (térreo)
             const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), psf = calc.ps.filter(p => p.pav === pf.id);
             const doPav = <T extends { pav: string }>(l?: T[]) => (l || []).filter(e => e.pav === pf.id);
-            const ptsW = pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover) }, regras.fundJunta ?? 0.5);   // no eixo das paredes (cálculo)
+            const geraPts = (pares: { x: number; y: number; x2: number; y2: number }[]) => pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover), pares }, regras.fundJunta ?? 0.5, 3 * ({ ...ESTACA_PADRAO, ...(regras.estaca || {}) }).furo);
+            const ptsW = geraPts(doPav(aj.fundPar2));   // no eixo das paredes (cálculo)
             const pts = blocosDivisa(ptsW, tf, aj.fundDivisa || [], ({ ...BLOCO_PADRAO, ...(regras.bloco || {}) }).lado / 2);   // locação: bloco de divisa com a estaca para dentro
             const og = aj.fundOrigem?.pav === pf.id ? aj.fundOrigem : null;
             const pOg = og ? pts.find(p => Math.hypot(p.x - og.x, p.y - og.y) < 0.15) : null;
@@ -954,12 +955,33 @@ export default function App() {
               setTimeout(() => { try {
                 const C = cargasFundacao({ pavs: ativos, desloc: desloc3d, ts: calc.ts, ps: calc.ps, pl: calc.pl, vigas: calc.vigas, regras, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, pavCarga, baldrame: !!fund.baldrame });
                 const op = { baldrame: !!fund.baldrame, Rl: capL.Rl, Rp: capL.Rp, L: oe.comp, D: oe.furo };
-                const m1 = modeloParede(C, ptsW, op), m2 = modeloParede(C, ptsW, { ...op, Ec: 8e6 });   // curto e longo prazo (fluência): vale o pior
+                // bloco de 2 estacas automático: onde a carga passa de uma estaca (FS 2), segunda estaca ao longo da parede, e calcula de novo
+                const dE = 3 * oe.furo;
+                let pares: { pav: string; x: number; y: number; x2: number; y2: number }[] = [], P = geraPts([]), m1 = modeloParede(C, P, op), m2 = modeloParede(C, P, { ...op, Ec: 8e6 });   // curto e longo prazo (fluência): vale o pior
+                for (let it = 0; it < (fund.auto2E ? 4 : 0); it++) {
+                  const novos: typeof pares = [];
+                  for (const p of P) {
+                    if (p.par || Math.max(m1.R[p.n] ?? 0, m2.R[p.n] ?? 0) <= capL.Pfs + 1e-6) continue;
+                    let best: { x2: number; y2: number; f: number } | null = null;
+                    for (const t of tf) {
+                      const [u, w] = t.o === 'H' ? [p.x, p.y] : [p.y, p.x]; if (Math.abs(w - t.c) > 0.05 || u < t.s - 0.05 || u > t.e + 0.05) continue;
+                      for (const sg of [1, -1]) { const u2 = u + sg * dE; if (u2 < t.s + 0.1 || u2 > t.e - 0.1) continue;
+                        const [x2, y2] = t.o === 'H' ? [u2, t.c] : [t.c, u2], f = Math.min(...P.filter(q => q !== p).map(q => Math.hypot(q.x - x2, q.y - y2)));
+                        if (f > 0.45 && (!best || f > best.f)) best = { x2, y2, f }; }
+                    }
+                    if (best) novos.push({ pav: pf.id, x: p.x, y: p.y, x2: best.x2, y2: best.y2 });
+                  }
+                  if (!novos.length) break;
+                  pares = [...pares, ...novos]; P = geraPts(pares); m1 = modeloParede(C, P, op); m2 = modeloParede(C, P, { ...op, Ec: 8e6 });
+                }
+                const ptsF = blocosDivisa(P, tf, aj.fundDivisa || [], ob.lado / 2);
                 const R: Record<number, number> = {}, rec: Record<number, number> = {};
-                for (const p of pts) { R[p.n] = Math.max(m1.R[p.n] ?? 0, m2.R[p.n] ?? 0); rec[p.n] = Math.max(m1.rec[p.n] ?? 0, m2.rec[p.n] ?? 0); }
+                for (const p of P) { R[p.n] = Math.max(m1.R[p.n] ?? 0, m2.R[p.n] ?? 0); rec[p.n] = Math.max(m1.rec[p.n] ?? 0, m2.rec[p.n] ?? 0); }
+                if (pares.length || doPav(aj.fundPar2).length) setAj({ ...aj, fundPar2: [...(aj.fundPar2 || []).filter(e => e.pav !== pf.id), ...pares] });
+                const chaveF = JSON.stringify([ptsF.map(p => [p.n, +p.x.toFixed(3), +p.y.toFixed(3)]), pavCarga, !!fund.baldrame, fund.furos, fund.tipo, oe.furo, oe.comp, calc.ps.length, calc.pl.length, calc.ts.length]);
                 const trechosR = m1.trechos.map((t, i) => ({ t: t.t, Tparede: Math.max(t.Tparede, m2.trechos[i].Tparede), Tporta: Math.max(t.Tporta, m2.trechos[i].Tporta), Ttopo: Math.max(t.Ttopo, m2.trechos[i].Ttopo) }));
                 const portas = C.ts.reduce((s, t) => s + t.vaos.filter(v => v.tipo?.startsWith('P') || v.base < 0.15 && (v.topo ?? v.base + v.h) < (t.H ?? 3) - 0.3).length, 0);
-                setResFund({ chave: chaveFund, R, lev: cargaAlavanca(C, ptsW), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
+                setResFund({ chave: chaveF, R, lev: cargaAlavanca(C, P), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
                 setVerFund('cargas');
               } finally { setCalcFund(false); } }, 30);
             };
@@ -978,7 +1000,7 @@ export default function App() {
               </tbody></table>
             </div>;
             const q = quadroDe(pf, verFund === 'locacao' ? 6 : 1.4);
-            const svgPontos = (Q: typeof q) => arqSvg(Q, arqF) +
+            const svgPontos = (Q: typeof q) => arqSvg(Q, arqF) + blocos2(Q) +
               tf.map(t => t.o === 'H' ? `<line x1="${Q.X(t.s)}" y1="${Q.Y(t.c)}" x2="${Q.X(t.e)}" y2="${Q.Y(t.c)}" stroke="#c92a2a" stroke-width="${t.esp * Q.k}" opacity=".35"/>` : `<line x1="${Q.X(t.c)}" y1="${Q.Y(t.s)}" x2="${Q.X(t.c)}" y2="${Q.Y(t.e)}" stroke="#c92a2a" stroke-width="${t.esp * Q.k}" opacity=".35"/>`).join('') +
               pts.map(p => `<circle cx="${Q.X(p.x)}" cy="${Q.Y(p.y)}" r="${0.25 * Q.k}" fill="none" stroke="#1971c2" stroke-width="3"/><rect x="${Q.X(p.x) - p.esp * Q.k / 2}" y="${Q.Y(p.y) - p.esp * Q.k / 2}" width="${p.esp * Q.k}" height="${p.esp * Q.k}" fill="${p.tipo === 'intermediário' ? '#e67700' : p.tipo === 'manual' ? '#ae3ec9' : '#2b8a3e'}"/><text x="${Q.X(p.x) + 20}" y="${Q.Y(p.y) - 20}" font-size="${0.16 * Q.k}" fill="#1971c2" font-weight="bold">B${p.n}</text>`).join('') +
               (origem ? `<g stroke="#ae3ec9" stroke-width="4"><line x1="${Q.X(origem.x) - 30}" y1="${Q.Y(origem.y) - 30}" x2="${Q.X(origem.x) + 30}" y2="${Q.Y(origem.y) + 30}"/><line x1="${Q.X(origem.x) - 30}" y1="${Q.Y(origem.y) + 30}" x2="${Q.X(origem.x) + 30}" y2="${Q.Y(origem.y) - 30}"/></g><text x="${Q.X(origem.x) + 35}" y="${Q.Y(origem.y) + 45}" font-size="${0.18 * Q.k}" fill="#ae3ec9">ORIGEM</text>` : '');
@@ -987,7 +1009,10 @@ export default function App() {
                 return `<line x1="${Q.X(x0)}" y1="${Q.Y(y0)}" x2="${Q.X(x1)}" y2="${Q.Y(y1)}" stroke="${p.num % 2 ? '#1971c2' : '#e8590c'}" stroke-width="${0.12 * Q.k}" opacity=".55"/>` +
                   (p.o === 'H' ? `<text x="${Q.X(m)}" y="${Q.Y(p.c) - 18}" font-size="${0.1 * Q.k}" text-anchor="middle" fill="#333">${codF(p)}</text>` : `<text x="${Q.X(p.c) - 18}" y="${Q.Y(m)}" font-size="${0.1 * Q.k}" text-anchor="middle" fill="#333" transform="rotate(-90 ${Q.X(p.c) - 18} ${Q.Y(m)})">${codF(p)}</text>`); }).join('') +
               es.map(e => `<g stroke="#c92a2a" stroke-width="3"><line x1="${Q.X(e.x) - 7}" y1="${Q.Y(e.y) - 7}" x2="${Q.X(e.x) + 7}" y2="${Q.Y(e.y) + 7}"/><line x1="${Q.X(e.x) - 7}" y1="${Q.Y(e.y) + 7}" x2="${Q.X(e.x) + 7}" y2="${Q.Y(e.y) - 7}"/></g>`).join('');
-            const svgCargas = (Q: typeof q) => arqSvg(Q, arqF) +
+            const blocos2 = (Q: typeof q, cor = '#495057') => pts.filter(p => p.par && p.n < p.par).map(p => { const r = pts.find(x => x.n === p.par); if (!r) return '';
+              const x0 = Math.min(p.x, r.x) - 0.25, x1 = Math.max(p.x, r.x) + 0.25, y0 = Math.min(p.y, r.y) - 0.25, y1 = Math.max(p.y, r.y) + 0.25;
+              return `<rect x="${Q.X(x0)}" y="${Math.min(Q.Y(y0), Q.Y(y1))}" width="${(x1 - x0) * Q.k}" height="${(y1 - y0) * Q.k}" fill="none" stroke="${cor}" stroke-width="4" stroke-dasharray="14 6"/>`; }).join('');
+            const svgCargas = (Q: typeof q) => arqSvg(Q, arqF) + blocos2(Q) +
               tf.map(t => t.o === 'H' ? `<line x1="${Q.X(t.s)}" y1="${Q.Y(t.c)}" x2="${Q.X(t.e)}" y2="${Q.Y(t.c)}" stroke="#868e96" stroke-width="${t.esp * Q.k}" opacity=".35"/>` : `<line x1="${Q.X(t.c)}" y1="${Q.Y(t.s)}" x2="${Q.X(t.c)}" y2="${Q.Y(t.e)}" stroke="#868e96" stroke-width="${t.esp * Q.k}" opacity=".35"/>`).join('') +
               pts.map(p => { const c = corSit[sit(p.n)]; return `<rect x="${Q.X(p.x) - 0.25 * Q.k}" y="${Q.Y(p.y) - 0.25 * Q.k}" width="${0.5 * Q.k}" height="${0.5 * Q.k}" fill="${c}" fill-opacity=".15" stroke="${c}" stroke-width="3"/><circle cx="${Q.X(p.x)}" cy="${Q.Y(p.y)}" r="${oe.furo / 2 * Q.k}" fill="#fff" stroke="${c}" stroke-width="3"/><text x="${Q.X(p.x) + 0.3 * Q.k}" y="${Q.Y(p.y) - 0.12 * Q.k}" font-size="${0.17 * Q.k}" fill="${c}" font-weight="bold">B${p.n}</text><text x="${Q.X(p.x) + 0.3 * Q.k}" y="${Q.Y(p.y) + 0.1 * Q.k}" font-size="${0.15 * Q.k}" fill="#222">${resFund ? br((resFund.R[p.n] ?? 0) / 9.81, 1) + ' tf' : ''}</text>`; }).join('');
             const svg = verFund === 'locacao' ? arqSvg(q, arqF) + svgLocacao(loc, q.X, q.Y, q.k) : verFund === 'esperas' ? svgEsperas(q) : verFund === 'cargas' && resOk ? svgCargas(q) : svgPontos(q);
@@ -1036,7 +1061,8 @@ export default function App() {
               const tipoE = TIPOS_ESTACA.find(t => t[0] === fund.tipo)?.[1].toLowerCase() ?? '';
               const nomes = ['FUND-01', 'FUND-02', ...(resOk ? ['FUND-02'] : []), ...(ehBase ? ['FUND-03'] : []), 'FUND-04', 'FUND-05', 'FUND-06'];
               const tot = String(nomes.length).padStart(2, '0'); let k = 0; const fol = () => `${nomes[k]} · ${String(++k).padStart(2, '0')}/${tot}`;
-              const pags = [P.folhaEstacaBloco(I, oe, ob, n, n, [{ L: oe.comp, n }], { baldrame: !!fund.baldrame }, fol())];
+              const pares = pts.filter(p => p.par && p.n < p.par), dPar = pares.length ? Math.max(...pares.map(p => { const q = pts.find(r => r.n === p.par)!; return Math.hypot(p.x - q.x, p.y - q.y); })) : 0;
+              const pags = [P.folhaEstacaBloco(I, oe, ob, n, n - 2 * pares.length, [{ L: oe.comp, n }], { baldrame: !!fund.baldrame }, fol(), { n: pares.length, comp: Math.ceil((dPar + ob.lado) * 20) / 20 })];
               const cab = `${n} estacas ${tipoE} ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m${capL ? ` · admissível ${br(capL.Padm / 9.81, 1)} tf` : ''} · ${pf.nome}`;
               const cargasQ = resOk && resFund ? pts.map(p => ({ n: p.n, R: resFund.R[p.n] ?? 0, sit: sit(p.n) === 'ok' ? 'atende' : sit(p.n) === 'ponta' ? (fund.criterio === 'rt' ? 'atende FS 2 (critério RT)' : 'passa da regra da ponta') : 'FS menor que 2' })) : null;
               const f2 = fol(), f2b = cargasQ ? fol() : ''; pags.push(...P.folhasLocacao(I, loc, arqF.map(p => p.pts as [number, number][]), cargasQ, cab, [f2, f2b]));
@@ -1164,6 +1190,7 @@ export default function App() {
                   <h3>O que tem em cima de cada pavimento</h3>
                   {ativos.map(p => <label key={p.id}>{p.nome}<select value={pavCarga[p.id]} onChange={e => setFund({ pavCarga: { ...pavCarga, [p.id]: e.target.value as CargaPav } })}>{(Object.keys(CARGA_PAV) as CargaPav[]).map(k => <option key={k} value={k}>{CARGA_PAV[k].nome}</option>)}</select></label>)}
                   <label className="check"><input type="checkbox" checked={!!fund.baldrame} onChange={e => setFund({ baldrame: e.target.checked })} /> Tem viga baldrame 15 × 40 embaixo das paredes (sem ela, a parede apoia direto nos blocos)</label>
+                  <label className="check"><input type="checkbox" checked={!!fund.auto2E} onChange={e => setFund({ auto2E: e.target.checked })} /> Bloco de 2 estacas onde a carga passar de uma estaca (opcional: a segunda estaca vai ao longo da parede, a 3 diâmetros)</label>
                   {!capL && <p className="dica"><b>Falta a sondagem</b> (passo 2) para saber quanto a estaca aguenta.</p>}
                   <button className="principal" disabled={!capL || calcFund} onClick={calcular}>{calcFund ? 'Calculando…' : resOk ? 'Calcular de novo' : 'Calcular as cargas nas estacas'}</button>
                   {resFund && !resOk && <p className="dica"><b>Os dados mudaram</b>: calcule de novo.</p>}

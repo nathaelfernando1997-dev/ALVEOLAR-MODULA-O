@@ -5,13 +5,13 @@
 import type { Trecho, Painel, Pavimento } from './model.ts';
 import type { Prim } from './dxf.ts';
 
-export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual';
-export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number; div?: string; wx?: number; wy?: number }   // div: bloco de divisa (lados); wx/wy: ponto no eixo da parede
+export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual' | 'segunda';
+export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number; div?: string; wx?: number; wy?: number; par?: number }   // par: a outra estaca do mesmo bloco (bloco de 2 estacas)   // div: bloco de divisa (lados); wx/wy: ponto no eixo da parede
 
 const TOL = 0.15, JUNTA = 0.5;   // pontos a menos de 50 cm viram um furo só
 
-export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { extra?: { x: number; y: number }[]; remover?: { x: number; y: number }[] } = {}, junta = JUNTA): PontoFund[] {
-  type Q = { x: number; y: number; tipo?: TipoPonto; esp: number };
+export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { extra?: { x: number; y: number }[]; remover?: { x: number; y: number }[]; pares?: { x: number; y: number; x2: number; y2: number }[] } = {}, junta = JUNTA, dEst = 0.9): PontoFund[] {
+  type Q = { x: number; y: number; tipo?: TipoPonto; esp: number; par?: Q };
   const qs: Q[] = [];
   const add = (x: number, y: number, esp: number, tipo?: TipoPonto) => {
     const q = qs.find(p => Math.hypot(p.x - x, p.y - y) < TOL);
@@ -70,20 +70,34 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
   for (let mudou = true; mudou;) {
     mudou = false;
     for (let i = 0; i < qs.length && !mudou; i++) for (let j = i + 1; j < qs.length; j++) {
-      const a = qs[i], b = qs[j];
-      if (Math.hypot(a.x - b.x, a.y - b.y) >= junta) continue;
+      const a = qs[i], b = qs[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d >= junta || a.par === b) continue;
       const pa = peso(a.tipo), pb = peso(b.tipo);
+      // dois encontros de parede perto um do outro: bloco de 2 estacas (uma embaixo de cada parede), não uma estaca no meio
+      if (pa === 3 && pb === 3 && d >= JUNTA && !a.par && !b.par) {
+        if (d < dEst) { const ux = (b.x - a.x) / d, uy = (b.y - a.y) / d, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;   // afasta até o mínimo entre estacas
+          a.x = mx - ux * dEst / 2; a.y = my - uy * dEst / 2; b.x = mx + ux * dEst / 2; b.y = my + uy * dEst / 2; }
+        a.par = b; b.par = a; mudou = true; break;
+      }
+      if (a.par || b.par) { if (d < JUNTA) { const keep = a.par ? a : b, drop = keep === a ? b : a; keep.esp = Math.max(keep.esp, drop.esp); qs.splice(qs.indexOf(drop), 1); mudou = true; break; } continue; }
       if (pb > pa) { a.x = b.x; a.y = b.y; a.tipo = b.tipo; }
       else if (pa === pb) { a.x = (a.x + b.x) / 2; a.y = (a.y + b.y) / 2; }
       a.esp = Math.max(a.esp, b.esp); qs.splice(j, 1); mudou = true; break;
     }
   }
+  // bloco de 2 estacas pedido pelo cálculo (carga acima de uma estaca): segunda estaca ao longo da parede
+  for (const pr of ed.pares || []) {
+    const a = qs.find(q => Math.hypot(q.x - pr.x, q.y - pr.y) < 0.2); if (!a || a.par) continue;
+    const b: Q = { x: pr.x2, y: pr.y2, esp: a.esp, tipo: 'segunda', par: a }; a.par = b; qs.push(b);
+  }
   // numeração: de cima para baixo, da esquerda para a direita
   qs.sort((p, q) => Math.abs(p.y - q.y) > TOL ? q.y - p.y : p.x - q.x);
-  return qs.map((q, i) => ({ n: i + 1, x: q.x, y: q.y, tipo: q.tipo!, esp: q.esp }));
+  const out = qs.map((q, i) => ({ n: i + 1, x: q.x, y: q.y, tipo: q.tipo!, esp: q.esp } as PontoFund));
+  qs.forEach((q, i) => { if (q.par) out[i].par = qs.indexOf(q.par) + 1; });
+  return out;
 }
 
-const DESC: Record<TipoPonto, string> = { L: 'canto (L)', T: 'encontro (T)', X: 'cruzamento', ponta: 'ponta de parede', emenda: 'emenda de parede', coluna: 'coluna no meio da parede', 'intermediário': 'intermediário (espaçamento)', manual: 'ponto acrescentado' };
+const DESC: Record<TipoPonto, string> = { L: 'canto (L)', T: 'encontro (T)', X: 'cruzamento', ponta: 'ponta de parede', emenda: 'emenda de parede', coluna: 'coluna no meio da parede', 'intermediário': 'intermediário (espaçamento)', manual: 'ponto acrescentado', segunda: 'segunda estaca do bloco' };
 
 // DXF R12 simples (LINE, CIRCLE, TEXT), em metros, nas coordenadas do projeto
 export function dxfFundacao(pav: Pavimento, ts: Trecho[], pts: PontoFund[], arq: Prim[] = [], cotas = true): string {
@@ -141,7 +155,7 @@ export function dxfFundacao(pav: Pavimento, ts: Trecho[], pts: PontoFund[], arq:
 }
 
 export function csvFundacao(pts: PontoFund[]): string {
-  return ['Ponto;X (m);Y (m);Tipo;Pilar (cm)', ...pts.map(p => `B${p.n};${p.x.toFixed(3).replace('.', ',')};${p.y.toFixed(3).replace('.', ',')};${DESC[p.tipo]};${Math.round(p.esp * 100)}x${Math.round(p.esp * 100)}`)].join('\r\n');
+  return ['Ponto;X (m);Y (m);Tipo;Pilar (cm);Bloco', ...pts.map(p => `B${p.n};${p.x.toFixed(3).replace('.', ',')};${p.y.toFixed(3).replace('.', ',')};${DESC[p.tipo]};${Math.round(p.esp * 100)}x${Math.round(p.esp * 100)};${p.par ? `2 estacas (com B${p.par})` : '1 estaca'}`)].join('\r\n');
 }
 
 // ---------- planta de locação (gabarito) ----------

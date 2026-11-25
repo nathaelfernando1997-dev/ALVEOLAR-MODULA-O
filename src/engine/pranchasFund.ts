@@ -71,7 +71,7 @@ export function posicoesFund(e: OpEstaca, b: BlocoDet, nE: number, nB: number) {
 }
 
 // ================= FUND-01: estaca e bloco =================
-export function folhaEstacaBloco(I: InfoProj, e: OpEstaca, b: BlocoDet, nE: number, nB: number, comps: { L: number; n: number }[], obs: { baldrame: boolean }, folha: string): Pagina {
+export function folhaEstacaBloco(I: InfoProj, e: OpEstaca, b: BlocoDet, nE: number, nB: number, comps: { L: number; n: number }[], obs: { baldrame: boolean }, folha: string, b2?: { n: number; comp: number }): Pagina {
   const d = new D(); const { pos, naEstaca, nEstr, GAN } = posicoesFund(e, b, nE, nB);
   const AR = 0.75;
   // ---- elevação da estaca (escala que cabe)
@@ -103,6 +103,7 @@ export function folhaEstacaBloco(I: InfoProj, e: OpEstaca, b: BlocoDet, nE: numb
   const bx = 120, by = 40, kb = 1, A = b.armLado * 100, cob = (Lb - A) / 2, nb = Math.max(2, b.barras), esp = A / (nb - 1);
   titulo(d, bx + Lb / 2, 24, 'BLOCO B1 — PLANTA', 'ESC 1:10');
   d.T(bx + Lb / 2, 33, `B1 = ${nB} blocos · ${Math.round(Lb)}×${Math.round(Lb)}×${Math.round(Hb)}`, 2.2, { a: 'middle' });
+  if (b2?.n) d.T(bx + Lb / 2, 37, `B2 (2 estacas) = ${b2.n} blocos · ${Math.round(Lb)}×${Math.round(b2.comp * 100)}×${Math.round(Hb)} — armação do B1 nas duas estacas, barras longas no comprimento`, 1.9, { a: 'middle' });
   d.R(bx, by, Lb * kb, Lb * kb, 0.45); d.C(bx + Lb / 2, by + Lb / 2, rf, 0.25, K, [1.5, 1]);
   if ((b.estrH ?? 0) > 0) d.R(bx + cob - 1, by + cob - 1, A + 2, A + 2, 0.5);
   for (let i = 0; i < nb; i++) { d.L(bx + cob + i * esp, by + cob, bx + cob + i * esp, by + cob + A, AR); d.L(bx + cob, by + cob + i * esp, bx + cob + A, by + cob + i * esp, AR); }
@@ -146,9 +147,10 @@ export function folhaEstacaBloco(I: InfoProj, e: OpEstaca, b: BlocoDet, nE: numb
   const yy2 = tabela(d, rx + 100, ry, 'RESUMO DO AÇO', rr.map(r => [r.a, d1(r.bit), r.m.toFixed(0), (r.m * KG(r.bit) * 1.1).toFixed(0)]), ['AÇO', 'DIAM', 'C.TOTAL (m)', 'PESO+10% (kg)'], [14, 12, 20, 24]);
   for (const [i, a] of (['CA-50', 'CA-60'] as const).entries()) { const kg = rr.filter(r => r.a === a).reduce((s, r) => s + r.m * KG(r.bit) * 1.1, 0); if (kg > 0) d.T(rx + 100, yy2 + 4 + i * 4, `PESO TOTAL ${a}: ${kg.toFixed(0)} kg`, 2.3, { b: true }); }
   const ve = Math.PI * (e.furo / 2) ** 2, vb = b.lado * b.lado * b.alt;
-  const lin3 = [...comps.map(c => [`Estaca E1 L=${Math.round(c.L * 100)}`, String(c.n), (c.n * ve * c.L).toFixed(1)]), ['Bloco B1', String(nB), (nB * vb).toFixed(1)]];
+  const vb2 = b2?.n ? b2.n * b.lado * b2.comp * b.alt : 0;
+  const lin3 = [...comps.map(c => [`Estaca E1 L=${Math.round(c.L * 100)}`, String(c.n), (c.n * ve * c.L).toFixed(1)]), ['Bloco B1', String(nB), (nB * vb).toFixed(1)], ...(b2?.n ? [['Bloco B2 (2 estacas)', String(b2.n), vb2.toFixed(1)]] : [])];
   const yy3 = tabela(d, rx, yy + 10, 'CONSUMO DE CONCRETO (C25)', lin3, ['ELEMENTO', 'QUANT', 'VOLUME (m³)'], [40, 16, 22]);
-  d.T(rx, yy3 + 4, `Total: ${(comps.reduce((s, c) => s + c.n * ve * c.L, 0) + nB * vb).toFixed(1)} m³ (sem perdas)`, 2.3, { b: true });
+  d.T(rx, yy3 + 4, `Total: ${(comps.reduce((s, c) => s + c.n * ve * c.L, 0) + nB * vb + vb2).toFixed(1)} m³ (sem perdas)`, 2.3, { b: true });
   // ---- notas
   const AsE = e.barras * Math.PI * (e.bitLong / 20) ** 2, AsMin = 0.004 * ve * 1e4;
   const notas = ['1. Medidas em centímetros, exceto onde indicado.', '2. Concreto C25 (estaca e bloco). Estaca: abatimento 100±20 mm, lançamento com funil.',
@@ -188,7 +190,10 @@ export function folhasLocacao(I: InfoProj, loc: Locacao, arq: XY[][], cargas: { 
   for (const p of arq) for (let i = 0; i < p.length - 1; i++) { const c = corta(p[i], p[i + 1]); if (c) d.L(X(c[0][0]), Y(c[0][1]), X(c[1][0]), Y(c[1][1]), 0.18, '#9a9a9a'); }
   for (const l of loc.d.linhas) { if (l.l === 'ORIGEM' || l.l === 'PONTO') continue; d.L(X(l.x1), Y(l.y1), X(l.x2), Y(l.y2), l.tr ? 0.2 : 0.3, K, l.tr ? [6, 1.6, 1, 1.6] : undefined); }
   for (const c of loc.d.circs) { if (c.l === 'PONTO') continue; d.C(X(c.x), Y(c.y), c.r * k, 0.35); }
-  for (const p of loc.pts) { d.R(X(p.x) - 0.25 * k, Y(p.y) - 0.25 * k, 0.5 * k, 0.5 * k, 0.35, K, undefined, '#ffffff'); d.C(X(p.x), Y(p.y), 0.15 * k, 0.35); d.L(X(p.x) - 0.1 * k, Y(p.y), X(p.x) + 0.1 * k, Y(p.y), 0.2); d.L(X(p.x), Y(p.y) - 0.1 * k, X(p.x), Y(p.y) + 0.1 * k, 0.2); }
+  for (const p of loc.pts) if (p.par && p.n < p.par) { const q = loc.pts.find(r => r.n === p.par); if (!q) continue;
+    const x0 = Math.min(p.x, q.x) - 0.25, x1 = Math.max(p.x, q.x) + 0.25, y0 = Math.min(p.y, q.y) - 0.25, y1 = Math.max(p.y, q.y) + 0.25;
+    d.R(X(x0), Math.min(Y(y0), Y(y1)), (x1 - x0) * k, (y1 - y0) * k, 0.45, K, undefined, '#ffffff'); }
+  for (const p of loc.pts) { if (!p.par) d.R(X(p.x) - 0.25 * k, Y(p.y) - 0.25 * k, 0.5 * k, 0.5 * k, 0.35, K, undefined, '#ffffff'); d.C(X(p.x), Y(p.y), 0.15 * k, 0.35); d.L(X(p.x) - 0.1 * k, Y(p.y), X(p.x) + 0.1 * k, Y(p.y), 0.2); d.L(X(p.x), Y(p.y) - 0.1 * k, X(p.x), Y(p.y) + 0.1 * k, 0.2); }
   for (const t of txt) { const fs = t.h * k * (t.l === 'PONTO-NOME' ? 1.3 : t.l === 'COTA' ? 1.45 : 1.15); d.T(X(t.x), Y(t.y), t.t, fs, { a: t.centro ? 'middle' : 'start', b: t.l === 'PONTO-NOME' || t.l === 'EIXO-NOME', rot: t.rot || 0 }); }
   d.T(24, 30, 'FUND-02 — LOCAÇÃO DE ESTACAS E BLOCOS', 9, { b: true });
   d.T(24, 40, cab, 4.4);

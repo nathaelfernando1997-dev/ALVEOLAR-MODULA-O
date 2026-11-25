@@ -12,7 +12,8 @@ export interface DadosFund {
   tipo: TipoEstaca;
   pavCarga?: Record<string, 'piso' | 'forro' | 'nada'>;   // tipo de carga em cima de cada pavimento
   baldrame?: boolean;                                      // tem viga baldrame 15×40 embaixo das paredes
-  criterio?: 'norma' | 'rt';                               // 'rt' = comprimento escolhido pelo responsável técnico mesmo sem atender a regra da ponta
+  criterio?: 'norma' | 'rt';
+  auto2E?: boolean;                                        // opcional: bloco de 2 estacas onde a carga passa de uma estaca                               // 'rt' = comprimento escolhido pelo responsável técnico mesmo sem atender a regra da ponta
 }
 export const FUND_VAZIA: DadosFund = { furos: [], tipo: 'escavada', baldrame: false };
 
