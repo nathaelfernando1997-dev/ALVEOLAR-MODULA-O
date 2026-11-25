@@ -433,6 +433,20 @@ export default function App() {
         }
       }
     }
+    // verga: porta larga (vão inteiro, ex.: porta de vidro de 4,70) em parede mais alta que ela: painel em cima da porta até o topo da parede
+    // (na sala de pé-direito alto a parede sobe até a laje alta)
+    for (const v of vazio.vaos) {
+      if (!v.topo || v.tipo === 'vão livre') continue;
+      const m = (v.a + v.b) / 2, d = 0.3, lados: [number, number][] = v.o === 'H' ? [[m, v.c - d], [m, v.c + d]] : [[v.c - d, m], [v.c + d, m]];
+      const alvo = Math.max(v.H ?? 0, ...peEsp.filter(({ L }) => L.pav === v.pav && lados.some(([x, y]) => x > L.x0 && x < L.x1 && y > L.y0 && y < L.y1)).map(x => x.H));
+      const Hv = alvo - v.topo; if (Hv < 0.15 || alvo <= (v.H ?? 0) + 0.05) continue;   // só onde a parede sobe pelo pé-direito do ambiente (projetos antigos não mudam)
+      const larg = v.b - v.a, lm = larguraMaxDe(regras, Hv), n = Math.max(1, Math.ceil((larg - regras.folga + regras.coluna) / (lm + regras.folga + regras.coluna) - 1e-9)), w = (larg - (n - 1) * regras.coluna) / n;
+      for (let k = 0; k < n; k++) {
+        const a = v.a + k * (w + regras.coluna), tid = `${v.trecho}|verga|${m.toFixed(2)}`;
+        vazio.ps.push({ num: 0, trecho: tid, pav: v.pav, o: v.o, c: v.c, a, b: a + w, larg: w - regras.folga, H: Hv, comp: w, recortes: [], z0: v.topo, chave: `${tid}@${a.toFixed(2)}`,
+          aviso: `verga em cima da ${v.tipo} (de ${br(v.topo)} a ${br(alvo)} m)` });
+      }
+    }
     // tira: ambiente com pé-direito próprio (sala de 4,50) do lado de um ambiente mais baixo e sem parede na divisa
     // (vão livre): painel baixo em cima da laje do ambiente mais baixo, fechando até a laje alta
     for (const { L, H } of peEsp) {
@@ -447,7 +461,7 @@ export default function App() {
         // começa e termina na face das paredes do lado (que já sobem até a laje alta)
         const s0 = ld.s + meia(ld.o === 'H' ? 'V' : 'H', ld.s, ld.c), s1 = ld.e - meia(ld.o === 'H' ? 'V' : 'H', ld.e, ld.c);
         // trechos já fechados por painel que subiu até a laje alta
-        const cheios = vazio.ps.filter(P => P.pav === L.pav && P.o === ld.o && Math.abs(P.c - ld.c) < 0.15 && P.H >= H - 0.02).map(P => [P.a - regras.coluna, P.b + regras.coluna] as [number, number]).sort((a, b) => a[0] - b[0]);
+        const cheios = vazio.ps.filter(P => P.pav === L.pav && P.o === ld.o && Math.abs(P.c - ld.c) < 0.15 && (P.z0 ?? 0) + P.H >= H - 0.02 && (P.z0 ?? 0) <= pav.altura + espLaje + 0.01).map(P => [P.a - regras.coluna, P.b + regras.coluna] as [number, number]).sort((a, b) => a[0] - b[0]);
         const livres: [number, number][] = []; let u = s0;
         for (const [a, b] of cheios) { if (a > u) livres.push([u, Math.min(a, s1)]); u = Math.max(u, b); }
         if (u < s1) livres.push([u, s1]);
