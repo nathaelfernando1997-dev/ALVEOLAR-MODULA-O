@@ -416,7 +416,8 @@ export interface Ajustes {
   paredeNumFixa?: Record<string, number>;  // numeração das paredes congelada (chaveNumParede -> número): etiquetas já impressas não mudam
   lajeNumFixa?: Record<string, number>;    // numeração das lajes congelada (chaveNumLaje -> número): etiquetas já impressas não mudam
   fundExtra?: { pav: string; x: number; y: number }[];     // pontos de fundação acrescentados à mão
-  fundRemover?: { pav: string; x: number; y: number }[];   // pontos de fundação tirados à mão
+  fundRemover?: { pav: string; x: number; y: number }[];
+  fundDivisa?: ('esq' | 'dir' | 'fundo' | 'frente')[];   // lados do terreno com blocos de divisa (bloco encostado na divisa, estaca para dentro)   // pontos de fundação tirados à mão
   fundOrigem?: { pav: string; x: number; y: number; dx: number; dy: number };   // origem da locação: ponto escolhido + deslocamento (ex.: até a divisa)
   lajeApoioLado?: Record<string, Partial<Record<'o' | 'l' | 's' | 'n', number>>>;   // apoio da laje em cima da parede (m) por ambiente e lado, digitado no sistema
   lajeInteira?: string[];

@@ -6,7 +6,7 @@ import type { Trecho, Painel, Pavimento } from './model.ts';
 import type { Prim } from './dxf.ts';
 
 export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual';
-export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number }
+export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number; div?: string; wx?: number; wy?: number }   // div: bloco de divisa (lados); wx/wy: ponto no eixo da parede
 
 const TOL = 0.15, JUNTA = 0.5;   // pontos a menos de 50 cm viram um furo só
 
@@ -30,7 +30,7 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
   for (const [id, L] of porTrecho) {
     const t = ts.find(x => x.id === id); if (!t) continue;
     L.sort((p, q) => p.a - q.a);
-    for (let i = 0; i < L.length - 1; i++) { const g0 = L[i].a + L[i].larg, g1 = L[i + 1].a; if (g1 - g0 > 0.06) add(...xy(t, (g0 + g1) / 2), t.esp, 'coluna'); }
+    for (let i = 0; i < L.length - 1; i++) { const g0 = L[i].a + L[i].larg, g1 = L[i + 1].a; if (g1 - g0 > 0.06 && g1 - g0 < 0.5) add(...xy(t, (g0 + g1) / 2), t.esp, 'coluna'); }   // coluna entre painéis (vão grande no meio não é coluna)
   }
   // tipo pelo número de braços de parede que saem do ponto
   for (const q of qs) {
@@ -46,12 +46,16 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
     q.tipo = n >= 4 ? 'X' : n === 3 ? 'T' : n === 2 ? ((dirs.has('o') && dirs.has('l')) || (dirs.has('s') && dirs.has('n')) ? 'emenda' : 'L') : 'ponta';
   }
   // espaçamento máximo ao longo de cada parede
+  // parede que é só vão (frente aberta da garagem, vão livre): não carrega nada, não leva ponto no meio
+  const soVao = (t: Trecho) => t.vaos.some(v => v.inteiro) && t.vaos.filter(v => v.inteiro).reduce((s, v) => s + Math.max(0, Math.min(v.b, t.e) - Math.max(v.a, t.s)), 0) >= 0.9 * (t.e - t.s);
+  const noVao = (t: Trecho, u: number) => t.vaos.some(v => v.inteiro && u > v.a + 0.05 && u < v.b - 0.05);
   if (espacMax > 0.5) for (const t of ts) {
+    if (soVao(t)) continue;
     const nos = qs.filter(q => (t.o === 'H' ? Math.abs(q.y - t.c) < TOL && q.x > t.s - TOL && q.x < t.e + TOL : Math.abs(q.x - t.c) < TOL && q.y > t.s - TOL && q.y < t.e + TOL))
       .map(q => t.o === 'H' ? q.x : q.y).sort((a, b) => a - b);
     for (let i = 0; i < nos.length - 1; i++) {
       const d = nos[i + 1] - nos[i], k = Math.ceil(d / espacMax - 1e-9);
-      for (let j = 1; j < k; j++) qs.push({ ...(() => { const [x, y] = xy(t, nos[i] + d * j / k); return { x, y }; })(), esp: t.esp, tipo: 'intermediário' });
+      for (let j = 1; j < k; j++) { const u = nos[i] + d * j / k; if (noVao(t, u)) continue; qs.push({ ...(() => { const [x, y] = xy(t, u); return { x, y }; })(), esp: t.esp, tipo: 'intermediário' }); }
     }
   }
   // edição à mão: pontos tirados e pontos acrescentados
@@ -830,3 +834,21 @@ export function desenhoFundacao(ob: OpBloco, oe: OpEstaca, nomes?: { bloco?: str
 }
 export const fundacaoTecnico = (ob: OpBloco, oe: OpEstaca) => svgPrims(desenhoFundacao(ob, oe), 'branco');
 export const dxfFundacaoDetalhe = (ob: OpBloco, oe: OpEstaca) => dxfPrims(desenhoFundacao(ob, oe));
+
+// blocos de divisa: ponto na parede da divisa do terreno (lados escolhidos) — o bloco não pode passar da divisa:
+// fica encostado nela e a estaca vai para dentro (excêntrica em relação ao eixo da parede; a parede de concreto equilibra)
+export type LadoDivisa = 'esq' | 'dir' | 'fundo' | 'frente';
+export function blocosDivisa(pts: PontoFund[], ts: Trecho[], lados: LadoDivisa[], meioBloco: number): PontoFund[] {
+  if (!lados.length || !ts.length) return pts;
+  const V = ts.filter(t => t.o === 'V'), H = ts.filter(t => t.o === 'H');
+  const xmin = Math.min(...V.map(t => t.c)), xmax = Math.max(...V.map(t => t.c)), ymin = Math.min(...H.map(t => t.c)), ymax = Math.max(...H.map(t => t.c));
+  const espDe = (o: 'H' | 'V', c: number) => ts.find(t => t.o === o && Math.abs(t.c - c) < 0.01)?.esp ?? 0.15;
+  return pts.map(p => {
+    let x = p.x, y = p.y; const div: string[] = [];
+    if (lados.includes('esq') && Math.abs(p.x - xmin) < 0.06) { x = xmin - espDe('V', xmin) / 2 + meioBloco; div.push('esq'); }
+    if (lados.includes('dir') && Math.abs(p.x - xmax) < 0.06) { x = xmax + espDe('V', xmax) / 2 - meioBloco; div.push('dir'); }
+    if (lados.includes('frente') && Math.abs(p.y - ymin) < 0.06) { y = ymin - espDe('H', ymin) / 2 + meioBloco; div.push('frente'); }
+    if (lados.includes('fundo') && Math.abs(p.y - ymax) < 0.06) { y = ymax + espDe('H', ymax) / 2 - meioBloco; div.push('fundo'); }
+    return div.length ? { ...p, x, y, wx: p.x, wy: p.y, div: div.join('+') } : p;
+  });
+}

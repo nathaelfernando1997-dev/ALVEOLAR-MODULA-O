@@ -193,6 +193,12 @@ export function folhasLocacao(I: InfoProj, loc: Locacao, arq: XY[][], cargas: { 
   d.T(24, 30, 'FUND-02 — LOCAÇÃO DE ESTACAS E BLOCOS', 9, { b: true });
   d.T(24, 40, cab, 4.4);
   d.T(24, 48, `Cotas entre eixos em metros · escala 1:${best.e} · os blocos B1 (50 × 50) ficam centrados no ponto da estaca`, 4);
+  const nDiv = loc.pts.filter(p => p.div).length;
+  if (nDiv) {
+    for (const p of loc.pts) if (p.div) d.T(X(p.x), Y(p.y) + 0.42 * k, 'BD', 0.13 * k * 1.3, { a: 'middle', b: true });
+    const ex = loc.pts.find(p => p.div && p.wx !== undefined), dd = ex ? Math.round(Math.max(Math.abs((ex.wx ?? ex.x) - ex.x), Math.abs((ex.wy ?? ex.y) - ex.y)) * 100) : 0;
+    d.T(24, 55, `BD = bloco de divisa (${nDiv}): bloco encostado na divisa e estaca ${dd} cm para dentro do eixo da parede · a parede de concreto equilibra a excentricidade`, 4);
+  }
   carimbo(d, I, 'FUNDAÇÃO — LOCAÇÃO DE ESTACAS E BLOCOS', `1:${best.e}`, folha[0]);
   const pags: Pagina[] = [d.F];
   if (cargas) {

@@ -16,7 +16,7 @@ import type { Viga, TrelicaPainel } from './engine/vigas.ts';
 import { gerarProposta } from './engine/proposta.ts';
 import { numeroPorExtenso, reaisPorExtenso } from './engine/extenso.ts';
 import { exportarDxf, exportarCsv } from './engine/exportDxf.ts';
-import { pontosFundacao, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, pesoBitola, ESTACA_PADRAO, quantEstaca, fundacaoTecnico, dxfFundacaoDetalhe } from './engine/fundacao.ts';
+import { pontosFundacao, blocosDivisa, dxfFundacao, csvFundacao, locacao, dxfLocacao, csvLocacao, svgLocacao, esperasPaineis, dxfEsperas, csvEsperas, BLOCO_PADRAO, quantBloco, pesoBitola, ESTACA_PADRAO, quantEstaca, fundacaoTecnico, dxfFundacaoDetalhe } from './engine/fundacao.ts';
 import { SOLOS, TIPOS_ESTACA, FUND_VAZIA, resumo as resumoCap, lerNs } from './engine/sondagem.ts';
 import type { DadosFund, Solo, Furo } from './engine/sondagem.ts';
 import { cargasFundacao, cargaAlavanca, CARGA_PAV } from './engine/cargasFund.ts';
@@ -922,7 +922,8 @@ export default function App() {
             // planta de fundação: paredes do pavimento mais baixo (térreo)
             const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), psf = calc.ps.filter(p => p.pav === pf.id);
             const doPav = <T extends { pav: string }>(l?: T[]) => (l || []).filter(e => e.pav === pf.id);
-            const pts = pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover) });
+            const ptsW = pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover) });   // no eixo das paredes (cálculo)
+            const pts = blocosDivisa(ptsW, tf, aj.fundDivisa || [], ({ ...BLOCO_PADRAO, ...(regras.bloco || {}) }).lado / 2);   // locação: bloco de divisa com a estaca para dentro
             const og = aj.fundOrigem?.pav === pf.id ? aj.fundOrigem : null;
             const pOg = og ? pts.find(p => Math.hypot(p.x - og.x, p.y - og.y) < 0.15) : null;
             const origem = og ? { x: og.x + og.dx, y: og.y + og.dy } : null;
@@ -953,12 +954,12 @@ export default function App() {
               setTimeout(() => { try {
                 const C = cargasFundacao({ pavs: ativos, desloc: desloc3d, ts: calc.ts, ps: calc.ps, pl: calc.pl, vigas: calc.vigas, regras, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, pavCarga, baldrame: !!fund.baldrame });
                 const op = { baldrame: !!fund.baldrame, Rl: capL.Rl, Rp: capL.Rp, L: oe.comp, D: oe.furo };
-                const m1 = modeloParede(C, pts, op), m2 = modeloParede(C, pts, { ...op, Ec: 8e6 });   // curto e longo prazo (fluência): vale o pior
+                const m1 = modeloParede(C, ptsW, op), m2 = modeloParede(C, ptsW, { ...op, Ec: 8e6 });   // curto e longo prazo (fluência): vale o pior
                 const R: Record<number, number> = {}, rec: Record<number, number> = {};
                 for (const p of pts) { R[p.n] = Math.max(m1.R[p.n] ?? 0, m2.R[p.n] ?? 0); rec[p.n] = Math.max(m1.rec[p.n] ?? 0, m2.rec[p.n] ?? 0); }
                 const trechosR = m1.trechos.map((t, i) => ({ t: t.t, Tparede: Math.max(t.Tparede, m2.trechos[i].Tparede), Tporta: Math.max(t.Tporta, m2.trechos[i].Tporta), Ttopo: Math.max(t.Ttopo, m2.trechos[i].Ttopo) }));
                 const portas = C.ts.reduce((s, t) => s + t.vaos.filter(v => v.tipo?.startsWith('P') || v.base < 0.15 && (v.topo ?? v.base + v.h) < (t.H ?? 3) - 0.3).length, 0);
-                setResFund({ chave: chaveFund, R, lev: cargaAlavanca(C, pts), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
+                setResFund({ chave: chaveFund, R, lev: cargaAlavanca(C, ptsW), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
                 setVerFund('cargas');
               } finally { setCalcFund(false); } }, 30);
             };
@@ -1007,7 +1008,8 @@ export default function App() {
               }
               return { x: +px.toFixed(3), y: +py.toFixed(3) };
             };
-            const tirar = (p: { x: number; y: number }) => {
+            const tirar = (p0: { x: number; y: number; wx?: number; wy?: number }) => {
+              const p = { x: p0.wx ?? p0.x, y: p0.wy ?? p0.y };
               const ex = doPav(aj.fundExtra).find(e => Math.hypot(e.x - p.x, e.y - p.y) < 0.15);
               return ex ? { fundExtra: (aj.fundExtra || []).filter(e => e !== ex), fundRemover: aj.fundRemover || [] } : { fundExtra: aj.fundExtra || [], fundRemover: [...(aj.fundRemover || []), { pav: pf.id, x: p.x, y: p.y }] };
             };
@@ -1017,7 +1019,7 @@ export default function App() {
               const c = perto(x, y);
               if (modoFund === 'rem') { if (c && c.d < 0.5) setAj({ ...aj, ...tirar(c.p) }); return; }
               if (modoFund === 'origem') { if (c && c.d < 0.5) { setAj({ ...aj, fundOrigem: { pav: pf.id, x: c.p.x, y: c.p.y, dx: 0, dy: 0 } }); setModoFund(null); } return; }
-              if (modoFund === 'mover') { if (c && c.d < 0.5) setModoFund({ x: c.p.x, y: c.p.y }); return; }
+              if (modoFund === 'mover') { if (c && c.d < 0.5) setModoFund({ x: c.p.wx ?? c.p.x, y: c.p.wy ?? c.p.y }); return; }
               // segundo clique do mover: tira o ponto de lá e põe aqui
               const t = tirar(modoFund); setAj({ ...aj, ...t, fundExtra: [...t.fundExtra, { pav: pf.id, ...noEixo(x, y) }] }); setModoFund('mover');
             };
@@ -1081,6 +1083,10 @@ export default function App() {
                   <p className="dica">{cont('L')} cantos (L) · {cont('T')} encontros (T) · {cont('X')} cruzamentos · {cont('ponta')} pontas · {cont('coluna')} colunas no meio da parede{cont('emenda') ? ` · ${cont('emenda')} emendas` : ''}{cont('intermediário') ? ` · ${cont('intermediário')} intermediários (laranja)` : ''}{cont('manual') ? ` · ${cont('manual')} acrescentados (roxo)` : ''}</p>
                   <label>Espaçamento máximo entre pontos ao longo da parede (m) — 0 = só cantos, encontros, pontas e colunas
                     <input type="number" step="0.1" value={regras.fundEspac ?? 0} onChange={e => setRegras({ ...regras, fundEspac: parseFloat(e.target.value) || 0 })} /></label>
+                  <div className="botoes"><span className="dica">Blocos de divisa (bloco encostado na divisa, estaca para dentro):</span>
+                    {([['esq', 'Esquerda'], ['dir', 'Direita'], ['fundo', 'Fundo'], ['frente', 'Frente']] as const).map(([k, t]) => { const on = (aj.fundDivisa || []).includes(k);
+                      return <button key={k} className={on ? 'on' : ''} onClick={() => setAj({ ...aj, fundDivisa: on ? (aj.fundDivisa || []).filter(x => x !== k) : [...(aj.fundDivisa || []), k] })}>{t}</button>; })}</div>
+                  {pts.some(p => p.div) && <p className="dica">{pts.filter(p => p.div).length} blocos de divisa: estaca a {Math.round((({ ...BLOCO_PADRAO, ...(regras.bloco || {}) }).lado / 2 - 0.075) * 100)} cm do eixo da parede, para dentro.</p>}
                   <h3>Editar pontos</h3>
                   <div className="botoes">
                     {([['add', 'Acrescentar'], ['rem', 'Tirar'], ['mover', 'Mover']] as const).map(([k, t]) => <button key={k} className={modoFund === k || (k === 'mover' && typeof modoFund === 'object' && modoFund) ? 'on' : ''} onClick={() => { setModoFund(modoFund === k ? null : k); setVerFund('pontos'); }}>{t}</button>)}
