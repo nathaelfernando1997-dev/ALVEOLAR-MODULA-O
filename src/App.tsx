@@ -922,7 +922,7 @@ export default function App() {
             // planta de fundação: paredes do pavimento mais baixo (térreo)
             const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), psf = calc.ps.filter(p => p.pav === pf.id);
             const doPav = <T extends { pav: string }>(l?: T[]) => (l || []).filter(e => e.pav === pf.id);
-            const ptsW = pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover) });   // no eixo das paredes (cálculo)
+            const ptsW = pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover) }, regras.fundJunta ?? 0.5);   // no eixo das paredes (cálculo)
             const pts = blocosDivisa(ptsW, tf, aj.fundDivisa || [], ({ ...BLOCO_PADRAO, ...(regras.bloco || {}) }).lado / 2);   // locação: bloco de divisa com a estaca para dentro
             const og = aj.fundOrigem?.pav === pf.id ? aj.fundOrigem : null;
             const pOg = og ? pts.find(p => Math.hypot(p.x - og.x, p.y - og.y) < 0.15) : null;
@@ -1087,6 +1087,8 @@ export default function App() {
                     {([['esq', 'Esquerda'], ['dir', 'Direita'], ['fundo', 'Fundo'], ['frente', 'Frente']] as const).map(([k, t]) => { const on = (aj.fundDivisa || []).includes(k);
                       return <button key={k} className={on ? 'on' : ''} onClick={() => setAj({ ...aj, fundDivisa: on ? (aj.fundDivisa || []).filter(x => x !== k) : [...(aj.fundDivisa || []), k] })}>{t}</button>; })}</div>
                   {pts.some(p => p.div) && <p className="dica">{pts.filter(p => p.div).length} blocos de divisa: estaca a {Math.round((({ ...BLOCO_PADRAO, ...(regras.bloco || {}) }).lado / 2 - 0.075) * 100)} cm do eixo da parede, para dentro.</p>}
+                  <label>Distância mínima entre blocos (m) — pontos mais perto que isso viram um bloco só
+                    <input type="number" step="0.05" value={regras.fundJunta ?? 0.5} onChange={e => setRegras({ ...regras, fundJunta: parseFloat(e.target.value) || 0.5 })} /></label>
                   <h3>Editar pontos</h3>
                   <div className="botoes">
                     {([['add', 'Acrescentar'], ['rem', 'Tirar'], ['mover', 'Mover']] as const).map(([k, t]) => <button key={k} className={modoFund === k || (k === 'mover' && typeof modoFund === 'object' && modoFund) ? 'on' : ''} onClick={() => { setModoFund(modoFund === k ? null : k); setVerFund('pontos'); }}>{t}</button>)}

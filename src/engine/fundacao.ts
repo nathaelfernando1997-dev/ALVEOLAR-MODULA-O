@@ -10,7 +10,7 @@ export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; e
 
 const TOL = 0.15, JUNTA = 0.5;   // pontos a menos de 50 cm viram um furo só
 
-export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { extra?: { x: number; y: number }[]; remover?: { x: number; y: number }[] } = {}): PontoFund[] {
+export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { extra?: { x: number; y: number }[]; remover?: { x: number; y: number }[] } = {}, junta = JUNTA): PontoFund[] {
   type Q = { x: number; y: number; tipo?: TipoPonto; esp: number };
   const qs: Q[] = [];
   const add = (x: number, y: number, esp: number, tipo?: TipoPonto) => {
@@ -71,7 +71,7 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
     mudou = false;
     for (let i = 0; i < qs.length && !mudou; i++) for (let j = i + 1; j < qs.length; j++) {
       const a = qs[i], b = qs[j];
-      if (Math.hypot(a.x - b.x, a.y - b.y) >= JUNTA) continue;
+      if (Math.hypot(a.x - b.x, a.y - b.y) >= junta) continue;
       const pa = peso(a.tipo), pb = peso(b.tipo);
       if (pb > pa) { a.x = b.x; a.y = b.y; a.tipo = b.tipo; }
       else if (pa === pb) { a.x = (a.x + b.x) / 2; a.y = (a.y + b.y) / 2; }

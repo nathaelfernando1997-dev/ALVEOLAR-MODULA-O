@@ -6,6 +6,7 @@ import type { Dxf, Pt, Prim } from './dxf.ts';
 export interface Regras {
   larguraMax: number;      // 3,50
   fundEspac?: number;
+  fundJunta?: number;      // pontos de fundação mais perto que isso viram um bloco só (m): 0,50
   bloco?: { lado: number; alt: number; armLado: number; armAlt: number; barras: number; bitola: number; barra: number; gancho?: number; estaca?: number; estrH?: number; bitH?: number };   // bloco de coroamento (m, mm na bitola)
   estaca?: { furo: number; comp: number; armDiam: number; armComp: number; barras: number; bitLong: number; bitEstr: number; espEstr: number; transpEstr: number; barra: number };   // estaca escavada
   esperaBorda?: number;    // esperas dos painéis na fundação: distância da ponta do painel (m)
