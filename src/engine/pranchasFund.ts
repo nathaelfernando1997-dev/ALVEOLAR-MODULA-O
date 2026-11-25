@@ -308,11 +308,11 @@ export function folhaCanaleta(I: InfoProj, c: Canaleta, arq: XY[][], blocos: { x
   titulo(d, 137, 22, 'PLANTA DA BASE DE CANALETA', `ESC 1:${e}`);
   const h = 0.07;
   for (const b of blocos) d.R(X(b.x - 0.25), Y(b.y + 0.25), 0.5 * k, 0.5 * k, 0.2, CZ, [1, 0.8]);
-  for (const s of c.segs) {
+  for (const s of c.pecas) {   // peça por peça (39 cm + junta), cortadas mais escuras
     const [a0, a1, b0, b1] = s.o === 'H' ? [s.a, s.b, s.c - h, s.c + h] : [s.c - h, s.c + h, s.a, s.b];
-    d.R(X(a0), Y(b1), (a1 - a0) * k, (b1 - b0) * k, 0.3, K, undefined, '#bdbdbd');
+    d.R(X(a0), Y(b1), (a1 - a0) * k, (b1 - b0) * k, 0.12, K, undefined, s.cortada ? '#8c8c8c' : '#cfcfcf');
   }
-  d.T(20, 247, 'Cinza: canaleta 14 × 19 × 39 grauteada (corrida embaixo de todas as paredes, passando por baixo das portas) · tracejado: blocos de fundação 50 × 50', 2);
+  d.T(20, 247, `Canaleta 14 × 19 × 39 peça por peça (junta de 1 cm): ${c.pecas.length} peças, ${c.pecas.filter(p => p.cortada).length} cortadas (cinza escuro) · nos encontros a fiada horizontal passa e a vertical para na face · tracejado: blocos 50 × 50`, 2);
   // ---- corte típico 1:5
   const cx = 300, cb = 150, kk = 2, W = (v: number) => cx + v * kk, Hh = (v: number) => cb - v * kk;   // v em cm
   titulo(d, cx + 14, 22, 'CORTE TÍPICO — CANALETA SOBRE O BLOCO', 'ESC 1:5');

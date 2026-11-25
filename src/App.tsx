@@ -962,7 +962,7 @@ export default function App() {
             const setBloco = (k: keyof typeof BLOCO_PADRAO, v: number) => setRegras({ ...regras, bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), [k]: v } });
             // ---- sondagem, estaca e cálculo das cargas (passos 2 e 3)
             const fund: DadosFund = { ...FUND_VAZIA, ...(aj.fund || {}) };
-            const can = fund.canaleta ? canaletaBase(tf) : null;   // base de canaleta embaixo das paredes
+            const can = fund.canaleta ? canaletaBase(tf, psf) : null;   // base de canaleta embaixo das paredes
             const setFund = (f: Partial<DadosFund>) => setAj({ ...aj, fund: { ...fund, ...f } });
             const setFuro = (i: number, f: Partial<Furo>) => setFund({ furos: fund.furos.map((x, j) => j === i ? { ...x, ...f } : x) });
             const capTab = fund.furos.some(f => f.n.length >= 2) ? resumoCap(fund.furos.filter(f => f.n.length >= 2), oe.furo, fund.tipo) : [];
