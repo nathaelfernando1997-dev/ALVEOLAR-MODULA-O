@@ -86,7 +86,10 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
       // senão vira bloco de 2 estacas (pega a emenda e o outro ponto) ou fica cada um com o seu bloco
       if ((a.tipo === 'coluna' || b.tipo === 'coluna') && d > 0.175) {
         // emenda perto de outro ponto: bloco único com 1 estaca no outro ponto, alongado até a emenda (os dois blocos se encavalariam)
-        if (d < JUNTA) { const col = a.tipo === 'coluna' ? a : b, keep = col === a ? b : a; (keep.cobre ??= []).push([col.x, col.y], ...(col.cobre || [])); keep.esp = Math.max(keep.esp, col.esp); qs.splice(qs.indexOf(col), 1); mudou = true; break; }
+        if (d < JUNTA) { const col = a.tipo === 'coluna' ? a : b, keep = col === a ? b : a;
+          // bloco de 50 cm: se os dois pontos cabem nele com folga de meia parede, a estaca vai para o meio e o bloco é o normal
+          if (d <= 2 * (0.25 - 0.075) && !keep.par && !keep.cobre && !col.cobre) { keep.x = (a.x + b.x) / 2; keep.y = (a.y + b.y) / 2; keep.esp = Math.max(keep.esp, col.esp); qs.splice(qs.indexOf(col), 1); mudou = true; break; }
+          (keep.cobre ??= []).push([col.x, col.y], ...(col.cobre || [])); keep.esp = Math.max(keep.esp, col.esp); qs.splice(qs.indexOf(col), 1); mudou = true; break; }
         continue;   // longe: a emenda fica com o seu bloco (1 estaca) embaixo da ponta do painel
       }
       // dois encontros de parede perto um do outro: bloco de 2 estacas (uma embaixo de cada parede), não uma estaca no meio

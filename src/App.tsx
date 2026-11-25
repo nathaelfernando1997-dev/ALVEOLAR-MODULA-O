@@ -397,8 +397,26 @@ export default function App() {
     const Halto: Record<string, { a: number; b: number; H: number }[]> = {};
     if (vazio.ps.some(P => P.larg > larguraMaxDe(regras, P.H) + 1e-6))
       for (const P of vazio.ps) if (larguraMaxDe(regras, P.H) < regras.larguraMax) (Halto[P.trecho] ??= []).push({ a: P.a, b: P.b, H: P.H });
+    // parede que atravessa o limite do ambiente de pé-direito alto: o painel alto morre no encontro com a parede que fecha o ambiente
+    // (vai até a face de fora dela) e o painel baixo começa ali — senão o painel alto passa da parede e fica sobrando para fora
+    const forc: Record<string, { x: number; alto: 1 | -1 }[]> = {};
+    for (const { L, H } of peEsp) for (const t of vazio.ts.filter(t => t.pav === L.pav && H > t.H)) {
+      const [c0, c1] = t.o === 'V' ? [L.x0, L.x1] : [L.y0, L.y1], [b0, b1] = t.o === 'V' ? [L.y0, L.y1] : [L.x0, L.x1];
+      if (t.c < c0 - 0.3 || t.c > c1 + 0.3) continue;
+      for (const [lim, fora] of [[b0, -1], [b1, 1]] as const) {
+        if (!(t.s < lim - 0.3 && t.e > lim + 0.3)) continue;
+        // do outro lado do limite tem outro ambiente tão alto quanto (dos dois lados da parede)? então ali a parede não muda de altura
+        const fora2 = [-0.3, 0.3].map(d => t.o === 'V' ? [t.c + d, lim + fora * 0.4] : [lim + fora * 0.4, t.c + d]);
+        if (fora2.some(([fx, fy]) => peEsp.some(o => o.L.pav === t.pav && o.H >= H && fx > o.L.x0 && fx < o.L.x1 && fy > o.L.y0 && fy < o.L.y1))) continue;
+        const x = vazio.ts.find(x => x.pav === t.pav && x.o !== t.o && Math.abs(x.c - lim) < 0.3 && x.s <= t.c + 0.1 && x.e >= t.c - 0.1);
+        const face = lim + fora * (x ? x.esp : t.esp) / 2;
+        const fx = fora < 0 ? face : face + regras.folga;
+        if (!(forc[t.id] ??= []).some(f => Math.abs(f.x - fx) < 0.01)) forc[t.id].push({ x: fx, alto: fora < 0 ? 1 : -1 });   // painel alto: começa/termina na face
+        if (!Halto[t.id]) Halto[t.id] = vazio.ps.filter(P => P.trecho === t.id).map(P => ({ a: P.a, b: P.b, H: P.H }));
+      }
+    }
     if (Object.keys(Halto).length) {
-      const tr = vazio.ts.filter(t => Halto[t.id] !== undefined), r2 = paineis(tr, regras, aj, Halto);
+      const tr = vazio.ts.filter(t => Halto[t.id] !== undefined), r2 = paineis(tr, regras, aj, Halto, forc);
       vazio.ps = [...vazio.ps.filter(P => Halto[P.trecho] === undefined), ...r2.paineis];
       vazio.vaos = [...vazio.vaos.filter(v => Halto[v.trecho] === undefined), ...r2.vaos];
       for (const pv of ativos) if (aj.telhado?.[pv.id]) aplicarTelhado(r2.paineis.filter(P => P.pav === pv.id), aj.telhado[pv.id], aj.alturaPainel);
