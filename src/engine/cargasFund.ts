@@ -17,7 +17,7 @@ interface VigaLin { pav: string; o: 'H' | 'V'; c: number; a: number; b: number; 
 
 export function cargasFundacao(o: {
   pavs: Pavimento[]; desloc: Record<string, { dx: number; dy: number }>; ts: Trecho[]; ps: Painel[]; pl: PainelLaje[]; vigas: VigaLin[];
-  regras: Regras; espLaje: (p: PainelLaje) => number; pavCarga: Record<string, CargaPav>; baldrame: boolean;
+  regras: Regras; espLaje: (p: PainelLaje) => number; pavCarga: Record<string, CargaPav>; baldrame: boolean; canaleta?: number;   // canaleta: peso da base de canaleta (kN/m)
 }): Cargas {
   const G = 9.81 / 1000, TOL = 0.12, ordem = o.pavs.map(p => p.id);
   const G2 = (pav: string, or: 'H' | 'V', c: number, a: number, b: number): Lin => { const d = o.desloc[pav] ?? { dx: 0, dy: 0 }; const s = Math.min(a, b), e = Math.max(a, b);
@@ -67,6 +67,8 @@ export function cargasFundacao(o: {
     const W = 0.15 * Math.max(0.15, v.h - 0.14) * 25 * (v.e - v.s); tot.outros += W;
     const [x0, y0, x1, y1] = v.o === 'H' ? [v.s, v.c, v.e, v.c] : [v.c, v.s, v.c, v.e]; amostra(x0, y0, x1, y1, W, ordem.indexOf(id)); }
   if (o.baldrame) tsL[base].forEach((t, i) => { const W = 0.15 * 0.4 * 25 * (t.e - t.s); tot.outros += W; const n = Math.ceil((t.e - t.s) / 0.1);
+    for (let j = 0; j < n; j++) out.push({ t: i, u: t.s + (t.e - t.s) * (j + 0.5) / n, P: W / n }); });
+  if (o.canaleta) tsL[base].forEach((t, i) => { const W = o.canaleta! * (t.e - t.s); tot.outros += W; const n = Math.ceil((t.e - t.s) / 0.1);
     for (let j = 0; j < n; j++) out.push({ t: i, u: t.s + (t.e - t.s) * (j + 0.5) / n, P: W / n }); });
   return { amostras: out, ts: tsL[base].map((l, i) => ({ ...l, vaos: tB[i].vaos, H: tB[i].H })), tot, foraKN };
 }

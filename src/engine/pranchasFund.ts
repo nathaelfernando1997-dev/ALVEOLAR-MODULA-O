@@ -2,6 +2,7 @@
 // Desenho em mm de papel com y para baixo (como no papel); a Folha guarda com y para cima.
 import { Folha, type Pagina } from './folhaDoc.ts';
 import type { OpBloco, OpEstaca, Locacao } from './fundacao.ts';
+import type { Canaleta } from './canaleta.ts';
 
 const PT = 72 / 25.4;
 const K = '#000000', CZ = '#777777';
@@ -292,6 +293,52 @@ export function folhaBaseParedes(I: InfoProj, o: BaseParedes, folha: string): Pa
     '5. Concreto da cinta igual ao do painel (mín. C25). Aço CA-50 e CA-60 (ø4.2 e ø5.0).'];
   d.T(24, 246, 'NOTAS', 3, { b: true }); notas.forEach((t, i) => d.T(24, 252 + i * 3.9, t, 2.2));
   carimbo(d, I, 'FUNDAÇÃO — CINTA DAS PORTAS E BASE DAS PAREDES', 'INDICADAS', folha);
+  return d.F;
+}
+
+// ================= FUND-07: base de canaleta embaixo das paredes =================
+export function folhaCanaleta(I: InfoProj, c: Canaleta, arq: XY[][], blocos: { x: number; y: number }[], folha: string): Pagina {
+  const d = new D();
+  // ---- planta (escala que cabe em 235 × 200 mm)
+  const xs = c.segs.flatMap(s => s.o === 'H' ? [s.a, s.b] : [s.c]), ys = c.segs.flatMap(s => s.o === 'V' ? [s.a, s.b] : [s.c]);
+  const x0 = Math.min(...xs) - 0.5, x1 = Math.max(...xs) + 0.5, y0 = Math.min(...ys) - 0.5, y1 = Math.max(...ys) + 0.5;
+  let e = 50; for (const v of [50, 75, 100, 125, 150, 200, 250]) { e = v; if ((x1 - x0) * 1000 / v <= 235 && (y1 - y0) * 1000 / v <= 200) break; }
+  const k = 1000 / e, ox = 20 + (235 - (x1 - x0) * k) / 2, oy = 40;
+  const X = (x: number) => ox + (x - x0) * k, Y = (y: number) => oy + (y1 - y) * k;
+  titulo(d, 137, 22, 'PLANTA DA BASE DE CANALETA', `ESC 1:${e}`);
+  const h = 0.07;
+  for (const b of blocos) d.R(X(b.x - 0.25), Y(b.y + 0.25), 0.5 * k, 0.5 * k, 0.2, CZ, [1, 0.8]);
+  for (const s of c.segs) {
+    const [a0, a1, b0, b1] = s.o === 'H' ? [s.a, s.b, s.c - h, s.c + h] : [s.c - h, s.c + h, s.a, s.b];
+    d.R(X(a0), Y(b1), (a1 - a0) * k, (b1 - b0) * k, 0.3, K, undefined, '#bdbdbd');
+  }
+  d.T(20, 247, 'Cinza: canaleta 14 × 19 × 39 grauteada (corrida embaixo de todas as paredes, passando por baixo das portas) · tracejado: blocos de fundação 50 × 50', 2);
+  // ---- corte típico 1:5
+  const cx = 300, cb = 150, kk = 2, W = (v: number) => cx + v * kk, Hh = (v: number) => cb - v * kk;   // v em cm
+  titulo(d, cx + 14, 22, 'CORTE TÍPICO — CANALETA SOBRE O BLOCO', 'ESC 1:5');
+  d.R(W(-18), Hh(0), 50 * kk, 12 * kk, 0.35, CZ, [1.5, 1]); d.T(W(7), Hh(-6), 'bloco de fundação (50 cm)', 2, { a: 'middle' });
+  d.PL([[W(0), Hh(19)], [W(0), Hh(0)], [W(14), Hh(0)], [W(14), Hh(19)], [W(11.5), Hh(19)], [W(11.5), Hh(3)], [W(2.5), Hh(3)], [W(2.5), Hh(19)]], 0.5, K, true);
+  d.R(W(2.5), Hh(19), 9 * kk, 16 * kk, 0.15, CZ, undefined, '#e6e6e6');
+  for (const xx of [5, 9]) d.Cf(W(xx), Hh(6.5), 0.5);
+  d.R(W(0), Hh(19 + 26), 14 * kk, 26 * kk, 0.4); d.T(W(7), Hh(19 + 13), 'PAINEL', 2.2, { a: 'middle', rot: 90 });
+  d.L(W(-2), Hh(19), W(16), Hh(19), 0.25); d.T(W(17), Hh(19.8), 'argamassa de assentamento 1 cm', 1.9);
+  cotaH(d, W(0), W(14), Hh(-14) + 1, '14'); cotaV(d, W(-6), Hh(19), Hh(0), '19');
+  const cham = (x: number, y: number, xt: number, yt: number, t: string) => { d.L(x, y, xt, yt, 0.18); d.Cf(x, y, 0.4); d.T(xt + 1, yt + 0.8, t, 2.1); };
+  cham(W(9), Hh(6.5), W(26), Hh(10), `${c.aco.barras} ø${c.aco.bit} corridos (CA-50)`);
+  cham(W(7), Hh(14), W(26), Hh(16), 'graute fgk ≥ 20 MPa');
+  cham(W(1.2), Hh(10), W(-22), Hh(26), 'canaleta 14 × 19 × 39');
+  // ---- quadro
+  const lin = [['Canaleta 14 × 19 × 39', 'un', String(c.un)], ['Comprimento corrido', 'm', br(c.L, 1)], ['Graute', 'm³', br(c.graute, 2)], [`Aço CA-50 ø${c.aco.bit} (${c.aco.barras} barras)`, 'kg', br(c.aco.kg, 0)]];
+  tabela(d, 270, 196, 'QUANTITATIVO DA BASE DE CANALETA', lin, ['ITEM', 'UN', 'QUANT.'], [62, 14, 22]);
+  const notas = ['1. Medidas em centímetros. A canaleta corre embaixo de todas as paredes do térreo, inclusive embaixo das portas;',
+    '    não passa nos vãos sem parede (ex.: frente da garagem). Nos cantos e encontros as fiadas se cruzam (não deixar junta corrida).',
+    '2. Assentar sobre os blocos de fundação já concretados, nivelada, com argamassa 1 cm. Entre blocos apoia no terreno compactado.',
+    `3. Armar com ${c.aco.barras} ø${c.aco.bit} corridos, traspasse de 50 cm e dobrados nos cantos (L de 40 cm). Grautear por inteiro.`,
+    '4. Os painéis assentam em cima da canaleta com argamassa; as esperas do bloco atravessam a canaleta (furar o fundo no lugar delas).',
+    `5. Quantidade com 5% de perdas. Peso considerado na carga das estacas: ${br(c.kNm, 2)} kN/m.`];
+  d.T(20, 256, 'NOTAS', 3, { b: true }); notas.forEach((t, i) => d.T(20, 262 + i * 3.9, t, 2.2));
+  void arq;
+  carimbo(d, I, 'FUNDAÇÃO — BASE DE CANALETA', 'INDICADAS', folha);
   return d.F;
 }
 

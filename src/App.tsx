@@ -20,6 +20,7 @@ import { pontosFundacao, blocosDivisa, dxfFundacao, csvFundacao, locacao, dxfLoc
 import { SOLOS, TIPOS_ESTACA, FUND_VAZIA, resumo as resumoCap, lerNs } from './engine/sondagem.ts';
 import type { DadosFund, Solo, Furo } from './engine/sondagem.ts';
 import { cargasFundacao, cargaAlavanca, CARGA_PAV } from './engine/cargasFund.ts';
+import { canaletaBase, CANALETA } from './engine/canaleta.ts';
 import type { CargaPav } from './engine/cargasFund.ts';
 import { modeloParede } from './engine/modeloParede.ts';
 import { ZoomSvg, alternarPainel } from './Zoom.tsx';
@@ -959,12 +960,13 @@ export default function App() {
             const setBloco = (k: keyof typeof BLOCO_PADRAO, v: number) => setRegras({ ...regras, bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), [k]: v } });
             // ---- sondagem, estaca e cálculo das cargas (passos 2 e 3)
             const fund: DadosFund = { ...FUND_VAZIA, ...(aj.fund || {}) };
+            const can = fund.canaleta ? canaletaBase(tf) : null;   // base de canaleta embaixo das paredes
             const setFund = (f: Partial<DadosFund>) => setAj({ ...aj, fund: { ...fund, ...f } });
             const setFuro = (i: number, f: Partial<Furo>) => setFund({ furos: fund.furos.map((x, j) => j === i ? { ...x, ...f } : x) });
             const capTab = fund.furos.some(f => f.n.length >= 2) ? resumoCap(fund.furos.filter(f => f.n.length >= 2), oe.furo, fund.tipo) : [];
             const capL = capTab.find(r => Math.abs(r.L - oe.comp) < 1e-6) ?? null;
             const pavCarga = Object.fromEntries(ativos.map((p, i) => [p.id, fund.pavCarga?.[p.id] ?? (i === ativos.length - 1 ? 'forro' : 'piso')])) as Record<string, CargaPav>;
-            const chaveFund = JSON.stringify([pts.map(p => [p.n, +p.x.toFixed(3), +p.y.toFixed(3)]), pavCarga, !!fund.baldrame, fund.furos, fund.tipo, oe.furo, oe.comp, calc.ps.length, calc.pl.length, calc.ts.length]);
+            const chaveFund = JSON.stringify([pts.map(p => [p.n, +p.x.toFixed(3), +p.y.toFixed(3)]), pavCarga, !!fund.baldrame, !!fund.canaleta, fund.furos, fund.tipo, oe.furo, oe.comp, calc.ps.length, calc.pl.length, calc.ts.length]);
             const resOk = !!resFund && resFund.chave === chaveFund;
             const TELA25 = 20.5, TELA10 = 41.4, CINTA = 31;   // CINTA: 2 ø8 da cinta da porta (kN)   // kN: tração que a tela ø4.2 (2 capas) aguenta nos 40 cm de baixo, c/25 e c/10
             const sit = (n: number): 'ok' | 'ponta' | 'fs' => { const R = resFund?.R[n] ?? 0; return !capL || R <= capL.Padm + 1e-6 ? 'ok' : R <= capL.Pfs + 1e-6 ? 'ponta' : 'fs'; };
@@ -972,7 +974,7 @@ export default function App() {
             const calcular = () => {
               if (!capL) return; setCalcFund(true);
               setTimeout(() => { try {
-                const C = cargasFundacao({ pavs: ativos, desloc: desloc3d, ts: calc.ts, ps: calc.ps, pl: calc.pl, vigas: calc.vigas, regras, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, pavCarga, baldrame: !!fund.baldrame });
+                const C = cargasFundacao({ pavs: ativos, desloc: desloc3d, ts: calc.ts, ps: calc.ps, pl: calc.pl, vigas: calc.vigas, regras, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, pavCarga, baldrame: !!fund.baldrame, canaleta: can?.kNm });
                 const op = { baldrame: !!fund.baldrame, Rl: capL.Rl, Rp: capL.Rp, L: oe.comp, D: oe.furo };
                 // bloco de 2 estacas automático: onde a carga passa de uma estaca (FS 2), segunda estaca ao longo da parede, e calcula de novo
                 const dE = 3 * oe.furo;
@@ -997,7 +999,7 @@ export default function App() {
                 const R: Record<number, number> = {}, rec: Record<number, number> = {};
                 for (const p of P) { R[p.n] = Math.max(m1.R[p.n] ?? 0, m2.R[p.n] ?? 0); rec[p.n] = Math.max(m1.rec[p.n] ?? 0, m2.rec[p.n] ?? 0); }
                 if (pares.length || doPav(aj.fundPar2).length) setAj({ ...aj, fundPar2: [...(aj.fundPar2 || []).filter(e => e.pav !== pf.id), ...pares] });
-                const chaveF = JSON.stringify([ptsF.map(p => [p.n, +p.x.toFixed(3), +p.y.toFixed(3)]), pavCarga, !!fund.baldrame, fund.furos, fund.tipo, oe.furo, oe.comp, calc.ps.length, calc.pl.length, calc.ts.length]);
+                const chaveF = JSON.stringify([ptsF.map(p => [p.n, +p.x.toFixed(3), +p.y.toFixed(3)]), pavCarga, !!fund.baldrame, !!fund.canaleta, fund.furos, fund.tipo, oe.furo, oe.comp, calc.ps.length, calc.pl.length, calc.ts.length]);
                 const trechosR = m1.trechos.map((t, i) => ({ t: t.t, Tparede: Math.max(t.Tparede, m2.trechos[i].Tparede), Tporta: Math.max(t.Tporta, m2.trechos[i].Tporta), Ttopo: Math.max(t.Ttopo, m2.trechos[i].Ttopo) }));
                 const portas = C.ts.reduce((s, t) => s + t.vaos.filter(v => v.tipo?.startsWith('P') || v.base < 0.15 && (v.topo ?? v.base + v.h) < (t.H ?? 3) - 0.3).length, 0);
                 setResFund({ chave: chaveF, R, lev: cargaAlavanca(C, P.filter(p => p.tipo !== 'apoio')), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
@@ -1081,7 +1083,7 @@ export default function App() {
               const I = { obra: projNome || base, resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', empresa: 'Estruttura Projetos e Construções', data: new Date().toLocaleDateString('pt-BR'), revisao: aj.arm?.revisao };
               const nAp = pts.filter(p => p.tipo === 'apoio').length, n = pts.length - nAp, ehBase = resOk && !fund.baldrame && !!resFund;
               const tipoE = TIPOS_ESTACA.find(t => t[0] === fund.tipo)?.[1].toLowerCase() ?? '';
-              const nomes = ['FUND-01', 'FUND-02', ...(resOk ? ['FUND-02'] : []), ...(ehBase ? ['FUND-03'] : []), 'FUND-04', 'FUND-05', 'FUND-06'];
+              const nomes = ['FUND-01', 'FUND-02', ...(resOk ? ['FUND-02'] : []), ...(ehBase ? ['FUND-03'] : []), ...(can ? ['FUND-07'] : []), 'FUND-04', 'FUND-05', 'FUND-06'];
               const tot = String(nomes.length).padStart(2, '0'); let k = 0; const fol = () => `${nomes[k]} · ${String(++k).padStart(2, '0')}/${tot}`;
               const pares = pts.filter(p => p.par && p.n < p.par), dPar = pares.length ? Math.max(...pares.map(p => { const q = pts.find(r => r.n === p.par)!; return Math.hypot(p.x - q.x, p.y - q.y); })) : 0;
               const pags = [P.folhaEstacaBloco(I, oe, ob, n, n - 2 * pares.length + nAp, [{ L: oe.comp, n }], { baldrame: !!fund.baldrame }, fol(), { n: pares.length, comp: Math.ceil((dPar + ob.lado) * 20) / 20 })];
@@ -1094,6 +1096,7 @@ export default function App() {
                 const T = resFund.trechos, Hs = tf.map(t => t.H).sort((a, b) => a - b);
                 pags.push(P.folhaBaseParedes(I, { portas: [...grupos.values()], LW: tf.reduce((s, t) => s + t.e - t.s, 0), tela10: T.some(t => t.Tparede > TELA25), nTrechosTela: T.filter(t => t.Tparede > TELA25).length, nTrechosCinta: T.filter(t => t.Tparede > TELA10).length, Tporta: Math.max(0, ...T.map(t => t.Tporta)), Tparede: Math.max(0, ...T.map(t => t.Tparede)), H: Hs[Math.floor(Hs.length / 2)] ?? 3 }, fol()));
               }
+              if (can) pags.push(P.folhaCanaleta(I, can, [], pts.map(p => ({ x: p.x, y: p.y })), fol()));
               pags.push(...P.folhasBloco3D(I, oe, ob, [fol(), fol(), fol()]));
               baixarBin(`${projNome || base} - Fundacao (pranchas).pdf`, paginasParaPdf(pags), 'application/pdf');
             };
@@ -1212,6 +1215,8 @@ export default function App() {
                   <h3>O que tem em cima de cada pavimento</h3>
                   {ativos.map(p => <label key={p.id}>{p.nome}<select value={pavCarga[p.id]} onChange={e => setFund({ pavCarga: { ...pavCarga, [p.id]: e.target.value as CargaPav } })}>{(Object.keys(CARGA_PAV) as CargaPav[]).map(k => <option key={k} value={k}>{CARGA_PAV[k].nome}</option>)}</select></label>)}
                   <label className="check"><input type="checkbox" checked={!!fund.baldrame} onChange={e => setFund({ baldrame: e.target.checked })} /> Tem viga baldrame 15 × 40 embaixo das paredes (sem ela, a parede apoia direto nos blocos)</label>
+                  <label className="check"><input type="checkbox" checked={!!fund.canaleta} onChange={e => setFund({ canaleta: e.target.checked })} /> Base de canaleta 14 × 19 × 39 embaixo de todas as paredes (em cima dos blocos, grauteada com 2 ø10; as paredes assentam nela)</label>
+                  {can && <p className="dica">Canaleta: <b>{br(can.L, 1)} m</b> · <b>{can.un} canaletas</b> 14 × 19 × 39 (com 5% de perdas) · graute <b>{br(can.graute, 2)} m³</b> · aço {can.aco.barras} ø{can.aco.bit} = {br(can.aco.m, 0)} m ({br(can.aco.kg, 0)} kg) · peso {br(can.kNm, 2)} kN/m entra na carga das estacas</p>}
                   <label className="check"><input type="checkbox" checked={!!fund.auto2E} onChange={e => setAj({ ...aj, fund: { ...fund, auto2E: e.target.checked }, ...(e.target.checked ? {} : { fundPar2: (aj.fundPar2 || []).filter(x => x.pav !== pf.id) }) })} /> Bloco de 2 estacas onde a carga passar de uma estaca (opcional: a segunda estaca vai ao longo da parede, a 3 diâmetros)</label>
                   {!capL && <p className="dica"><b>Falta a sondagem</b> (passo 2) para saber quanto a estaca aguenta.</p>}
                   <button className="principal" disabled={!capL || calcFund} onClick={calcular}>{calcFund ? 'Calculando…' : resOk ? 'Calcular de novo' : 'Calcular as cargas nas estacas'}</button>
@@ -1246,7 +1251,7 @@ export default function App() {
                   <button onClick={() => { setVerFund('folhas'); setParteFund('plantas'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir locação, coordenadas{resOk ? ', cargas' : ''} e esperas ({papelFund.toUpperCase()})</button>
                   <button onClick={() => { setVerFund('folhas'); setParteFund('detalhe'); setTimeout(() => { window.print(); setParteFund('todas'); }, 400); }}>Imprimir detalhe do bloco e da estaca (A3)</button>
                   <h3>Pranchas da fundação (PDF)</h3>
-                  <p className="dica">Em preto e branco, com carimbo: FUND-01 estaca e bloco · FUND-02 locação{resOk ? ' e quadro de cargas' : ''}{resOk && !fund.baldrame ? ' · FUND-03 cinta das portas e base das paredes' : ''} · bloco em 3D (vista, peças e montagem).{!resOk ? ' Calcule as cargas (passo 3) para sair também o quadro de cargas e a base das paredes.' : ''}</p>
+                  <p className="dica">Em preto e branco, com carimbo: FUND-01 estaca e bloco · FUND-02 locação{resOk ? ' e quadro de cargas' : ''}{resOk && !fund.baldrame ? ' · FUND-03 cinta das portas e base das paredes' : ''}{fund.canaleta ? ' · FUND-07 base de canaleta' : ''} · bloco em 3D (vista, peças e montagem).{!resOk ? ' Calcule as cargas (passo 3) para sair também o quadro de cargas e a base das paredes.' : ''}</p>
                   <button className="principal" onClick={baixarPranchas}>Baixar pranchas da fundação (PDF)</button>
                 </div>
                 <details className="card acoes"><summary><b>Bloco de coroamento</b></summary>
