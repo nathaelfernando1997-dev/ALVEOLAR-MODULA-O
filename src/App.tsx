@@ -420,7 +420,7 @@ export default function App() {
       }
     }
     if (Object.keys(Halto).length) {
-      const tr = vazio.ts.filter(t => Halto[t.id] !== undefined), r2 = paineis(tr, regras, aj, Halto, forc);
+      const tr = vazio.ts.filter(t => Halto[t.id] !== undefined), r2 = paineis(tr, regras, aj, Halto, forc, vazio.ts);
       vazio.ps = [...vazio.ps.filter(P => Halto[P.trecho] === undefined), ...r2.paineis];
       vazio.vaos = [...vazio.vaos.filter(v => Halto[v.trecho] === undefined), ...r2.vaos];
       for (const pv of ativos) if (aj.telhado?.[pv.id]) aplicarTelhado(r2.paineis.filter(P => P.pav === pv.id), aj.telhado[pv.id], aj.alturaPainel);

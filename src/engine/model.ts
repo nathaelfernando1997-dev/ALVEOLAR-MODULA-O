@@ -11,6 +11,7 @@ export interface Regras {
   estaca?: { furo: number; comp: number; armDiam: number; armComp: number; barras: number; bitLong: number; bitEstr: number; espEstr: number; transpEstr: number; barra: number };   // estaca escavada
   esperaBorda?: number;    // esperas dos painéis na fundação: distância da ponta do painel (m)
   esperaEspac?: number;    // esperas: espaçamento máximo entre elas (m)      // planta de fundação: espaçamento máximo entre pontos ao longo da parede (0 = só cantos, encontros, pontas e colunas)
+  emendaNoEncontro?: boolean;   // emenda dos painéis nos encontros de parede (cada parede faz canto com o seu cômodo) — padrão sim
   larguraAlta?: number;    // painel mais alto que alturaAlta: largura máxima menor (3,00); 0 = não limita
   alturaAlta?: number;     // 3,00 (pé-direito acima disso é parede alta)
   larguraExcecao?: number; // painel acima da largura máxima, até esta medida, é fabricado por exceção (só aviso na conferência)
@@ -757,7 +758,7 @@ export function aplicarTelhado(ps: Painel[], t: Telhado, manuais: Record<string,
 }
 export interface VaoInteiro { trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; tipo: string; sobe?: boolean; topo?: number; H?: number }
 
-export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<string, { a: number; b: number; H: number }[]> = {}, forc: Record<string, { a: number; b: number }[]> = {}): { paineis: Painel[]; vaos: VaoInteiro[] } {
+export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<string, { a: number; b: number; H: number }[]> = {}, forc: Record<string, { a: number; b: number }[]> = {}, todos?: Trecho[]): { paineis: Painel[]; vaos: VaoInteiro[] } {
   const P: Painel[] = []; const VI: VaoInteiro[] = [];
   for (const t of ts) {
     const subs: [number, number, Vao[]][] = [];
@@ -790,6 +791,20 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<stri
       // corte obrigatório (ex.: parede que muda de altura no encontro com outra): divide ali e modula cada lado
       // (a: onde termina o painel de antes, b: onde começa o de depois — o espaço entre eles é o fechamento do encontro)
       const fc = (forc[t.id] || []).filter(f => f.a > sa + 0.3 && f.b < sb - 0.3).sort((x, y) => x.a - y.a);
+      // cada parede faz canto com o seu cômodo: onde outra parede chega (T) ou cruza, a emenda vai para o encontro
+      // (os painéis param nas faces dela e o quadrado do encontro fica para o fechamento) — não fica emenda solta no meio do cômodo do lado
+      if (r.emendaNoEncontro !== false && (r.motor ?? 1) >= 2) {
+        const tol = t.esp / 2 + 0.12;
+        const js = (todos ?? ts).filter(x => x !== t && x.pav === t.pav && x.o !== t.o && x.s - tol <= t.c && t.c <= x.e + tol && x.c > sa + 0.5 && x.c < sb - 0.5)
+          .map(x => ({ a: x.c - x.esp / 2 + r.folga, b: x.c + x.esp / 2, c: x.c })).sort((x, y) => x.c - y.c);
+        for (const j of js) {
+          if (fc.some(f => f.a - 0.3 < j.b && j.a < f.b + 0.3)) continue;   // já tem corte ali
+          if (ops.some(o => o.x0 < j.b && j.a < o.x1)) continue;   // cairia na porta/janela (encostada no encontro: vão até a ponta do painel)
+          const ant = Math.max(sa, ...fc.filter(f => f.b <= j.a).map(f => f.b)), dep = Math.min(sb, ...fc.filter(f => f.a >= j.b).map(f => f.a));
+          if (j.a - ant < 1.0 || dep - j.b < 1.0) continue;   // pedaço curto (menos de 1 m): a parede passa direto
+          fc.push({ a: j.a, b: j.b }); fc.sort((x, y) => x.a - y.a);
+        }
+      }
       const lim = [sa, ...fc.flatMap(f => [f.a, f.b]), sb];
       edges = manual.length ? [sa, ...manual.flatMap(c => c.col ? [c.x - r.coluna / 2, c.x + r.coluna / 2] : [c.x, c.x]), sb]
         : lim.filter((_, i) => i % 2 === 0).flatMap((x, i) => divide(x, lim[2 * i + 1], larguraMaxDe(r, t.H)));
