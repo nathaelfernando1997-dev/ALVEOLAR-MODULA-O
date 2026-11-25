@@ -13,7 +13,8 @@ export interface DadosFund {
   pavCarga?: Record<string, 'piso' | 'forro' | 'nada'>;   // tipo de carga em cima de cada pavimento
   baldrame?: boolean;                                      // tem viga baldrame 15×40 embaixo das paredes
   criterio?: 'norma' | 'rt';
-  canaleta?: boolean;                                      // base de canaleta 14×19×39 grauteada embaixo de todas as paredes (em cima dos blocos)
+  canaleta?: boolean;
+  canaletaAcima?: number;                                  // quanto a canaleta fica acima do piso acabado (m): sai da altura das paredes do térreo                                      // base de canaleta 14×19×39 grauteada embaixo de todas as paredes (em cima dos blocos)
   auto2E?: boolean;                                        // opcional: bloco de 2 estacas onde a carga passa de uma estaca                               // 'rt' = comprimento escolhido pelo responsável técnico mesmo sem atender a regra da ponta
 }
 export const FUND_VAZIA: DadosFund = { furos: [], tipo: 'escavada', baldrame: false };

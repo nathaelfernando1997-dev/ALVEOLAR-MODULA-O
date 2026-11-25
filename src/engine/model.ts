@@ -96,6 +96,7 @@ export interface Esquadria { tag: string; larg: number; alt: number; peit: numbe
 export interface Box { x0: number; x1: number; y0: number; y1: number }
 export interface Pavimento {
   id: string; nome: string; box: Box; altura: number; ativo: boolean; corte?: boolean;
+  baseAcima?: number;   // só no cálculo: pé da parede acima do piso acabado (base de canaleta) — altura já descontada, portas e janelas descem junto
   // encaixe manual sobre a planta de baixo: canto esquerdo-inferior desta planta a (x, y) m do canto da de baixo
   // (planta de cima menor que a de baixo, recuada: o encaixe automático encosta numa fachada)
   encaixe?: { x: number; y: number };
@@ -443,6 +444,7 @@ export const AJUSTES_VAZIOS: Ajustes = { excluir: [], juntar: [], naoDividir: []
 const idTrecho = (pav: string, o: string, c: number, s: number) => `${pav}|${o}|${c.toFixed(2)}|${s.toFixed(2)}`;
 
 export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regras, aj: Ajustes): Trecho[] {
+  const dB = pav.baseAcima ?? 0;
   const L0 = L;
   const { H, V } = faces(L.paredes, pav.box);
   const ax = { H: eixos(H, r), V: eixos(V, r) };
@@ -587,7 +589,7 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     let sId = s;
     for (const q of ax[o === 'H' ? 'V' : 'H']) if (q.cid !== undefined) for (const d of [0, r.coluna / 2, -r.coluna / 2]) if (Math.abs(s - (q.c + d)) < 1e-9) sId = q.cid + d;
     const id = idTrecho(pav.id, o, cid ?? c, sId);
-    const Hh = aj.altura[id] ?? pav.altura;
+    const Hh = aj.altura[id] != null ? aj.altura[id] - (pav.baseAcima ?? 0) : pav.altura;
     const vaos = vs.map(v => vao(id, v, Hh));
     return { id, pav: pav.id, o, c, s, e, vaos, H: Hh, esp };
   }
@@ -600,11 +602,11 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     const janela = q.tag.startsWith('J');
     let w = q.larg + r.acrescimoLargura;
     let base: number, h: number;
-    if (janela) { base = q.peit - r.janelaDesce; h = q.alt + 2 * r.janelaDesce; }
-    else { base = r.boneca; h = q.alt; }   // porta: boneca embaixo + altura do quadro
+    if (janela) { base = q.peit - r.janelaDesce - dB; h = q.alt + 2 * r.janelaDesce; }
+    else { base = r.boneca; h = q.alt - dB; }   // dB: pé da parede acima do piso acabado (alturas do quadro são do piso)   // porta: boneca embaixo + altura do quadro
     const inteiro = (!janela && base + h >= Hh - 1e-6) || w > larguraMaxDe(r, Hh) - 2 * r.boneca;
     if (inteiro) { w = Math.max(w, v.b - v.a); }
-    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: janela ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt, key };   // mesmo topo do recorte (porta = boneca + altura)
+    return { a: inteiro ? m - w / 2 : v.a, b: inteiro ? m + w / 2 : v.b, tag: q.tag, tipo: q.tag, w, x0: m - w / 2, x1: m + w / 2, base, h: Math.min(h, Hh - base), inteiro, topo: (janela ? q.peit + q.alt + r.janelaDesce : r.boneca + q.alt) - dB, key };   // mesmo topo do recorte (porta = boneca + altura)
   }
   // paredes desenhadas no sistema (o desenho não tinha a parede)
   for (const m of aj.paredesManuais || []) if (m.pav === pav.id) out.push(montar(pav, m.o, m.c, m.a, m.b, [], m.esp ?? 0.14));

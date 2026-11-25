@@ -276,8 +276,10 @@ export default function App() {
     return () => clearTimeout(t);
   }, [projId, pronto, camada, pavs, quadro, regras, aj, nome, projPasta]);
   const ativos = pavs.filter(p => p.ativo);
+  const ativosT = useMemo(() => { const dB = aj.fund?.canaleta ? (aj.fund.canaletaAcima ?? 0.07) : 0; return dB > 0 ? ativos.map((p, i) => i === 0 ? { ...p, altura: p.altura - dB, baseAcima: dB } : p) : ativos; }, [pavs, aj.fund]);   // eslint-disable-line react-hooks/exhaustive-deps
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
+    const ativos = ativosT;
     const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], orcExtra: [], areaPav: [], encaixes: {} };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
@@ -386,7 +388,7 @@ export default function App() {
     // - em cima do vazio (pé-direito duplo): a parede de cima desce até a parede de baixo (+ espessura da laje)
     // - em volta de área descoberta (laje impermeável sem cobertura): a parede sobe até o topo da platibanda
     // pé-direito próprio de ambiente (ex.: sala de 4,00): os painéis em volta dele sobem; no orçamento entra a área a mais
-    const peEsp = Object.entries(aj.peAmb || {}).map(([id, H]) => ({ L: vazio.lajes.find(a => a.id === id), H })).filter((x): x is { L: LajeAmb; H: number } => !!x.L && x.H > 0);
+    const peEsp = Object.entries(aj.peAmb || {}).map(([id, H]) => { const L = vazio.lajes.find(a => a.id === id); return { L, H: H - (L?.pav === ativos[0]?.id ? ativos[0].baseAcima ?? 0 : 0) }; }).filter((x): x is { L: LajeAmb; H: number } => !!x.L && x.H > 0);   // pé-direito do piso acabado: desconta a base de canaleta
     const sobePe = (ps: Painel[]) => { for (const P of ps) {
       const m = (P.a + P.b) / 2, d = 0.3;
       const lados: [number, number][] = P.o === 'H' ? [[m, P.c - d], [m, P.c + d]] : [[P.c - d, m], [P.c + d, m]];
@@ -535,8 +537,8 @@ export default function App() {
     return d;
   }, [ativos, calc]);
   const espParede3d = (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025) + 0.01;
-  const props3d = useMemo(() => ({ pavs: ativos, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => aj.peAmb?.[p.amb] }),
-    [ativos, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
+  const props3d = useMemo(() => ({ pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
+    [ativos, ativosT, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
   const [notaRev, setNotaRev] = useState('');
@@ -974,7 +976,7 @@ export default function App() {
             const calcular = () => {
               if (!capL) return; setCalcFund(true);
               setTimeout(() => { try {
-                const C = cargasFundacao({ pavs: ativos, desloc: desloc3d, ts: calc.ts, ps: calc.ps, pl: calc.pl, vigas: calc.vigas, regras, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, pavCarga, baldrame: !!fund.baldrame, canaleta: can?.kNm });
+                const C = cargasFundacao({ pavs: ativosT, desloc: desloc3d, ts: calc.ts, ps: calc.ps, pl: calc.pl, vigas: calc.vigas, regras, espLaje: p => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, pavCarga, baldrame: !!fund.baldrame, canaleta: can?.kNm });
                 const op = { baldrame: !!fund.baldrame, Rl: capL.Rl, Rp: capL.Rp, L: oe.comp, D: oe.furo };
                 // bloco de 2 estacas automático: onde a carga passa de uma estaca (FS 2), segunda estaca ao longo da parede, e calcula de novo
                 const dE = 3 * oe.furo;
@@ -1216,6 +1218,7 @@ export default function App() {
                   {ativos.map(p => <label key={p.id}>{p.nome}<select value={pavCarga[p.id]} onChange={e => setFund({ pavCarga: { ...pavCarga, [p.id]: e.target.value as CargaPav } })}>{(Object.keys(CARGA_PAV) as CargaPav[]).map(k => <option key={k} value={k}>{CARGA_PAV[k].nome}</option>)}</select></label>)}
                   <label className="check"><input type="checkbox" checked={!!fund.baldrame} onChange={e => setFund({ baldrame: e.target.checked })} /> Tem viga baldrame 15 × 40 embaixo das paredes (sem ela, a parede apoia direto nos blocos)</label>
                   <label className="check"><input type="checkbox" checked={!!fund.canaleta} onChange={e => setFund({ canaleta: e.target.checked })} /> Base de canaleta 14 × 19 × 39 embaixo de todas as paredes (em cima dos blocos, grauteada com 2 ø10; as paredes assentam nela)</label>
+                  {fund.canaleta && <label>Canaleta acima do piso acabado (cm) — o pé-direito conta do piso acabado: as paredes do térreo diminuem isso (portas e janelas descem junto)<input type="number" step="1" value={Math.round((fund.canaletaAcima ?? 0.07) * 100)} onChange={e => { const v = parseFloat(e.target.value); setFund({ canaletaAcima: isFinite(v) && v >= 0 ? v / 100 : 0.07 }); }} /></label>}
                   {can && <p className="dica">Canaleta: <b>{br(can.L, 1)} m</b> · <b>{can.un} canaletas</b> 14 × 19 × 39 (com 5% de perdas) · graute <b>{br(can.graute, 2)} m³</b> · aço {can.aco.barras} ø{can.aco.bit} = {br(can.aco.m, 0)} m ({br(can.aco.kg, 0)} kg) · peso {br(can.kNm, 2)} kN/m entra na carga das estacas</p>}
                   <label className="check"><input type="checkbox" checked={!!fund.auto2E} onChange={e => setAj({ ...aj, fund: { ...fund, auto2E: e.target.checked }, ...(e.target.checked ? {} : { fundPar2: (aj.fundPar2 || []).filter(x => x.pav !== pf.id) }) })} /> Bloco de 2 estacas onde a carga passar de uma estaca (opcional: a segunda estaca vai ao longo da parede, a 3 diâmetros)</label>
                   {!capL && <p className="dica"><b>Falta a sondagem</b> (passo 2) para saber quanto a estaca aguenta.</p>}
