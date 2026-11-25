@@ -935,7 +935,7 @@ export default function App() {
             const cont = (t: string) => pts.filter(p => p.tipo === t).length;
             const base = nome.replace(/\.dxf$/i, ''), arqF = arqDe(pf.box).filter(q => q.layer === camada || q.layer === 'PAREDE');   // fundação: só as paredes (planta limpa, como no Eberick)
             const ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}), qtd: pts.length }, qb = quantBloco(ob), dbT = '';
-            const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}), qtd: pts.length }, qe = quantEstaca(oe), dfT = fundacaoTecnico(ob, oe);
+            const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}), qtd: pts.filter(p => p.tipo !== 'apoio').length }, qe = quantEstaca(oe), dfT = fundacaoTecnico(ob, oe);
             const setEstaca = (k: keyof typeof ESTACA_PADRAO, v: number) => setRegras({ ...regras, estaca: { ...ESTACA_PADRAO, ...(regras.estaca || {}), [k]: v } });
             const setBloco = (k: keyof typeof BLOCO_PADRAO, v: number) => setRegras({ ...regras, bloco: { ...BLOCO_PADRAO, ...(regras.bloco || {}), [k]: v } });
             // ---- sondagem, estaca e cálculo das cargas (passos 2 e 3)
@@ -957,7 +957,7 @@ export default function App() {
                 const op = { baldrame: !!fund.baldrame, Rl: capL.Rl, Rp: capL.Rp, L: oe.comp, D: oe.furo };
                 // bloco de 2 estacas automático: onde a carga passa de uma estaca (FS 2), segunda estaca ao longo da parede, e calcula de novo
                 const dE = 3 * oe.furo;
-                let pares: { pav: string; x: number; y: number; x2: number; y2: number }[] = [], P = geraPts([]), m1 = modeloParede(C, P, op), m2 = modeloParede(C, P, { ...op, Ec: 8e6 });   // curto e longo prazo (fluência): vale o pior
+                let pares: { pav: string; x: number; y: number; x2: number; y2: number }[] = [], P = geraPts([]), m1 = modeloParede(C, P.filter(p => p.tipo !== 'apoio'), op), m2 = modeloParede(C, P.filter(p => p.tipo !== 'apoio'), { ...op, Ec: 8e6 });   // bloco de apoio não tem estaca   // curto e longo prazo (fluência): vale o pior
                 for (let it = 0; it < (fund.auto2E ? 4 : 0); it++) {
                   const novos: typeof pares = [];
                   for (const p of P) {
@@ -972,7 +972,7 @@ export default function App() {
                     if (best) novos.push({ pav: pf.id, x: p.x, y: p.y, x2: best.x2, y2: best.y2 });
                   }
                   if (!novos.length) break;
-                  pares = [...pares, ...novos]; P = geraPts(pares); m1 = modeloParede(C, P, op); m2 = modeloParede(C, P, { ...op, Ec: 8e6 });
+                  pares = [...pares, ...novos]; P = geraPts(pares); m1 = modeloParede(C, P.filter(p => p.tipo !== 'apoio'), op); m2 = modeloParede(C, P.filter(p => p.tipo !== 'apoio'), { ...op, Ec: 8e6 });
                 }
                 const ptsF = blocosDivisa(P, tf, aj.fundDivisa || [], ob.lado / 2);
                 const R: Record<number, number> = {}, rec: Record<number, number> = {};
@@ -981,7 +981,7 @@ export default function App() {
                 const chaveF = JSON.stringify([ptsF.map(p => [p.n, +p.x.toFixed(3), +p.y.toFixed(3)]), pavCarga, !!fund.baldrame, fund.furos, fund.tipo, oe.furo, oe.comp, calc.ps.length, calc.pl.length, calc.ts.length]);
                 const trechosR = m1.trechos.map((t, i) => ({ t: t.t, Tparede: Math.max(t.Tparede, m2.trechos[i].Tparede), Tporta: Math.max(t.Tporta, m2.trechos[i].Tporta), Ttopo: Math.max(t.Ttopo, m2.trechos[i].Ttopo) }));
                 const portas = C.ts.reduce((s, t) => s + t.vaos.filter(v => v.tipo?.startsWith('P') || v.base < 0.15 && (v.topo ?? v.base + v.h) < (t.H ?? 3) - 0.3).length, 0);
-                setResFund({ chave: chaveF, R, lev: cargaAlavanca(C, P), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
+                setResFund({ chave: chaveF, R, lev: cargaAlavanca(C, P.filter(p => p.tipo !== 'apoio')), rec, trechos: trechosR, tot: C.tot, portas, ok: m1.ok && m2.ok });
                 setVerFund('cargas');
               } finally { setCalcFund(false); } }, 30);
             };
@@ -1060,14 +1060,14 @@ export default function App() {
             const baixarPranchas = async () => {
               const P = await import('./engine/pranchasFund.ts'), { paginasParaPdf } = await import('./engine/folhaDoc.ts');
               const I = { obra: projNome || base, resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', empresa: 'Estruttura Projetos e Construções', data: new Date().toLocaleDateString('pt-BR'), revisao: aj.arm?.revisao };
-              const n = pts.length, ehBase = resOk && !fund.baldrame && !!resFund;
+              const nAp = pts.filter(p => p.tipo === 'apoio').length, n = pts.length - nAp, ehBase = resOk && !fund.baldrame && !!resFund;
               const tipoE = TIPOS_ESTACA.find(t => t[0] === fund.tipo)?.[1].toLowerCase() ?? '';
               const nomes = ['FUND-01', 'FUND-02', ...(resOk ? ['FUND-02'] : []), ...(ehBase ? ['FUND-03'] : []), 'FUND-04', 'FUND-05', 'FUND-06'];
               const tot = String(nomes.length).padStart(2, '0'); let k = 0; const fol = () => `${nomes[k]} · ${String(++k).padStart(2, '0')}/${tot}`;
               const pares = pts.filter(p => p.par && p.n < p.par), dPar = pares.length ? Math.max(...pares.map(p => { const q = pts.find(r => r.n === p.par)!; return Math.hypot(p.x - q.x, p.y - q.y); })) : 0;
-              const pags = [P.folhaEstacaBloco(I, oe, ob, n, n - 2 * pares.length, [{ L: oe.comp, n }], { baldrame: !!fund.baldrame }, fol(), { n: pares.length, comp: Math.ceil((dPar + ob.lado) * 20) / 20 })];
+              const pags = [P.folhaEstacaBloco(I, oe, ob, n, n - 2 * pares.length + nAp, [{ L: oe.comp, n }], { baldrame: !!fund.baldrame }, fol(), { n: pares.length, comp: Math.ceil((dPar + ob.lado) * 20) / 20 })];
               const cab = `${n} estacas ${tipoE} ø${Math.round(oe.furo * 100)} × ${br(oe.comp)} m${capL ? ` · admissível ${br(capL.Padm / 9.81, 1)} tf` : ''} · ${pf.nome}`;
-              const cargasQ = resOk && resFund ? pts.map(p => ({ n: p.n, R: resFund.R[p.n] ?? 0, sit: sit(p.n) === 'ok' ? 'atende' : sit(p.n) === 'ponta' ? (fund.criterio === 'rt' ? 'atende FS 2 (critério RT)' : 'passa da regra da ponta') : 'FS menor que 2' })) : null;
+              const cargasQ = resOk && resFund ? pts.filter(p => p.tipo !== 'apoio').map(p => ({ n: p.n, R: resFund.R[p.n] ?? 0, sit: sit(p.n) === 'ok' ? 'atende' : sit(p.n) === 'ponta' ? (fund.criterio === 'rt' ? 'atende FS 2 (critério RT)' : 'passa da regra da ponta') : 'FS menor que 2' })) : null;
               const f2 = fol(), f2b = cargasQ ? fol() : ''; pags.push(...P.folhasLocacao(I, loc, arqF.map(p => p.pts as [number, number][]), cargasQ, cab, [f2, f2b]));
               if (ehBase && resFund) {
                 const grupos = new Map<string, { nome: string; w: number; q: number }>();

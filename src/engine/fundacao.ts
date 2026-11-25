@@ -5,7 +5,7 @@
 import type { Trecho, Painel, Pavimento } from './model.ts';
 import type { Prim } from './dxf.ts';
 
-export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual' | 'segunda';
+export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual' | 'segunda' | 'apoio';
 export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number; div?: string; wx?: number; wy?: number; par?: number }   // par: a outra estaca do mesmo bloco (bloco de 2 estacas)   // div: bloco de divisa (lados); wx/wy: ponto no eixo da parede
 
 const TOL = 0.15, JUNTA = 0.5;   // pontos a menos de 50 cm viram um furo só
@@ -30,7 +30,11 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
   for (const [id, L] of porTrecho) {
     const t = ts.find(x => x.id === id); if (!t) continue;
     L.sort((p, q) => p.a - q.a);
-    for (let i = 0; i < L.length - 1; i++) { const g0 = L[i].a + L[i].larg, g1 = L[i + 1].a; if (g1 - g0 > 0.06 && g1 - g0 < 0.5) add(...xy(t, (g0 + g1) / 2), t.esp, 'coluna'); }   // coluna entre painéis (vão grande no meio não é coluna)
+    for (let i = 0; i < L.length - 1; i++) { const g0 = L[i].a + L[i].larg, g1 = L[i + 1].a; if (!(g1 - g0 > 0.06 && g1 - g0 < 0.5)) continue;   // coluna entre painéis (vão grande no meio não é coluna)
+      // os dois painéis têm porta que vai até essa ponta (boneca de transporte, retirada depois): o vão é livre ali,
+      // a coluna não carrega — só bloco de apoio para a montagem, sem estaca
+      const ateFim = L[i].recortes.some(r => r.base <= 0.15 && r.dl + r.w >= L[i].larg - 0.26), ateIni = L[i + 1].recortes.some(r => r.base <= 0.15 && r.dl <= 0.26);
+      add(...xy(t, (g0 + g1) / 2), t.esp, ateFim && ateIni ? 'apoio' : 'coluna'); }
   }
   // tipo pelo número de braços de parede que saem do ponto
   for (const q of qs) {
@@ -66,7 +70,7 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
   }
   // pontos muito perto um do outro (ex.: coluna de painel colada num encontro, ponto acrescentado do lado de um automático):
   // é um furo só, o bloco pega as duas paredes. Fica o ponto mais importante (canto/encontro/à mão); empate = no meio
-  const peso = (t?: TipoPonto) => t === 'manual' ? 4 : t === 'L' || t === 'T' || t === 'X' ? 3 : t === 'intermediário' ? 1 : 2;
+  const peso = (t?: TipoPonto) => t === 'manual' ? 4 : t === 'L' || t === 'T' || t === 'X' ? 3 : t === 'intermediário' || t === 'apoio' ? 1 : 2;
   for (let mudou = true; mudou;) {
     mudou = false;
     for (let i = 0; i < qs.length && !mudou; i++) for (let j = i + 1; j < qs.length; j++) {
@@ -97,7 +101,7 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
   return out;
 }
 
-const DESC: Record<TipoPonto, string> = { L: 'canto (L)', T: 'encontro (T)', X: 'cruzamento', ponta: 'ponta de parede', emenda: 'emenda de parede', coluna: 'coluna no meio da parede', 'intermediário': 'intermediário (espaçamento)', manual: 'ponto acrescentado', segunda: 'segunda estaca do bloco' };
+const DESC: Record<TipoPonto, string> = { L: 'canto (L)', T: 'encontro (T)', X: 'cruzamento', ponta: 'ponta de parede', emenda: 'emenda de parede', coluna: 'coluna no meio da parede', 'intermediário': 'intermediário (espaçamento)', manual: 'ponto acrescentado', segunda: 'segunda estaca do bloco', apoio: 'bloco de apoio (sem estaca)' };
 
 // DXF R12 simples (LINE, CIRCLE, TEXT), em metros, nas coordenadas do projeto
 export function dxfFundacao(pav: Pavimento, ts: Trecho[], pts: PontoFund[], arq: Prim[] = [], cotas = true): string {
@@ -155,7 +159,7 @@ export function dxfFundacao(pav: Pavimento, ts: Trecho[], pts: PontoFund[], arq:
 }
 
 export function csvFundacao(pts: PontoFund[]): string {
-  return ['Ponto;X (m);Y (m);Tipo;Pilar (cm);Bloco', ...pts.map(p => `B${p.n};${p.x.toFixed(3).replace('.', ',')};${p.y.toFixed(3).replace('.', ',')};${DESC[p.tipo]};${Math.round(p.esp * 100)}x${Math.round(p.esp * 100)};${p.par ? `2 estacas (com B${p.par})` : '1 estaca'}`)].join('\r\n');
+  return ['Ponto;X (m);Y (m);Tipo;Pilar (cm);Bloco', ...pts.map(p => `B${p.n};${p.x.toFixed(3).replace('.', ',')};${p.y.toFixed(3).replace('.', ',')};${DESC[p.tipo]};${Math.round(p.esp * 100)}x${Math.round(p.esp * 100)};${p.tipo === 'apoio' ? 'apoio (sem estaca)' : p.par ? `2 estacas (com B${p.par})` : '1 estaca'}`)].join('\r\n');
 }
 
 // ---------- planta de locação (gabarito) ----------
