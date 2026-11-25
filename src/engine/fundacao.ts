@@ -59,7 +59,12 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
       .map(q => t.o === 'H' ? q.x : q.y).sort((a, b) => a - b);
     for (let i = 0; i < nos.length - 1; i++) {
       const d = nos[i + 1] - nos[i], k = Math.ceil(d / espacMax - 1e-9);
-      for (let j = 1; j < k; j++) { const u = nos[i] + d * j / k; if (noVao(t, u)) continue; qs.push({ ...(() => { const [x, y] = xy(t, u); return { x, y }; })(), esp: t.esp, tipo: 'intermediário' }); }
+      for (let j = 1; j < k; j++) {
+        let u = nos[i] + d * j / k; if (noVao(t, u)) continue;
+        // caiu dentro de porta/janela: vai para o fim do vão mais perto, onde a parede continua (o bloco apoia a parede)
+        const v = t.vaos.find(v => u > v.a - t.esp / 2 && u < v.b + t.esp / 2);
+        if (v) { const ua = v.a - t.esp / 2, ub = v.b + t.esp / 2; u = (u - ua < ub - u && ua > t.s + 0.05) || ub > t.e - 0.05 ? ua : ub; }
+        qs.push({ ...(() => { const [x, y] = xy(t, u); return { x, y }; })(), esp: t.esp, tipo: 'intermediário' }); }
     }
   }
   // edição à mão: pontos tirados e pontos acrescentados
