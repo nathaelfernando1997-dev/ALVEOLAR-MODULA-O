@@ -816,6 +816,13 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<stri
           // janela centralizada: fica no meio da peça (as mesmas sobras dos dois lados)
           if (o.key && aj.vaoCentro?.includes(o.key) && aj.vaoPos?.[o.key] == null && !toda && larg - w >= 2 * bl - 1e-6) dl = (larg - w) / 2;
           if (dl < bl - 1e-6) { dl = (larg - w) / 2; aviso = `${o.tipo}: sem espaço para boneca de ${bl * 100} cm`; }
+          // vão encostado na ponta do painel (ex.: janela no recorte entre a parede do banho e a do quarto): o recorte vai até a ponta,
+          // com boneca de transporte nessa ponta (retirada depois de montar) — o vão não pode correr para dentro da parede do lado
+          if (bm === undefined && !toda && (r.motor ?? 1) >= 2) {
+            const ini = o.x0 - pa, fim = pa + larg - (o.x0 + o.w);
+            if (fim < bl - 1e-6 && ini >= bl - 1e-6 && larg - ini - bl > 0.2) { dl = ini; w = larg - ini - bl; aviso = `${o.tipo}: vão até a ponta do painel — boneca de ${Math.round(bl * 100)} cm na ponta, retirar após a montagem`; }
+            else if (ini < bl - 1e-6 && fim >= bl - 1e-6 && o.x0 + o.w - pa - bl > 0.2) { dl = bl; w = o.x0 + o.w - pa - bl; aviso = `${o.tipo}: vão até a ponta do painel — boneca de ${Math.round(bl * 100)} cm na ponta, retirar após a montagem`; }
+          }
           let base = o.base, h = o.h;
           if (base < r.boneca && !o.continua) { h -= r.boneca - base; base = r.boneca; }
           // cálculo novo: recorte que vai até o topo ou sai do pé do painel (continua no pavimento de cima)
