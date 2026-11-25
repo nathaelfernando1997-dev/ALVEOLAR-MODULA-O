@@ -193,11 +193,16 @@ export function folhasLocacao(I: InfoProj, loc: Locacao, arq: XY[][], cargas: { 
   for (const p of loc.pts) if (p.par && p.n < p.par) { const q = loc.pts.find(r => r.n === p.par); if (!q) continue;
     const x0 = Math.min(p.x, q.x) - 0.25, x1 = Math.max(p.x, q.x) + 0.25, y0 = Math.min(p.y, q.y) - 0.25, y1 = Math.max(p.y, q.y) + 0.25;
     d.R(X(x0), Math.min(Y(y0), Y(y1)), (x1 - x0) * k, (y1 - y0) * k, 0.45, K, undefined, '#ffffff'); }
-  for (const p of loc.pts) { if (!p.par) d.R(X(p.x) - 0.25 * k, Y(p.y) - 0.25 * k, 0.5 * k, 0.5 * k, 0.35, K, undefined, '#ffffff'); if (p.tipo === 'apoio') { d.T(X(p.x), Y(p.y) + 0.42 * k, 'BA', 0.13 * k * 1.3, { a: 'middle', b: true }); continue; } d.C(X(p.x), Y(p.y), 0.15 * k, 0.35); d.L(X(p.x) - 0.1 * k, Y(p.y), X(p.x) + 0.1 * k, Y(p.y), 0.2); d.L(X(p.x), Y(p.y) - 0.1 * k, X(p.x), Y(p.y) + 0.1 * k, 0.2); }
+  for (const p of loc.pts) if (p.cobre?.length && !p.par) { const xs = [p.x, ...p.cobre.map(c => c[0])], ys = [p.y, ...p.cobre.map(c => c[1])];
+    const x0 = Math.min(...xs) - 0.25, x1 = Math.max(...xs) + 0.25, y0 = Math.min(...ys) - 0.25, y1 = Math.max(...ys) + 0.25;
+    d.R(X(x0), Math.min(Y(y0), Y(y1)), (x1 - x0) * k, (y1 - y0) * k, 0.45, K, undefined, '#ffffff'); }
+  for (const p of loc.pts) { if (!p.par && !p.cobre?.length) d.R(X(p.x) - 0.25 * k, Y(p.y) - 0.25 * k, 0.5 * k, 0.5 * k, 0.35, K, undefined, '#ffffff'); if (p.tipo === 'apoio') { d.T(X(p.x), Y(p.y) + 0.42 * k, 'BA', 0.13 * k * 1.3, { a: 'middle', b: true }); continue; } d.C(X(p.x), Y(p.y), 0.15 * k, 0.35); d.L(X(p.x) - 0.1 * k, Y(p.y), X(p.x) + 0.1 * k, Y(p.y), 0.2); d.L(X(p.x), Y(p.y) - 0.1 * k, X(p.x), Y(p.y) + 0.1 * k, 0.2); }
   for (const t of txt) { const fs = t.h * k * (t.l === 'PONTO-NOME' ? 1.3 : t.l === 'COTA' ? 1.45 : 1.15); d.T(X(t.x), Y(t.y), t.t, fs, { a: t.centro ? 'middle' : 'start', b: t.l === 'PONTO-NOME' || t.l === 'EIXO-NOME', rot: t.rot || 0 }); }
   d.T(24, 30, 'FUND-02 — LOCAÇÃO DE ESTACAS E BLOCOS', 9, { b: true });
   d.T(24, 40, cab, 4.4);
   d.T(24, 48, `Cotas entre eixos em metros · escala 1:${best.e} · os blocos B1 (50 × 50) ficam centrados no ponto da estaca`, 4);
+  const nAl = loc.pts.filter(p => p.cobre?.length && !p.par).length;
+  if (nAl) d.T(24, 67, `Blocos alongados (${nAl}): 1 estaca no encontro das paredes e o bloco vai até a emenda do painel ao lado (a ponta do painel apoia no bloco)`, 4);
   const nAp = loc.pts.filter(p => p.tipo === 'apoio').length;
   if (nAp) d.T(24, 61, `BA = bloco de apoio sem estaca (${nAp}): coluna no meio de porta larga — as bonecas saem depois da montagem e o vão fica livre`, 4);
   const nDiv = loc.pts.filter(p => p.div).length;

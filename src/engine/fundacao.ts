@@ -6,12 +6,12 @@ import type { Trecho, Painel, Pavimento } from './model.ts';
 import type { Prim } from './dxf.ts';
 
 export type TipoPonto = 'L' | 'T' | 'X' | 'ponta' | 'emenda' | 'coluna' | 'intermediário' | 'manual' | 'segunda' | 'apoio';
-export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number; div?: string; wx?: number; wy?: number; par?: number }   // par: a outra estaca do mesmo bloco (bloco de 2 estacas)   // div: bloco de divisa (lados); wx/wy: ponto no eixo da parede
+export interface PontoFund { n: number; x: number; y: number; tipo: TipoPonto; esp: number; div?: string; wx?: number; wy?: number; par?: number; cobre?: [number, number][] }   // cobre: pontos que o bloco (1 estaca) tem que alcançar — bloco alongado até a emenda do painel   // par: a outra estaca do mesmo bloco (bloco de 2 estacas)   // div: bloco de divisa (lados); wx/wy: ponto no eixo da parede
 
 const TOL = 0.15, JUNTA = 0.5;   // pontos a menos de 50 cm viram um furo só
 
 export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { extra?: { x: number; y: number }[]; remover?: { x: number; y: number }[]; pares?: { x: number; y: number; x2: number; y2: number }[] } = {}, junta = JUNTA, dEst = 0.9): PontoFund[] {
-  type Q = { x: number; y: number; tipo?: TipoPonto; esp: number; par?: Q };
+  type Q = { x: number; y: number; tipo?: TipoPonto; esp: number; par?: Q; cobre?: [number, number][] };
   const qs: Q[] = [];
   const add = (x: number, y: number, esp: number, tipo?: TipoPonto) => {
     const q = qs.find(p => Math.hypot(p.x - x, p.y - y) < TOL);
@@ -85,10 +85,9 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
       // emenda entre painéis (coluna): a ponta dos dois painéis tem que ficar em cima do bloco — só junta se cair dentro do bloco;
       // senão vira bloco de 2 estacas (pega a emenda e o outro ponto) ou fica cada um com o seu bloco
       if ((a.tipo === 'coluna' || b.tipo === 'coluna') && d > 0.175) {
-        if (a.par || b.par) continue;
-        if (d < dEst) { const ux = (b.x - a.x) / d, uy = (b.y - a.y) / d, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-          a.x = mx - ux * dEst / 2; a.y = my - uy * dEst / 2; b.x = mx + ux * dEst / 2; b.y = my + uy * dEst / 2; }
-        a.par = b; b.par = a; mudou = true; break;
+        // emenda perto de outro ponto: bloco único com 1 estaca no outro ponto, alongado até a emenda (os dois blocos se encavalariam)
+        if (d < JUNTA) { const col = a.tipo === 'coluna' ? a : b, keep = col === a ? b : a; (keep.cobre ??= []).push([col.x, col.y], ...(col.cobre || [])); keep.esp = Math.max(keep.esp, col.esp); qs.splice(qs.indexOf(col), 1); mudou = true; break; }
+        continue;   // longe: a emenda fica com o seu bloco (1 estaca) embaixo da ponta do painel
       }
       // dois encontros de parede perto um do outro: bloco de 2 estacas (uma embaixo de cada parede), não uma estaca no meio
       if (pa === 3 && pb === 3 && d >= JUNTA && !a.par && !b.par) {
@@ -109,7 +108,7 @@ export function pontosFundacao(ts: Trecho[], ps: Painel[], espacMax = 0, ed: { e
   }
   // numeração: de cima para baixo, da esquerda para a direita
   qs.sort((p, q) => Math.abs(p.y - q.y) > TOL ? q.y - p.y : p.x - q.x);
-  const out = qs.map((q, i) => ({ n: i + 1, x: q.x, y: q.y, tipo: q.tipo!, esp: q.esp } as PontoFund));
+  const out = qs.map((q, i) => ({ n: i + 1, x: q.x, y: q.y, tipo: q.tipo!, esp: q.esp, ...(q.cobre ? { cobre: q.cobre } : {}) } as PontoFund));
   qs.forEach((q, i) => { if (q.par) out[i].par = qs.indexOf(q.par) + 1; });
   return out;
 }
@@ -172,7 +171,7 @@ export function dxfFundacao(pav: Pavimento, ts: Trecho[], pts: PontoFund[], arq:
 }
 
 export function csvFundacao(pts: PontoFund[]): string {
-  return ['Ponto;X (m);Y (m);Tipo;Pilar (cm);Bloco', ...pts.map(p => `B${p.n};${p.x.toFixed(3).replace('.', ',')};${p.y.toFixed(3).replace('.', ',')};${DESC[p.tipo]};${Math.round(p.esp * 100)}x${Math.round(p.esp * 100)};${p.tipo === 'apoio' ? 'apoio (sem estaca)' : p.par ? `2 estacas (com B${p.par})` : '1 estaca'}`)].join('\r\n');
+  return ['Ponto;X (m);Y (m);Tipo;Pilar (cm);Bloco', ...pts.map(p => `B${p.n};${p.x.toFixed(3).replace('.', ',')};${p.y.toFixed(3).replace('.', ',')};${DESC[p.tipo]};${Math.round(p.esp * 100)}x${Math.round(p.esp * 100)};${p.tipo === 'apoio' ? 'apoio (sem estaca)' : p.par ? `2 estacas (com B${p.par})` : p.cobre ? `1 estaca, bloco alongado até ${p.cobre.map(c => c.map(v => v.toFixed(3).replace('.', ',')).join(' / ')).join(' e ')}` : '1 estaca'}`)].join('\r\n');
 }
 
 // ---------- planta de locação (gabarito) ----------
@@ -880,6 +879,6 @@ export function blocosDivisa(pts: PontoFund[], ts: Trecho[], lados: LadoDivisa[]
     if (lados.includes('dir') && Math.abs(p.x - xmax) < 0.06) { x = xmax + espDe('V', xmax) / 2 - meioBloco; div.push('dir'); }
     if (lados.includes('frente') && Math.abs(p.y - ymin) < 0.06) { y = ymin - espDe('H', ymin) / 2 + meioBloco; div.push('frente'); }
     if (lados.includes('fundo') && Math.abs(p.y - ymax) < 0.06) { y = ymax + espDe('H', ymax) / 2 - meioBloco; div.push('fundo'); }
-    return div.length ? { ...p, x, y, wx: p.x, wy: p.y, div: div.join('+') } : p;
+    return div.length ? { ...p, x, y, wx: p.x, wy: p.y, div: div.join('+'), ...(p.cobre ? { cobre: p.cobre.map(([cx, cy]) => [cx + x - p.x, cy + y - p.y] as [number, number]) } : {}) } : p;
   });
 }
