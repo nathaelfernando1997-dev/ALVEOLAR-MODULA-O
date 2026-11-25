@@ -923,7 +923,7 @@ export default function App() {
             const pf = ativos[0], tf = calc.ts.filter(t => t.pav === pf.id), psf = calc.ps.filter(p => p.pav === pf.id);
             const doPav = <T extends { pav: string }>(l?: T[]) => (l || []).filter(e => e.pav === pf.id);
             const geraPts = (pares: { x: number; y: number; x2: number; y2: number }[]) => pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover), pares }, regras.fundJunta ?? 0.5, 3 * ({ ...ESTACA_PADRAO, ...(regras.estaca || {}) }).furo);
-            const ptsW = geraPts(doPav(aj.fundPar2));   // no eixo das paredes (cálculo)
+            const ptsW = geraPts(aj.fund?.auto2E ? doPav(aj.fundPar2) : []);   // no eixo das paredes (cálculo); segunda estaca por carga só com a opção ligada
             const pts = blocosDivisa(ptsW, tf, aj.fundDivisa || [], ({ ...BLOCO_PADRAO, ...(regras.bloco || {}) }).lado / 2);   // locação: bloco de divisa com a estaca para dentro
             const og = aj.fundOrigem?.pav === pf.id ? aj.fundOrigem : null;
             const pOg = og ? pts.find(p => Math.hypot(p.x - og.x, p.y - og.y) < 0.15) : null;
@@ -1033,8 +1033,11 @@ export default function App() {
               }
               return { x: +px.toFixed(3), y: +py.toFixed(3) };
             };
-            const tirar = (p0: { x: number; y: number; wx?: number; wy?: number }) => {
+            const tirar = (p0: { x: number; y: number; wx?: number; wy?: number; tipo?: string }) => {
               const p = { x: p0.wx ?? p0.x, y: p0.wy ?? p0.y };
+              // segunda estaca colocada pela carga: sai o par (o bloco volta a ter 1 estaca)
+              const sp = p0.tipo === 'segunda' ? doPav(aj.fundPar2).find(e => Math.hypot(e.x2 - p.x, e.y2 - p.y) < 0.2) : undefined;
+              if (sp) return { fundExtra: aj.fundExtra || [], fundRemover: aj.fundRemover || [], fundPar2: (aj.fundPar2 || []).filter(e => e !== sp) };
               const ex = doPav(aj.fundExtra).find(e => Math.hypot(e.x - p.x, e.y - p.y) < 0.15);
               return ex ? { fundExtra: (aj.fundExtra || []).filter(e => e !== ex), fundRemover: aj.fundRemover || [] } : { fundExtra: aj.fundExtra || [], fundRemover: [...(aj.fundRemover || []), { pav: pf.id, x: p.x, y: p.y }] };
             };
@@ -1190,7 +1193,7 @@ export default function App() {
                   <h3>O que tem em cima de cada pavimento</h3>
                   {ativos.map(p => <label key={p.id}>{p.nome}<select value={pavCarga[p.id]} onChange={e => setFund({ pavCarga: { ...pavCarga, [p.id]: e.target.value as CargaPav } })}>{(Object.keys(CARGA_PAV) as CargaPav[]).map(k => <option key={k} value={k}>{CARGA_PAV[k].nome}</option>)}</select></label>)}
                   <label className="check"><input type="checkbox" checked={!!fund.baldrame} onChange={e => setFund({ baldrame: e.target.checked })} /> Tem viga baldrame 15 × 40 embaixo das paredes (sem ela, a parede apoia direto nos blocos)</label>
-                  <label className="check"><input type="checkbox" checked={!!fund.auto2E} onChange={e => setFund({ auto2E: e.target.checked })} /> Bloco de 2 estacas onde a carga passar de uma estaca (opcional: a segunda estaca vai ao longo da parede, a 3 diâmetros)</label>
+                  <label className="check"><input type="checkbox" checked={!!fund.auto2E} onChange={e => setAj({ ...aj, fund: { ...fund, auto2E: e.target.checked }, ...(e.target.checked ? {} : { fundPar2: (aj.fundPar2 || []).filter(x => x.pav !== pf.id) }) })} /> Bloco de 2 estacas onde a carga passar de uma estaca (opcional: a segunda estaca vai ao longo da parede, a 3 diâmetros)</label>
                   {!capL && <p className="dica"><b>Falta a sondagem</b> (passo 2) para saber quanto a estaca aguenta.</p>}
                   <button className="principal" disabled={!capL || calcFund} onClick={calcular}>{calcFund ? 'Calculando…' : resOk ? 'Calcular de novo' : 'Calcular as cargas nas estacas'}</button>
                   {resFund && !resOk && <p className="dica"><b>Os dados mudaram</b>: calcule de novo.</p>}
