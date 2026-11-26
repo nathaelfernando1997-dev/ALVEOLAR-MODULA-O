@@ -262,6 +262,9 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .pavs-imp { align-items: center; gap: 12px; margin-top: 6px; }
 .pavs-imp label { display: inline-flex; align-items: center; gap: 4px; }
 /* 3D: barra de ferramentas à esquerda, tela no meio e o detalhe da peça à direita (cabe na tela cheia) */
+.card.card-3d { max-width: none; }
+.card-3d .v3-tela { height: calc(100vh - 250px); min-height: 420px; }
+.card-3d .v3-barra, .card-3d .v3-det { max-height: calc(100vh - 250px); }
 .vista3d { display: grid; grid-template-columns: 250px minmax(0, 1fr) auto; gap: 10px; align-items: stretch; }
 .vista3d.cheia { background: #f4f6f8; padding: 10px; height: 100vh; box-sizing: border-box; }
 .vista3d.cheia .v3-tela { height: auto; min-height: 0; }

@@ -1390,7 +1390,7 @@ export default function App() {
           </>
         )}
         {aba === 'v3d' && leitura && (
-          <section className="card">
+          <section className="card card-3d">
             <h2>Ver em 3D</h2>
             {calc.ps.length || calc.pl.length ? <Suspense fallback={<p>Carregando o 3D…</p>}><Vista3D {...props3d} /></Suspense> : <p>Marque as plantas na aba Desenhos para ver o 3D.</p>}
           </section>

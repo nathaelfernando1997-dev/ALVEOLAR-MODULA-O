@@ -69,7 +69,8 @@ export default function Vista3D(props: Props3D) {
   const [sel, setSel] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void; gF: THREE.Group; chao: THREE.Mesh; grade: THREE.GridHelper; O: OrbitControls; zc: number;
-    tirar: (cod: string) => void; recolocar: () => void; limparTrena: () => void } | null>(null);
+    tirar: (cod: string) => void; recolocar: () => void; limparTrena: () => void; numeros: (on: boolean) => void } | null>(null);
+  const [verN, setVerN] = useState(true); const verNRef = useRef(verN); verNRef.current = verN;
   const [verF, setVerF] = useState(true);
   // tela cheia, ferramenta (selecionar / trena), peça marcada, peças tiradas, medidas e o detalhamento da ferragem
   const raiz = useRef<HTMLDivElement>(null);
@@ -87,7 +88,25 @@ export default function Vista3D(props: Props3D) {
     if (!info?.ferragem || !selCod) return; const cod = selCod; setFerr({ cod, carregando: true });
     try { const r = await info.ferragem(); setFerr({ cod, ...r }); } catch (e) { setFerr({ cod, erro: (e as Error).message }); }
   };
-  const abrirGrande = () => { if (!ferr?.svg) return; const u = URL.createObjectURL(new Blob([ferr.svg], { type: 'image/svg+xml' })); window.open(u, '_blank'); };
+  // folha da ferragem em outra aba: zoom pela bolinha do mouse (no ponto do cursor), arrastar para mover, duplo clique volta ao todo
+  const abrirGrande = () => {
+    if (!ferr?.svg) return;
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${selCod ?? ''} · ferragem</title>
+<style>html,body{margin:0;height:100%;background:#e9ecef;overflow:hidden;font-family:Arial,sans-serif}#v{position:absolute;inset:0;cursor:grab;touch-action:none}#v.arr{cursor:grabbing}
+#f{position:absolute;left:0;top:0;transform-origin:0 0;background:#fff;box-shadow:0 2px 12px #0003}#f svg{display:block;width:100%;height:100%}
+#d{position:fixed;left:10px;bottom:10px;background:#fff;border:1px solid #ccd;border-radius:6px;padding:5px 9px;font-size:13px;color:#333}</style></head>
+<body><div id="v"><div id="f">${ferr.svg}</div></div><div id="d">Bolinha do mouse: zoom · arrastar: mover · duplo clique: ver a folha toda</div>
+<script>
+const v=document.getElementById('v'),f=document.getElementById('f'),sv=f.querySelector('svg');
+const vb=(sv.getAttribute('viewBox')||'0 0 420 297').split(/[ ,]+/).map(Number),W=1600,H=W*vb[3]/vb[2];f.style.width=W+'px';f.style.height=H+'px';
+let k=1,x=0,y=0;const ap=()=>{f.style.transform='translate('+x+'px,'+y+'px) scale('+k+')'};
+const todo=()=>{k=Math.min(innerWidth/W,innerHeight/H)*0.96;x=(innerWidth-W*k)/2;y=(innerHeight-H*k)/2;ap()};todo();addEventListener('resize',todo);
+v.addEventListener('wheel',e=>{e.preventDefault();const z=Math.exp(-e.deltaY*0.0009),k2=Math.min(40,Math.max(0.05,k*z));x=e.clientX-(e.clientX-x)*k2/k;y=e.clientY-(e.clientY-y)*k2/k;k=k2;ap()},{passive:false});
+let dn=null;v.addEventListener('pointerdown',e=>{dn=[e.clientX-x,e.clientY-y];v.classList.add('arr');v.setPointerCapture(e.pointerId)});
+v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];ap()}});v.addEventListener('pointerup',()=>{dn=null;v.classList.remove('arr')});v.addEventListener('dblclick',todo);
+<\/script></body></html>`;
+    window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
+  };
 
   useEffect(() => {
     const el = ref.current!; const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -115,6 +134,26 @@ export default function Vista3D(props: Props3D) {
       m.add(new THREE.LineSegments(aresta, EM));
       const g = grupos.get(c.pav)!; (c.tipo === 'laje' ? g.l : g.p).add(m); pick.push(m);
       bb.expandByPoint(new THREE.Vector3(c.x0, c.y0, c.z0)).expandByPoint(new THREE.Vector3(c.x1, c.y1, c.z1));
+    }
+    // numeração: plaquinha colada na face da parede, no canto superior direito de quem olha (nas duas faces); na laje, deitada no meio
+    const etqs: THREE.Mesh[] = [], texs = new Map<string, THREE.CanvasTexture>();
+    const texDe = (t: string) => { let tx = texs.get(t); if (tx) return tx; const cv = document.createElement('canvas'); cv.width = 256; cv.height = 112; const g = cv.getContext('2d')!;
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 112); g.strokeStyle = '#1f4e79'; g.lineWidth = 10; g.strokeRect(5, 5, 246, 102); g.fillStyle = '#1f4e79'; g.font = 'bold 70px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 128, 60);
+      tx = new THREE.CanvasTexture(cv); tx.anisotropy = 8; texs.set(t, tx); return tx; };
+    const plq = (t: string, w: number) => new THREE.Mesh(new THREE.PlaneGeometry(w, w * 112 / 256), new THREE.MeshBasicMaterial({ map: texDe(t), toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    const cxCod = new Map<string, Caixa>();
+    for (const c of cx) { const b = cxCod.get(c.cod); if (!b) cxCod.set(c.cod, { ...c }); else { b.x0 = Math.min(b.x0, c.x0); b.y0 = Math.min(b.y0, c.y0); b.z0 = Math.min(b.z0, c.z0); b.x1 = Math.max(b.x1, c.x1); b.y1 = Math.max(b.y1, c.y1); b.z1 = Math.max(b.z1, c.z1); } }
+    const UP = new THREE.Vector3(0, 0, 1);
+    for (const [cod, b] of cxCod) {
+      const n = cod.replace(/^.*-/, ''), g = grupos.get(b.pav)!;
+      if (b.tipo === 'laje') { const m = plq(n, 0.75); m.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.z1 + 0.002); m.userData.cod = cod; g.l.add(m); etqs.push(m); continue; }
+      const H = b.x1 - b.x0 > b.y1 - b.y0, W = 0.46, hh = W * 112 / 256, mg = 0.06, L = H ? b.x1 - b.x0 : b.y1 - b.y0; if (L < W + 2 * mg) continue;
+      for (const sg of [-1, 1]) {
+        const nrm = H ? new THREE.Vector3(0, sg, 0) : new THREE.Vector3(sg, 0, 0), dir = nrm.clone().negate().cross(UP), off = L / 2 - mg - W / 2;
+        const m = plq(n, W); m.setRotationFromMatrix(new THREE.Matrix4().makeBasis(dir, UP, nrm));
+        m.position.set((b.x0 + b.x1) / 2 + dir.x * off + nrm.x * ((b.x1 - b.x0) / 2 + 0.002), (b.y0 + b.y1) / 2 + dir.y * off + nrm.y * ((b.y1 - b.y0) / 2 + 0.002), b.z1 - mg - hh / 2);
+        m.userData.cod = cod; g.p.add(m); etqs.push(m);
+      }
     }
     // fundação: blocos (topo no chão), estacas embaixo e a base de canaleta em cima dos blocos (as paredes sobem a altura dela)
     const F = props.fund, zc = F?.can ? F.canAlt : 0;
@@ -163,8 +202,8 @@ export default function Vista3D(props: Props3D) {
     const marcar = (cod: string | null) => { for (const m of pick) m.material = m.userData.cod === cod ? M.sel : m.userData.mat; };
     // peças tiradas da vista (ficam guardadas para recolocar)
     const tiradas = new Set<THREE.Mesh>();
-    const tirar = (cod: string) => { for (const m of pick) if (m.userData.cod === cod) { m.visible = false; tiradas.add(m); } setNTiradas(new Set([...tiradas].map(m => m.userData.cod)).size); };
-    const recolocar = () => { for (const m of tiradas) m.visible = true; tiradas.clear(); setNTiradas(0); };
+    const tirar = (cod: string) => { for (const m of [...pick, ...etqs]) if (m.userData.cod === cod) { m.visible = false; tiradas.add(m); } setNTiradas(new Set([...tiradas].map(m => m.userData.cod)).size); };
+    const recolocar = () => { for (const m of tiradas) m.visible = etqs.includes(m) ? verNRef.current : true; tiradas.clear(); setNTiradas(0); };
     // trena: dois cliques em qualquer peça (ou no chão) e mostra a distância
     const gM = new THREE.Group(); S.add(gM); let pA: THREE.Vector3 | null = null;
     const MM = new THREE.MeshBasicMaterial({ color: 0xd9480f, depthTest: false }), LM = new THREE.LineBasicMaterial({ color: 0xd9480f, depthTest: false }), bola = new THREE.SphereGeometry(0.04, 12, 8);
@@ -173,7 +212,8 @@ export default function Vista3D(props: Props3D) {
       const cv = document.createElement('canvas'); cv.width = 320; cv.height = 96; const g = cv.getContext('2d')!; g.fillStyle = '#d9480f'; g.fillRect(0, 0, 320, 96); g.fillStyle = '#fff'; g.font = 'bold 56px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 160, 50);
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false })); sp.scale.set(0.9, 0.27, 1); sp.position.copy(v); sp.renderOrder = 11; gM.add(sp); };
     const limparTrena = () => { gM.clear(); pA = null; setMedidas([]); };
-    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc, tirar, recolocar, limparTrena };
+    const numeros = (on: boolean) => { for (const m of etqs) m.visible = on && !tiradas.has(m); };
+    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc, tirar, recolocar, limparTrena, numeros };
     const rs = () => { const w = el.clientWidth, h = el.clientHeight; R.setSize(w, h); C.aspect = w / h; C.updateProjectionMatrix(); };
     const ro = new ResizeObserver(rs); ro.observe(el); rs();
     const rc = new THREE.Raycaster(), mp = new THREE.Vector2(); let dn: [number, number] | null = null;
@@ -201,6 +241,7 @@ export default function Vista3D(props: Props3D) {
     return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EM.dispose(); chao.geometry.dispose(); grade.dispose(); el.removeChild(R.domElement); api.current = null; bola.dispose(); MM.dispose(); LM.dispose(); };
   }, [cx, props.pavs, props.fund]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => { api.current?.numeros(verN); }, [verN, cx, props.fund]);
   // visibilidade e separação
   useEffect(() => {
     const a = api.current; if (!a) return;
@@ -232,6 +273,7 @@ export default function Vista3D(props: Props3D) {
         <button className={verL ? 'on' : ''} onClick={() => setVerL(!verL)}>Lajes</button>
         {props.fund && <button className={verF ? 'on' : ''} onClick={() => setVerF(!verF)}>Fundação</button>}
         <button className={so ? 'on' : ''} onClick={() => setSo(so ? null : props.pavs[0]?.id ?? null)} title="Mostra um pavimento por vez (toque no nome para trocar)">Um pavimento só</button>
+        <button className={verN ? 'on' : ''} onClick={() => setVerN(!verN)} title="Número de cada parede e laje">Números</button>
         <button onClick={() => api.current?.centrar()}>Centralizar</button>
       </div>
       {props.pavs.length > 1 && <label className="v3-sep">Separar pavimentos <input type="range" min={0} max={6} step={0.1} value={sep} onChange={e => setSep(+e.target.value)} /></label>}
