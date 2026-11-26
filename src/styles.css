@@ -315,3 +315,8 @@ label.check input { width: auto !important; margin: 0; }
 .desenho-a3 .cargas-tab .tab-loc { font-size: 7.5pt; }
 .desenho-a3 .cargas-tab .tab-loc th, .desenho-a3 .cargas-tab .tab-loc td { padding: 0.6mm 1.6mm; }
 .folha.a2 .cargas-tab .tab-loc { font-size: 10pt; }
+
+.secao-viga { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid #d8dde3; border-radius: 8px; background: #fff; }
+.secao-viga label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.secao-viga input:not([type=checkbox]) { width: 110px; }
+@media (prefers-color-scheme: dark) { .secao-viga { background: #1b2027; border-color: #2c333c; } }

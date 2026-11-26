@@ -623,7 +623,7 @@ export default function App() {
     }
     return null;
   }, [ativos, calc, regras, aj, projNome, nome, espParede3d]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), pilares: aj.pilares, vigas: calc.vigas.filter(v => v.tipo !== 'trelica').map(v => ({ pav: v.pav, nome: `V${v.n}`, o: v.o, c: v.c, a: v.a, b: v.b, larg: regras.vigaLargura ?? 0.15, alt: v.altura ?? regras.vigaAltura ?? 0.3 })), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
+  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), pilares: aj.pilares, vigas: calc.vigas.filter(v => v.tipo !== 'trelica').map(v => { const s = aj.vigaSecao?.[v.id]; return { pav: v.pav, nome: s?.nome || `V${v.n}`, o: v.o, c: v.c, a: v.a, b: v.b, larg: s?.larg ?? regras.vigaLargura ?? 0.15, alt: s?.alt ?? v.altura ?? regras.vigaAltura ?? 0.3, abaixo: s?.abaixo }; }), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
     [ativos, ativosT, fund3d, info3d, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
@@ -1435,7 +1435,7 @@ export default function App() {
 <Divisor />
             <div className="lado">
               <div className="pavsel">{ativos.map(p => <button key={p.id} className={pavAtual.id === p.id ? 'on' : ''} onClick={() => { setPavSel(p.id); setVigaSel(null); }}>{p.nome}</button>)}</div>
-              <ListaVigas V={calc.vigas.filter(v => v.pav === pavAtual.id)} sel={vigaSel} onSel={setVigaSel} />
+              <ListaVigas V={calc.vigas.filter(v => v.pav === pavAtual.id)} sel={vigaSel} onSel={setVigaSel} aj={aj} setAj={setAj} regras={regras} />
             </div>
             <div className="planta">
               <ZoomSvg vb={quadroDe(pavAtual).vb} metro={quadroDe(pavAtual).k}>
@@ -1871,17 +1871,31 @@ function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje, vigas = [
   );
 }
 
-function ListaVigas({ V, sel, onSel }: { V: VigaN[]; sel: string | null; onSel: (id: string) => void }) {
+function ListaVigas({ V, sel, onSel, aj, setAj, regras }: { V: VigaN[]; sel: string | null; onSel: (id: string) => void; aj: Ajustes; setAj: (a: Ajustes) => void; regras: Regras }) {
   if (!V.length) return <div className="card acoes"><p>Nenhuma viga necessária neste pavimento pelas regras atuais.</p></div>;
   const reb = V.flatMap(v => v.rebaixos), vg = V.filter(v => v.tipo !== 'trelica'), tr = V.length - vg.length;
   return <div className="card acoes vigas">
     <h3>{vg.length} viga(s) sugerida(s) · {vg.filter(v => v.obrigatoria).length} obrigatória(s){tr ? ` · ${tr} reforço(s) com treliça` : ''}</h3>
     {reb.length > 0 && <p className="erro">Paredes que diminuem de altura: {[...new Map(reb.map(r => [r.painel, r])).values()].sort((a, b) => a.painel - b.painel).map(r => `${r.painel} (${br(r.de)} → ${br(r.para)})`).join(', ')}</p>}
     {V.map(v => <div key={v.id} className={'viga' + (sel === v.id ? ' on' : '') + (v.obrigatoria ? ' obrig' : '')} onClick={() => onSel(v.id)}>
-      <b>{v.tipo === 'trelica' ? 'T' : 'V'}{v.n}</b> {v.tipo === 'trelica' ? '· treliça (sem viga)' : v.obrigatoria ? '· obrigatória' : '· recomendada'} · {br(v.b - v.a)} m
+      <b>{v.tipo === 'trelica' ? `T${v.n}` : (aj.vigaSecao?.[v.id]?.nome || `V${v.n}`)}</b> {v.tipo === 'trelica' ? '· treliça (sem viga)' : v.obrigatoria ? '· obrigatória' : '· recomendada'} · {br(v.b - v.a)} m
+      {v.tipo !== 'trelica' && (() => { const s = aj.vigaSecao?.[v.id], L = s?.larg ?? regras.vigaLargura ?? 0.15, H = s?.alt ?? v.altura ?? regras.vigaAltura ?? 0.3;
+        return <div><b>Seção {Math.round(L * 100)} × {Math.round(H * 100)} cm</b>{s?.abaixo ? ' · toda embaixo da laje' : ' · topo no topo da laje'}{s ? ' (definida)' : ' (sugerida pelo sistema)'}</div>; })()}
       <div>{v.motivo}</div>
       <div className="dica">Ideia: {v.ideia}</div>
       {v.rebaixos.length > 0 && <div className="dica">Paredes rebaixadas: {v.rebaixos.map(r => `${r.painel} (${br(r.de)} → ${br(r.para)})`).join(', ')}</div>}
+      {sel === v.id && v.tipo !== 'trelica' && (() => {
+        const s = aj.vigaSecao?.[v.id], cur = { nome: s?.nome ?? '', larg: s?.larg ?? regras.vigaLargura ?? 0.15, alt: s?.alt ?? v.altura ?? regras.vigaAltura ?? 0.3, abaixo: !!s?.abaixo };
+        const grava = (m: Partial<typeof cur>) => { const n = { ...cur, ...m }; setAj({ ...aj, vigaSecao: { ...(aj.vigaSecao || {}), [v.id]: { nome: n.nome || undefined, larg: n.larg, alt: n.alt, abaixo: n.abaixo || undefined } } }); };
+        const num = (t: string) => { const x = parseFloat(t.replace(',', '.')); return isFinite(x) && x > 0 ? x / 100 : null; };
+        return <div className="secao-viga" onClick={e => e.stopPropagation()}>
+          <label>Nome <input key={'n' + v.id} defaultValue={cur.nome} placeholder={`V${v.n}`} onBlur={e => grava({ nome: e.target.value.trim() })} /></label>
+          <label>Largura (cm) <input type="number" step="1" key={'l' + v.id} defaultValue={Math.round(cur.larg * 100)} onBlur={e => { const x = num(e.target.value); if (x) grava({ larg: x }); }} /></label>
+          <label>Altura (cm) <input type="number" step="1" key={'h' + v.id} defaultValue={Math.round(cur.alt * 100)} onBlur={e => { const x = num(e.target.value); if (x) grava({ alt: x }); }} /></label>
+          <label className="chk"><input type="checkbox" checked={cur.abaixo} onChange={e => grava({ abaixo: e.target.checked })} /> Toda embaixo da laje (a laje apoia em cima dela)</label>
+          {s && <button onClick={() => { const m = { ...(aj.vigaSecao || {}) }; delete m[v.id]; setAj({ ...aj, vigaSecao: m }); }}>Voltar à seção sugerida</button>}
+          <p className="dica">Sem marcar, o topo da viga fica no nível do topo da laje (a altura conta a laje). A seção vale para o 3D e para a lista de vigas.</p>
+        </div>; })()}
     </div>)}
   </div>;
 }

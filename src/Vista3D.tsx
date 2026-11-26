@@ -15,7 +15,7 @@ export interface Props3D {
   sg: Map<string, string>;
   peLaje?: (p: PainelLaje) => number | undefined;
   pilares?: { pav: string; nome: string; x0: number; x1: number; y0: number; y1: number }[];   // pilares de concreto moldados no local
-  vigas?: { pav: string; nome: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; alt: number }[];   // vigas de concreto (topo no topo da laje)   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
+  vigas?: { pav: string; nome: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; alt: number; abaixo?: boolean }[];   // vigas de concreto (topo no topo da laje)   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
   fund?: Fund3D | null;   // fundação do térreo: blocos, estacas e base de canaleta
   info?: (cod: string) => InfoPeca | null;   // painel lateral da peça clicada (medidas, espessura, peso e o detalhamento da ferragem)
 }
@@ -64,9 +64,9 @@ function caixas(o: Props3D): Caixa[] {
     }
     // vigas: topo no nível do topo da laje, na largura e altura da viga
     for (const v of (o.vigas || []).filter(q => q.pav === pav.id)) {
-      const zt = zp + pav.altura + Math.max(0, ...lajes.map(o.espLaje)), cod = `${sig}-${v.nome}`, h = v.larg / 2;
+      const zt = zp + pav.altura + (v.abaixo ? 0 : Math.max(0, ...lajes.map(o.espLaje))), cod = `${sig}-${v.nome}`, h = v.larg / 2;   // embaixo da laje: topo no fundo da laje
       const [x0, x1, y0, y1] = v.o === 'H' ? [v.a, v.b, v.c - h, v.c + h] : [v.c - h, v.c + h, v.a, v.b];
-      out.push({ pav: pav.id, tipo: 'viga', cod, txt: `${cod} · viga ${Math.round(v.larg * 100)} × ${Math.round(v.alt * 100)} cm · ${(v.b - v.a).toFixed(2).replace('.', ',')} m · ${pav.nome}`, ab: false, grossa: false, x0: x0 + dx, x1: x1 + dx, y0: y0 + dy, y1: y1 + dy, z0: zt - v.alt, z1: zt });
+      out.push({ pav: pav.id, tipo: 'viga', cod, txt: `${cod} · viga ${Math.round(v.larg * 100)} × ${Math.round(v.alt * 100)} cm${v.abaixo ? ' embaixo da laje' : ''} · ${(v.b - v.a).toFixed(2).replace('.', ',')} m · ${pav.nome}`, ab: false, grossa: false, x0: x0 + dx, x1: x1 + dx, y0: y0 + dy, y1: y1 + dy, z0: zt - v.alt, z1: zt });
     }
     for (const q of lajes) {
       const e = o.espLaje(q), cod = `${sig}-L${q.num}`;
