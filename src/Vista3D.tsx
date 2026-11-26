@@ -32,7 +32,8 @@ function caixas(o: Props3D): Caixa[] {
     const lajes = o.pl.filter(q => q.pav === pav.id);
     z += pav.altura + Math.max(0, ...lajes.map(o.espLaje));
     for (const p of o.ps.filter(q => q.pav === pav.id)) {
-      const a = Math.min(p.a, p.b), b = Math.max(p.a, p.b), cod = `${sig}-P${p.num}`;
+      // painel como sai da fábrica: começa em a e tem a largura real (a folga e a junta ficam vazias, a trena mede a emenda de verdade)
+      const a = Math.min(p.a, p.b), b = a + (p.larg > 0 ? p.larg : Math.abs(p.b - p.a)), cod = `${sig}-P${p.num}`;
       const txt = `${cod} · parede ${(b - a).toFixed(2)} × ${p.H.toFixed(2)} m${p.recortes.length ? ' · ' + p.recortes.map(r => r.tipo).join(', ') : ''} · ${pav.nome}`.replace(/(\d)\.(\d)/g, '$1,$2');
       const ped: [number, number, number, number][] = [];
       let s = a;
