@@ -13,7 +13,8 @@ export interface Props3D {
   espLaje: (p: PainelLaje) => number;
   espParede: number;
   sg: Map<string, string>;
-  peLaje?: (p: PainelLaje) => number | undefined;   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
+  peLaje?: (p: PainelLaje) => number | undefined;
+  pilares?: { pav: string; nome: string; x0: number; x1: number; y0: number; y1: number }[];   // pilares de concreto moldados no local   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
   fund?: Fund3D | null;   // fundação do térreo: blocos, estacas e base de canaleta
   info?: (cod: string) => InfoPeca | null;   // painel lateral da peça clicada (medidas, espessura, peso e o detalhamento da ferragem)
 }
@@ -54,6 +55,11 @@ function caixas(o: Props3D): Caixa[] {
         const topo: [number, number] | undefined = ch && h1 >= p.H - 1e-3 ? [zb + hAt(s0), zb + hAt(s1)] : undefined;
         out.push({ pav: pav.id, tipo: 'parede', cod, txt, ab: p.recortes.length > 0, grossa: false, x0, y0, z0: zb + h0, x1, y1, z1: topo ? Math.max(...topo) : zb + h1, topo });
       }
+    }
+    // pilar: do piso até o topo da laje do pavimento
+    for (const pl of (o.pilares || []).filter(q => q.pav === pav.id)) {
+      const zt = pav.altura + Math.max(0, ...lajes.map(o.espLaje)), cod = `${sig}-pilar ${pl.nome}`;
+      out.push({ pav: pav.id, tipo: 'parede', cod, txt: `${cod} · pilar ${Math.round((pl.x1 - pl.x0) * 100)} × ${Math.round((pl.y1 - pl.y0) * 100)} cm · ${pav.nome}`, ab: true, grossa: false, x0: pl.x0 + dx, x1: pl.x1 + dx, y0: pl.y0 + dy, y1: pl.y1 + dy, z0: zp, z1: zp + zt });
     }
     for (const q of lajes) {
       const e = o.espLaje(q), cod = `${sig}-L${q.num}`;

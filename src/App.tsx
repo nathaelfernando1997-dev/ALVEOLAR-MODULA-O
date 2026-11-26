@@ -148,6 +148,7 @@ export default function App() {
   const [ambSel, setAmbSel] = useState<string | null>(null);
   const [lajeSel, setLajeSel] = useState<string | null>(null);   // painel de laje clicado (chaveLaje)
   const [modoViga, setModoViga] = useState<{ x: number; y: number } | null | 'ok'>(null);
+  const [modoPilar, setModoPilar] = useState(false);
   const [modoParede, setModoParede] = useState<{ x: number; y: number } | null | 'ok'>(null);   // desenhar parede (2 cliques)   // adicionar viga: null = desligado, 'ok' = esperando o 1º clique
   const [cortando, setCortando] = useState<{ trecho: string; coluna: boolean } | null>(null);
   const [vigaSel, setVigaSel] = useState<string | null>(null);
@@ -355,6 +356,18 @@ export default function App() {
           ([['H', a.y0, a.x0, a.x1], ['H', a.y1, a.x0, a.x1], ['V', a.x0, a.y0, a.y1], ['V', a.x1, a.y0, a.y1]] as const).some(([o, c, l0, l1]) =>
             t.filter(x => x.o === o && Math.abs(x.c - c) < 0.1).reduce((s, x) => s + x.vaos.filter(v => !v.tag && v.inteiro).reduce((q, v) => q + Math.max(0, Math.min(v.b, l1) - Math.max(v.a, l0)), 0), 0) >= 0.6 * (l1 - l0)));
         vazio.areaPav.push({ pav: p.id, area: areaConstruida(amb0.filter(a => !ehVazio(a) && !descoberto(a)), esps[Math.floor(esps.length / 2)] ?? 0.15) });
+      }
+      // pilar de concreto (moldado no local): a parede que passa por ele para na face dele (o painel da ponta fica menor)
+      for (const pl of (aj.pilares || []).filter(q => q.pav === p.id)) {
+        for (let k = tp.length - 1; k >= 0; k--) {
+          const x = tp[k], [c0, c1, a0, a1] = x.o === 'V' ? [pl.x0, pl.x1, pl.y0, pl.y1] : [pl.y0, pl.y1, pl.x0, pl.x1];
+          if (x.c < c0 - 0.02 || x.c > c1 + 0.02 || a1 <= x.s + 0.01 || a0 >= x.e - 0.01) continue;
+          const ini = a0 <= x.s + 0.1, fim = a1 >= x.e - 0.1;
+          if (ini && fim) { tp.splice(k, 1); continue; }
+          if (ini) { tp[k] = { ...x, s: a1, vaos: x.vaos.filter(v => v.a >= a1 - 0.01) }; continue; }
+          if (fim) { tp[k] = { ...x, e: a0, vaos: x.vaos.filter(v => v.b <= a0 + 0.01) }; continue; }
+          tp.splice(k, 1, { ...x, e: a0, vaos: x.vaos.filter(v => v.b <= a0 + 0.01) }, { ...x, id: `${x.id}|pilar`, s: a1, vaos: x.vaos.filter(v => v.a >= a1 - 0.01) });
+        }
       }
       const r = paineis(tp, regras, aj);
       if (aj.telhado?.[p.id]) aplicarTelhado(r.paineis, aj.telhado[p.id], aj.alturaPainel);
@@ -610,7 +623,7 @@ export default function App() {
     }
     return null;
   }, [ativos, calc, regras, aj, projNome, nome, espParede3d]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
+  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), pilares: aj.pilares, peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
     [ativos, ativosT, fund3d, info3d, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
@@ -894,6 +907,13 @@ export default function App() {
                     <p className="dica">Reconhecida pelos degraus desenhados (5 ou mais, espaçados por igual) ou, na helicoidal/caracol, pelo contorno de 1,00 a 2,60 m com o texto ESCADA perto. O vão vai de parede a parede e leva o patamar junto; a laje do pavimento de cima não é afetada.</p>
                   </div>
                   <div className="card acoes">
+                    <h3>Pilares</h3>
+                    <button className={modoPilar ? 'on' : ''} onClick={() => { setModoPilar(!modoPilar); setModoViga(null); }}>{modoPilar ? 'Clique na ponta da parede ou no canto… (clique aqui para parar)' : 'Adicionar pilar 15 × 30 (clique na planta)'}</button>
+                    <p className="dica">Pilar de concreto moldado no local (ex.: ponta de viga sem parede embaixo). O clique encosta na ponta de parede ou no encontro mais perto (até 60 cm); o lado de 30 cm fica na direção da parede. A parede que passa pelo pilar para na face dele.</p>
+                    {(aj.pilares || []).filter(v => v.pav === pavAtual.id).map((v, i) => <div key={i} className="corte-item">{v.nome} · {Math.round((v.x1 - v.x0) * 100)} × {Math.round((v.y1 - v.y0) * 100)} cm
+                      <button onClick={() => setAj({ ...aj, pilares: (aj.pilares || []).filter(x => x !== v) })}>remover</button></div>)}
+                  </div>
+                  <div className="card acoes">
                     <h3>Vigas desenhadas</h3>
                     <button className={modoViga ? 'on' : ''} onClick={() => setModoViga(modoViga ? null : 'ok')}>{modoViga ? (modoViga === 'ok' ? 'Clique no 1º ponto da viga… (clique aqui para parar)' : 'Clique no 2º ponto da viga…') : 'Adicionar viga (clique em 2 pontos na planta)'}</button>
                     <p className="dica">A viga vira apoio da laje (como a LINHA DE PISO): depois dá para girar a laje do ambiente. Fica reta: horizontal ou vertical, pela direção dos dois cliques.</p>
@@ -1005,8 +1025,20 @@ export default function App() {
                     setModoParede('ok');
                   }} />
               : <PlantaLajes pav={pavAtual} calc={calc} arq={arqDe(pavAtual.box)} ambSel={ambSel} lajeSel={lajeSel} onAmb={id => { setAmbSel(id); setLajeSel(null); }} onLaje={p => { setAmbSel(p.amb); setLajeSel(chaveLaje(p)); }}
-                  vigas={(aj.vigasManuais || []).filter(v => v.pav === pavAtual.id)} modoViga={modoViga}
+                  vigas={(aj.vigasManuais || []).filter(v => v.pav === pavAtual.id)} pilares={(aj.pilares || []).filter(v => v.pav === pavAtual.id)} modoViga={modoViga ?? (modoPilar ? 'ok' : null)}
                   onPonto={(x, y) => {
+                    if (modoPilar) {   // pilar 15 × 30 na ponta de parede/viga mais perto; o lado de 30 cm na direção da parede, por dentro
+                      // ponta de parede ganha da ponta de viga no mesmo lugar (o pilar entra na direção da parede e corta o painel)
+                      const ts = [...calc.ts.filter(t => t.pav === pavAtual.id).map(t => ({ o: t.o, c: t.c, s: t.s, e: t.e, pen: 0 })), ...calc.vigas.filter(v => v.pav === pavAtual.id).map(v => ({ o: v.o, c: v.c, s: v.a + (v.apoio ?? 0), e: v.b - (v.apoio ?? 0), pen: 0.15 }))];
+                      let best: { o: 'H' | 'V'; c: number; u: number; dir: 1 | -1; d: number } | null = null;
+                      for (const t of ts) for (const [u, dir] of [[t.s, 1], [t.e, -1]] as const) { const [px, py] = t.o === 'H' ? [u, t.c] : [t.c, u], d0 = Math.hypot(px - x, py - y), d = d0 + t.pen; if (d0 < 0.6 && (!best || d < best.d)) best = { o: t.o, c: t.c, u, dir, d }; }
+                      if (!best) { alert('Clique mais perto da ponta de uma parede ou viga (até 60 cm).'); return; }
+                      const r2 = (v: number) => Math.round(v * 1000) / 1000, f0 = best.u - best.dir * 0.075, f1 = f0 + best.dir * 0.30;
+                      const [a0, a1] = [Math.min(f0, f1), Math.max(f0, f1)];
+                      const n = (aj.pilares || []).length + 1;
+                      const pl = best.o === 'H' ? { pav: pavAtual.id, nome: `P${n}`, x0: r2(a0), x1: r2(a1), y0: r2(best.c - 0.075), y1: r2(best.c + 0.075) } : { pav: pavAtual.id, nome: `P${n}`, x0: r2(best.c - 0.075), x1: r2(best.c + 0.075), y0: r2(a0), y1: r2(a1) };
+                      setAj({ ...aj, pilares: [...(aj.pilares || []), pl] }); setModoPilar(false); return;
+                    }
                     if (modoViga === 'ok' || modoViga === null) { setModoViga({ x, y }); return; }
                     const dx = x - modoViga.x, dy = y - modoViga.y, o: 'H' | 'V' = Math.abs(dx) >= Math.abs(dy) ? 'H' : 'V';
                     const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -1794,8 +1826,8 @@ function TabelaTrelicas({ TP, TR, curta }: { TP: TrelicaPainel[]; TR: VigaN[]; c
   </div>;
 }
 
-function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje, vigas = [], modoViga = null, onPonto }: { pav: Pavimento; calc: Calc; arq: Prim[]; ambSel: string | null; lajeSel: string | null; onAmb: (id: string) => void; onLaje: (p: PainelLaje) => void;
-  vigas?: { o: 'H' | 'V'; c: number; a: number; b: number }[]; modoViga?: { x: number; y: number } | null | 'ok'; onPonto?: (x: number, y: number) => void }) {
+function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje, vigas = [], pilares = [], modoViga = null, onPonto }: { pav: Pavimento; calc: Calc; arq: Prim[]; ambSel: string | null; lajeSel: string | null; onAmb: (id: string) => void; onLaje: (p: PainelLaje) => void;
+  vigas?: { o: 'H' | 'V'; c: number; a: number; b: number }[]; pilares?: { nome: string; x0: number; x1: number; y0: number; y1: number }[]; modoViga?: { x: number; y: number } | null | 'ok'; onPonto?: (x: number, y: number) => void }) {
   const q = quadroDe(pav);
   const lj = calc.lajes.filter(a => a.pav === pav.id), P = calc.pl.filter(p => p.pav === pav.id);
   const TR = calc.vigas.filter(v => v.pav === pav.id && v.tipo === 'trelica'), TP = trelicasNasLajes(TR, P);
@@ -1818,6 +1850,7 @@ function PlantaLajes({ pav, calc, arq, ambSel, lajeSel, onAmb, onLaje, vigas = [
         {/* vigas desenhadas no sistema */}
         {vigas.map((v, i) => { const [x1, y1, x2, y2] = v.o === 'H' ? [v.a, v.c, v.b, v.c] : [v.c, v.a, v.c, v.b];
           return <line key={'vm' + i} x1={q.X(x1)} y1={q.Y(y1)} x2={q.X(x2)} y2={q.Y(y2)} stroke="#e67700" strokeWidth={12} strokeOpacity={0.8}><title>Viga desenhada · {br(v.b - v.a)} m</title></line>; })}
+        {pilares.map((v, i) => <g key={'pil' + i}><rect x={q.X(v.x0)} y={q.Y(v.y1)} width={(v.x1 - v.x0) * q.k} height={(v.y1 - v.y0) * q.k} fill="#222" /><text x={q.X(v.x1) + 6} y={q.Y(v.y1) + 14} fontSize={16} fontWeight="bold" fill="#222">{v.nome}</text><title>Pilar {v.nome} · {Math.round((v.x1 - v.x0) * 100)} × {Math.round((v.y1 - v.y0) * 100)} cm</title></g>)}
         {modoViga && typeof modoViga === 'object' && <circle cx={q.X(modoViga.x)} cy={q.Y(modoViga.y)} r={10} fill="#e67700" />}
         {/* adicionar viga: a planta toda recebe o clique; o ponto encosta no eixo da parede mais perto (até 20 cm) */}
         {modoViga && onPonto && <rect x={-100000} y={-100000} width={200000} height={200000} fill="rgba(230,119,0,.04)" style={{ cursor: 'crosshair' }} onClick={e => {
