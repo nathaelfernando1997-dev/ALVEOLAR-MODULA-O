@@ -1,4 +1,4 @@
-// Visualizador 3D da modulação: paredes (com portas e janelas), lajes e pavimentos um em cima do outro.
+// Visualizador 3D da modulação: paredes (com portas e janelas), lajes, pavimentos um em cima do outro e a fundação do térreo.
 // Carregado só quando a aba 3D é aberta (three.js fica fora do pacote principal).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -14,7 +14,10 @@ export interface Props3D {
   espParede: number;
   sg: Map<string, string>;
   peLaje?: (p: PainelLaje) => number | undefined;   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
+  fund?: Fund3D | null;   // fundação do térreo: blocos, estacas e base de canaleta
 }
+export interface Fund3D { pav: string; pts: { n: number; x: number; y: number; tipo: string; par?: number; cobre?: [number, number][] }[]; lado: number; alt: number; furo: number; comp: number;
+  can: { o: 'H' | 'V'; c: number; a: number; b: number; cortada: boolean }[] | null; canAlt: number }
 
 type Caixa = { pav: string; tipo: 'parede' | 'laje'; cod: string; txt: string; ab: boolean; grossa: boolean; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number };
 
@@ -63,7 +66,8 @@ export default function Vista3D(props: Props3D) {
   const [verL, setVerL] = useState(true), [verP, setVerP] = useState(true), [sep, setSep] = useState(0);
   const [sel, setSel] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void } | null>(null);
+  const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void; gF: THREE.Group; chao: THREE.Mesh; grade: THREE.GridHelper; O: OrbitControls; zc: number } | null>(null);
+  const [verF, setVerF] = useState(true);
 
   useEffect(() => {
     const el = ref.current!; const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -79,7 +83,7 @@ export default function Vista3D(props: Props3D) {
     const mat = (c: number, r = 0.92) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0 });
     const M = { parede: mat(0xece6db), ab: mat(0xddd3c2), laje: mat(0xa7afb8, 0.85), laje16: mat(0x87929e, 0.85), sel: mat(0x2f7de1, 0.6) };
     const EM = new THREE.LineBasicMaterial({ color: escuro ? 0x0d1014 : 0x55524c, transparent: true, opacity: escuro ? 0.5 : 0.32 });
-    const grupos = new Map<string, { p: THREE.Group; l: THREE.Group }>(); const pick: THREE.Mesh[] = [];
+    const grupos = new Map<string, { p: THREE.Group; l: THREE.Group }>(); const pick: THREE.Mesh[] = []; const gF = new THREE.Group(); S.add(gF);
     for (const pv of props.pavs) { const g = { p: new THREE.Group(), l: new THREE.Group() }; grupos.set(pv.id, g); S.add(g.p, g.l); }
     const G = 0.006, bb = new THREE.Box3();
     for (const c of cx) {
@@ -91,6 +95,36 @@ export default function Vista3D(props: Props3D) {
       m.add(new THREE.LineSegments(aresta, EM));
       const g = grupos.get(c.pav)!; (c.tipo === 'laje' ? g.l : g.p).add(m); pick.push(m);
       bb.expandByPoint(new THREE.Vector3(c.x0, c.y0, c.z0)).expandByPoint(new THREE.Vector3(c.x1, c.y1, c.z1));
+    }
+    // fundação: blocos (topo no chão), estacas embaixo e a base de canaleta em cima dos blocos (as paredes sobem a altura dela)
+    const F = props.fund, zc = F?.can ? F.canAlt : 0;
+    if (F) {
+      const { dx, dy } = props.desloc[F.pav] ?? { dx: 0, dy: 0 }, h = F.lado / 2;
+      const MB = mat(0x9c968c), ME = mat(0x8a847a), MC = mat(0xb5aea2), MA = mat(0x8b3a1a);
+      const MCon = new THREE.MeshStandardMaterial({ color: 0x9aa3ab, roughness: 0.9, transparent: true, opacity: 0.3, depthWrite: false });
+      const cil = new THREE.CylinderGeometry(F.furo / 2, F.furo / 2, 1, 20); cil.rotateX(Math.PI / 2);
+      const caixa = (M: THREE.Material, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, cod: string, txt: string, linha = true) => {
+        const m = new THREE.Mesh(box, M); m.scale.set(x1 - x0, y1 - y0, z1 - z0); m.position.set((x0 + x1) / 2 + dx, (y0 + y1) / 2 + dy, (z0 + z1) / 2);
+        m.castShadow = true; m.userData = { cod, txt, mat: M }; if (linha) m.add(new THREE.LineSegments(aresta, EM)); gF.add(m); pick.push(m); return m; };
+      for (const p of F.pts) {
+        const q = p.par ? F.pts.find(r => r.n === p.par) : undefined;
+        if (q && p.n > q.n) continue;   // bloco de 2 estacas: desenha uma vez
+        const xs = [p.x, ...(q ? [q.x] : []), ...(p.cobre || []).map(c => c[0])], ys = [p.y, ...(q ? [q.y] : []), ...(p.cobre || []).map(c => c[1])];
+        const cod = q ? `B${p.n}+B${q.n}` : `B${p.n}`, txt = p.tipo === 'apoio' ? `${cod} · bloco de apoio ${Math.round(F.lado * 100)} × ${Math.round(F.lado * 100)} · sem estaca`
+          : `${cod} · ${q ? 'bloco de 2 estacas' : p.cobre?.length ? 'bloco alongado até a emenda' : `bloco ${Math.round(F.lado * 100)} × ${Math.round(F.lado * 100)} × ${Math.round(F.alt * 100)}`} · estaca ø${Math.round(F.furo * 100)} × ${String(F.comp).replace('.', ',')} m`;
+        caixa(MB, Math.min(...xs) - h, Math.min(...ys) - h, -F.alt, Math.max(...xs) + h, Math.max(...ys) + h, 0, cod, txt);
+        if (p.tipo === 'apoio') continue;
+        for (const r of [p, ...(q ? [q] : [])]) { const e = new THREE.Mesh(cil, ME); e.scale.set(1, 1, F.comp); e.position.set(r.x + dx, r.y + dy, -F.alt - F.comp / 2 + 0.1); e.userData = { cod, txt, mat: ME }; gF.add(e); pick.push(e); }
+      }
+      // canaleta 14 × 19 × 39 em U, com 2 ø10 e concreto dentro
+      for (const s of F.can || []) {
+        const C = (d0: number, d1: number, z0: number, z1: number, M: THREE.Material, linha = false) => s.o === 'H' ? caixa(M, s.a, s.c + d0, z0, s.b, s.c + d1, z1, 'canaleta', txtC, linha) : caixa(M, s.c + d0, s.a, z0, s.c + d1, s.b, z1, 'canaleta', txtC, linha);
+        const txtC = `Canaleta 14 × 19 × 39${s.cortada ? ` cortada com ${Math.round((s.b - s.a) * 100)} cm` : ''} · por dentro 2 ø10 corridos e concreto`;
+        C(-0.07, 0.07, 0, 0.03, MC); C(-0.07, -0.045, 0.03, zc, MC); C(0.045, 0.07, 0.03, zc, MC); C(-0.045, 0.045, 0.03, zc, MCon).renderOrder = 2;
+        const cont = C(-0.07, 0.07, 0, zc, MC, true); cont.material = new THREE.MeshBasicMaterial({ visible: false });
+        for (const d of [-0.025, 0.025]) { const f = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, s.b - s.a, 6), MA);
+          if (s.o === 'H') { f.rotation.z = Math.PI / 2; f.position.set((s.a + s.b) / 2 + dx, s.c + d + dy, 0.07); } else f.position.set(s.c + d + dx, (s.a + s.b) / 2 + dy, 0.07); gF.add(f); }
+      }
     }
     const ctr = bb.getCenter(new THREE.Vector3()), tam = bb.getSize(new THREE.Vector3()), raio = Math.max(tam.x, tam.y, tam.z, 1);
     // sol de fim de tarde vindo da frente-esquerda; a sombra cobre o prédio todo
@@ -107,7 +141,7 @@ export default function Vista3D(props: Props3D) {
     const centrar = () => { const d = raio * 1.5; C.position.set(ctr.x - d * 0.55, ctr.y - d * 1.1, ctr.z + d * 0.7); O.target.copy(ctr); O.update(); };
     centrar();
     const marcar = (cod: string | null) => { for (const m of pick) m.material = m.userData.cod === cod ? M.sel : m.userData.mat; };
-    api.current = { grupos, marcar, centrar };
+    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc };
     const rs = () => { const w = el.clientWidth, h = el.clientHeight; R.setSize(w, h); C.aspect = w / h; C.updateProjectionMatrix(); };
     const ro = new ResizeObserver(rs); ro.observe(el); rs();
     const rc = new THREE.Raycaster(), mp = new THREE.Vector2(); let dn: [number, number] | null = null;
@@ -122,14 +156,18 @@ export default function Vista3D(props: Props3D) {
     R.domElement.addEventListener('pointerdown', down); R.domElement.addEventListener('pointerup', up);
     let raf = 0; const loop = () => { raf = requestAnimationFrame(loop); O.update(); R.render(S, C); }; loop();
     return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EM.dispose(); chao.geometry.dispose(); grade.dispose(); el.removeChild(R.domElement); api.current = null; };
-  }, [cx, props.pavs]);
+  }, [cx, props.pavs, props.fund]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // visibilidade e separação
   useEffect(() => {
     const a = api.current; if (!a) return;
     props.pavs.forEach((pv, i) => { const g = a.grupos.get(pv.id)!; const v = so ? so === pv.id : vis[pv.id] !== false;
-      g.p.visible = v && verP; g.l.visible = v && verL; g.p.position.z = g.l.position.z = i * sep; });
-  }, [vis, so, verL, verP, sep, props.pavs, cx]);
+      g.p.visible = v && verP; g.l.visible = v && verL; g.p.position.z = g.l.position.z = i * sep + a.zc; });
+    // fundação ligada: chão meio transparente e dá para olhar por baixo
+    const f = !!props.fund && verF && (so ? so === props.pavs[0]?.id : vis[props.pavs[0]?.id] !== false);
+    a.gF.visible = f; (a.chao.material as THREE.MeshStandardMaterial).transparent = true; (a.chao.material as THREE.MeshStandardMaterial).opacity = f ? 0.35 : 1; a.grade.visible = !f;
+    a.O.maxPolarAngle = f ? Math.PI : Math.PI * 0.495;
+  }, [vis, so, verL, verP, verF, sep, props.pavs, props.fund, cx]);
 
   const achar = () => {
     const k = busca.trim().toUpperCase(); if (!k) return;
@@ -145,12 +183,13 @@ export default function Vista3D(props: Props3D) {
       <div className="botoes">
         <button className={verP ? 'on' : ''} onClick={() => setVerP(!verP)}>Paredes</button>
         <button className={verL ? 'on' : ''} onClick={() => setVerL(!verL)}>Lajes</button>
+        {props.fund && <button className={verF ? 'on' : ''} onClick={() => setVerF(!verF)}>Fundação</button>}
         <button className={so ? 'on' : ''} onClick={() => setSo(so ? null : props.pavs[0]?.id ?? null)} title="Mostra um pavimento por vez (toque no nome para trocar)">Um pavimento só</button>
         <button onClick={() => api.current?.centrar()}>Centralizar</button>
       </div>
       <label className="v3-sep">Separar pavimentos <input type="range" min={0} max={6} step={0.1} value={sep} onChange={e => setSep(+e.target.value)} /></label>
       <div className="botoes"><input placeholder="Achar peça (ex.: 1-P84, T-L128)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
-      <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span></div>
+      <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span>{props.fund && <><span><i style={{ background: '#9c968c' }} />bloco e estaca</span>{props.fund.can && <span><i style={{ background: '#b5aea2' }} />canaleta 14×19 (ferro + concreto)</span>}</>}</div>
       <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · toque numa peça para ver o código.</p>
     </div>
     <div className="v3-tela" ref={ref}>{sel && <div className="v3-info">{sel}</div>}</div>

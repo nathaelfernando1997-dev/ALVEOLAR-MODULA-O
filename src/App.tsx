@@ -537,8 +537,19 @@ export default function App() {
     return d;
   }, [ativos, calc]);
   const espParede3d = (regras.isoporAlt ?? 0.09) + 2 * (regras.capeamento ?? 0.025) + 0.01;
-  const props3d = useMemo(() => ({ pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
-    [ativos, ativosT, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
+  // fundação para o 3D (mesmos pontos da aba Fundação): blocos, estacas e base de canaleta do térreo
+  const fund3d = useMemo(() => {
+    const pf = ativos[0]; if (!pf || !calc.ts.length) return null;
+    const tf = calc.ts.filter(t => t.pav === pf.id), psf = calc.ps.filter(p => p.pav === pf.id); if (!tf.length) return null;
+    const doPav = <T extends { pav: string }>(l?: T[]) => (l || []).filter(e => e.pav === pf.id);
+    const oe = { ...ESTACA_PADRAO, ...(regras.estaca || {}) }, ob = { ...BLOCO_PADRAO, ...(regras.bloco || {}) }, f = { ...FUND_VAZIA, ...(aj.fund || {}) };
+    const ptsW = pontosFundacao(tf, psf, regras.fundEspac ?? 0, { extra: doPav(aj.fundExtra), remover: doPav(aj.fundRemover), pares: f.auto2E ? doPav(aj.fundPar2) : [] }, regras.fundJunta ?? 0.5, 3 * oe.furo);
+    const pts = blocosDivisa(ptsW, tf, aj.fundDivisa || [], ob.lado / 2);
+    return { pav: pf.id, pts: pts.map(p => ({ n: p.n, x: p.x, y: p.y, tipo: p.tipo, par: p.par, cobre: p.cobre })), lado: ob.lado, alt: ob.alt, furo: oe.furo, comp: oe.comp,
+      can: f.canaleta ? canaletaBase(tf, psf).pecas : null, canAlt: CANALETA.alt };
+  }, [ativos, calc, regras, aj]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const props3d = useMemo(() => ({ fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
+    [ativos, ativosT, fund3d, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
   const [notaRev, setNotaRev] = useState('');
