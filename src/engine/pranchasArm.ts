@@ -51,7 +51,9 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
   for (const [p0, p1] of a.slots) F.poly([P(p0, 0), P(p1, 0), P(p1, Hx(p1)), P(p0, Hx(p0))], { fill: '#eef1f6' });
   for (const [z0, z1] of a.zon) F.poly([P(z0, 0), P(z1, 0), P(z1, Hx(z1)), P(z0, Hx(z0))], { fill: '#dfe6ef' });
   F.poly([P(0, 0), P(L, 0), P(L, Hx(L)), P(0, Hx(0))], { stroke: INK, lw: 0.9 });
+  const ditos = new Set<string>();   // painel maciço: o mesmo rótulo uma vez só (várias paredes no mesmo painel)
   for (const rf of a.ref ?? []) {   // faixa / painel maciço (sem isopor)
+    if (rf.macico && ditos.has('M')) continue; if (rf.macico) ditos.add('M');
     const q = rf.macico ? [P(0, 0), P(L, 0), P(L, Hx(L)), P(0, Hx(0))] : rf.modo === 'longo' ? [P(rf.pos - rf.faixa / 2, rf.i0), P(rf.pos + rf.faixa / 2, rf.i0), P(rf.pos + rf.faixa / 2, rf.i1), P(rf.pos - rf.faixa / 2, rf.i1)]
       : [P(Math.max(0, rf.i0), rf.pos - rf.faixa / 2), P(Math.min(L, rf.i1), rf.pos - rf.faixa / 2), P(Math.min(L, rf.i1), rf.pos + rf.faixa / 2), P(Math.max(0, rf.i0), rf.pos + rf.faixa / 2)];
     F.poly(q, { fill: '#fbe3cf', stroke: '#d35400', lw: 0.5 });
@@ -88,7 +90,7 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
   const xs = [0, ...base, L], yd = Y0 - 6;
   F.seg(X0, yd, X0 + L * esc, yd, 0.25, '#333333');
   for (const x of xs) { F.seg(X0 + x * esc, yd - 1.1, X0 + x * esc, yd + 1.1, 0.25, '#333333'); tick(F, X0 + x * esc, yd); }
-  for (let i = 0; i < xs.length - 1; i++) if (xs[i + 1] - xs[i] > 0.003) F.t(X0 + (xs[i] + xs[i + 1]) / 2 * esc, yd - 1.4, cm(xs[i + 1] - xs[i]), 4.3, { ha: 'center', va: 'top', rot: 90, color: '#222222' });
+  { let ult = -1e9; for (let i = 0; i < xs.length - 1; i++) if (xs[i + 1] - xs[i] > 0.003) { const cx = X0 + (xs[i] + xs[i + 1]) / 2 * esc; if (cx - ult < 1.9) continue; ult = cx; F.t(cx, yd - 1.4, cm(xs[i + 1] - xs[i]), 4.3, { ha: 'center', va: 'top', rot: 90, color: '#222222' }); } }   // espaço pequeno demais para o número: pula (não encavala)
   const yt = Y0 - 17;
   F.seg(X0, yt, X0 + L * esc, yt, 0.3, '#333333');
   for (const x of [0, L]) { F.seg(X0 + x * esc, yt - 1.3, X0 + x * esc, yt + 1.3, 0.3, '#333333'); tick(F, X0 + x * esc, yt, '#333333', 0.8, 0.45); }
@@ -96,7 +98,7 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
   const ys = [0, ...uniq(a.bars.filter(b => ['HI', 'HS', 'VG', 'CV'].includes(b.f)).map(b => Math.round(b.y0 * 1000) / 1000)), Math.min(Hx(0), Hx(L))], xd = X0 - 6;
   F.seg(xd, Y0, xd, Y0 + ys[ys.length - 1] * esc, 0.25, '#333333');
   for (const y of ys) { F.seg(xd - 1.1, Y0 + y * esc, xd + 1.1, Y0 + y * esc, 0.25, '#333333'); tick(F, xd, Y0 + y * esc); }
-  for (let i = 0; i < ys.length - 1; i++) if (ys[i + 1] - ys[i] > 0.003) F.t(xd - 1.3, Y0 + (ys[i] + ys[i + 1]) / 2 * esc, cm(ys[i + 1] - ys[i]), 4.3, { ha: 'right', va: 'center', rot: 90, color: '#222222' });
+  { let ult = -1e9; for (let i = 0; i < ys.length - 1; i++) if (ys[i + 1] - ys[i] > 0.003) { const cy = Y0 + (ys[i] + ys[i + 1]) / 2 * esc; if (cy - ult < 1.9) continue; ult = cy; F.t(xd - 1.3, cy, cm(ys[i + 1] - ys[i]), 4.3, { ha: 'right', va: 'center', rot: 90, color: '#222222' }); } }
   const xt = X0 - 15;
   F.seg(xt, Y0, xt, Y0 + Hx(0) * esc, 0.3, '#333333');
   for (const y of [0, Hx(0)]) { F.seg(xt - 1.3, Y0 + y * esc, xt + 1.3, Y0 + y * esc, 0.3, '#333333'); tick(F, xt, Y0 + y * esc, '#333333', 0.8, 0.45); }
@@ -391,9 +393,15 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       const wrap = (txt: string, n = 64) => { const o: string[] = []; let c = ''; for (const w of txt.split(' ')) { if ((c + ' ' + w).trim().length > n) { o.push(c); c = w; } else c = (c + ' ' + w).trim(); } if (c) o.push(c); return o; };
       let yy = 30;
       F.t(158, yy, 'REFORÇO EMBAIXO DE PAREDE DO PAVIMENTO DE CIMA', 6, { bold: true, color: '#d35400' });
-      for (const rf of t.a.ref.slice(0, 3)) {
-        yy -= 3.6; F.t(158, yy, `Parede ${rf.modo === 'longo' ? 'ao longo do vão' : 'atravessando o painel'} · ${br(rf.q, 1)} kN/m · Md ${br(rf.Md, 1)} kN.m${rf.modo === 'atravessa' ? '/m' : ''}`, 5.2);
-        for (const ln of wrap(rf.txt)) { yy -= 3.3; F.t(158, yy, ln, 5.4, { bold: true, color: rf.ok ? '#d35400' : '#b03a2e' }); }
+      // paredes iguais (mesmo modo e mesma solução) numa linha só, com a maior; o que não couber até a moldura vai para a folha de verificações
+      const grp = new Map<string, { rf: NonNullable<typeof t.a.ref>[number]; n: number }>();
+      for (const rf of t.a.ref) { const k = rf.modo + '|' + rf.txt + '|' + rf.ok, g = grp.get(k); if (!g) grp.set(k, { rf, n: 1 }); else { g.n++; if (rf.Md > g.rf.Md) g.rf = rf; } }
+      const lista = [...grp.values()].sort((p, q) => Number(p.rf.ok) - Number(q.rf.ok) || q.rf.Md - p.rf.Md), YMIN = 12.5;
+      for (const [i, { rf, n }] of lista.entries()) {
+        const lns = wrap(rf.txt), resto = i < lista.length - 1 ? 3.6 : 0;   // guarda lugar para a linha "+ outros"
+        if (yy - 3.6 - lns.length * 3.3 - resto < YMIN) { F.t(158, yy - 3.6, `+ ${lista.length - i} outro(s) reforço(s): ver a folha de verificações`, 5.2, { color: '#d35400' }); break; }
+        yy -= 3.6; F.t(158, yy, `Parede ${rf.modo === 'longo' ? 'ao longo do vão' : 'atravessando o painel'}${n > 1 ? ` (×${n})` : ''} · ${br(rf.q, 1)} kN/m · Md ${br(rf.Md, 1)} kN.m${rf.modo === 'atravessa' ? '/m' : ''}`, 5.2);
+        for (const ln of lns) { yy -= 3.3; F.t(158, yy, ln, 5.4, { bold: true, color: rf.ok ? '#d35400' : '#b03a2e' }); }
       }
     }
     const ok = ver[it].ok && kpa <= ALCA_CAP && (t.a.ref ?? []).every(r => r.ok);
