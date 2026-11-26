@@ -278,7 +278,7 @@ export function alcas(a: PecaArm, kg: number, laje: boolean): { pts: [number, nu
 }
 // família da posição (tira a letra minúscula das variantes de comprimento: VIa, VS1b…)
 export const fam = (k: string) => k.startsWith('T') ? 'T' : k.startsWith('A') ? 'A' : k.replace(/[a-z]$/, '');
-export type Relacao = [string, [number, number][]][];   // posição → [(comprimento cm, quantidade)]
+export type Relacao = [string, [number, number][], string?][];   // nome da posição (VI, VSa…) → [(comprimento cm, quantidade)], posição interna (bitola, cor, desenho)
 export function relacao(a: PecaArm, nal: number, laje: boolean): Relacao {
   const PD = laje ? POSL : POS, g: Relacao = [];
   for (const k of Object.keys(PD)) {
@@ -292,15 +292,19 @@ export function relacao(a: PecaArm, nal: number, laje: boolean): Relacao {
     g.push(['T', [...c].sort((p, q) => q[0] - p[0])]);
   }
   g.push(['A', [[Math.round((laje ? 1.20 : 0.90) * 100), nal]]]);
-  const out: Relacao = [];
-  for (const [k, L] of g) { if (L.length === 1) out.push([k, L]); else L.forEach((cq, i) => out.push([k + 'abcdefghijklmnopqrstuvwxyz'[i], [cq]])); }
+  // nomes para a fábrica: só VI, HI, VS e HS (mais PL, ES, VG, CV na parede, T e A); quando a mesma camada e direção tem mais de um ferro
+  // (comprimento ou bitola diferente), leva letra: VIa, VIb… O reforço sob parede é um VI; os três ferros de cima da laje são VS
+  const BASE: Record<string, string> = { RI1: 'VI', RI2: 'VI', VS1: 'VS', VS2: 'VS', VS3: 'VS' }, base = (k: string) => BASE[k] ?? k;
+  const itens = g.flatMap(([k, L]) => L.map(cq => [k, cq] as [string, [number, number]]));
+  const ordem = [...new Set(itens.map(([k]) => base(k)))], out: Relacao = [];
+  for (const b of ordem) { const I = itens.filter(([k]) => base(k) === b); I.forEach(([k, cq], i) => out.push([I.length > 1 ? b + 'abcdefghijklmnopqrstuvwxyz'[i] : b, [cq], k])); }
   return out;
 }
 export const ALCA_KEY = 'ø8,0 CA-25';
 // pos: bitola do positivo da laje (L1 e L4) escolhida na verificação; sem ela vale a do padrão (ø6,3)
 export const bitDe = (k: string, laje: boolean, tg: string, pos?: number): number | string => fam(k) === 'T' ? tg : fam(k) === 'A' ? ALCA_KEY : laje && pos && fam(k) === 'VI' ? pos : (laje ? POSL : POS)[fam(k)][0];
 export const kgmDe = (k: string, laje: boolean, tg: string, pos?: number) => fam(k) === 'T' ? TG_KG[tg] ?? 0.886 : fam(k) === 'A' ? 0.395 : KG[String(bitDe(k, laje, tg, pos))];
-export const kgRel = (rel: Relacao, laje: boolean, tg: string, pos?: number) => rel.reduce((s, [k, L]) => s + L.reduce((t, [c, q]) => t + c / 100 * q * kgmDe(k, laje, tg, pos), 0), 0);
+export const kgRel = (rel: Relacao, laje: boolean, tg: string, pos?: number) => rel.reduce((s, [k, L, fi]) => s + L.reduce((t, [c, q]) => t + c / 100 * q * kgmDe(fi ?? k, laje, tg, pos), 0), 0);
 // positivo da laje: o menor entre ø6,3, ø8,0 e ø10,0 que passa na verificação (flexão, flecha, cortante e ancoragem)
 export const BITS_POS = [6.3, 8, 10];
 export function escolherPositivo(a: PecaArm, esp: number, apoio = 0.06, bal: [number, number] = [0, 0]): { bit: number; ok: boolean } {
