@@ -580,10 +580,10 @@ export function escadas(segs: SegEsc[], ts: Trecho[], apoios: Trecho[] = []): Es
   return out;
 }
 // linhas retas (horizontais/verticais) do desenho dentro da caixa, fora da camada das paredes
-export function segsEscada(prims: { kind: string; pts: [number, number][]; layer: string }[], box: Box, camadaParede: string): SegEsc[] {
+export function segsEscada(prims: { kind: string; pts: [number, number][]; layer: string }[], box: Box, camadaParede: string, comParede = false): SegEsc[] {
   const out: SegEsc[] = [];
   for (const q of prims) {
-    if (q.kind !== 'line' || q.layer === camadaParede) continue;
+    if (q.kind !== 'line' || (!comParede && q.layer === camadaParede)) continue;
     for (let k = 0; k < q.pts.length - 1; k++) {
       const [x1, y1] = q.pts[k], [x2, y2] = q.pts[k + 1];
       if (Math.min(x1, x2) < box.x0 - 0.2 || Math.max(x1, x2) > box.x1 + 0.2 || Math.min(y1, y2) < box.y0 - 0.2 || Math.max(y1, y2) > box.y1 + 0.2) continue;
@@ -592,4 +592,42 @@ export function segsEscada(prims: { kind: string; pts: [number, number][]; layer
     }
   }
   return out;
+}
+
+// escada helicoidal / caracol / marinheiro: não tem degraus desenhados, só o contorno (quadrado, retângulo ou círculo de 1,00 a 2,60 m,
+// muitas vezes tracejado) com o texto ESCADA a até 4 m. Devolve a caixa do contorno (a conferência no pavimento de cima é feita fora)
+export function escadasContorno(segs: SegEsc[], circs: { x: number; y: number; r: number }[], textos: { text: string; x: number; y: number }[], ts: Trecho[], apoios: Trecho[] = []): Escada[] {
+  const tx = textos.filter(t => /ESCADA|CARACOL|HELICOIDAL/i.test(t.text));
+  if (!tx.length) return [];
+  const perto = (b: Box) => tx.some(t => Math.hypot(t.x - (b.x0 + b.x1) / 2, t.y - (b.y0 + b.y1) / 2) <= 4);
+  // junta os pedaços tracejados de cada linha
+  const L: SegEsc[] = [];
+  for (const o of ['H', 'V'] as const) {
+    const lin = new Map<number, SegEsc[]>();
+    for (const s of segs) if (s.o === o) { const k = Math.round(s.c * 100); (lin.get(k) ?? lin.set(k, []).get(k)!).push(s); }
+    for (const ss of lin.values()) { ss.sort((p, q) => p.a - q.a); let cur = { ...ss[0] };
+      for (const s of ss.slice(1)) { if (s.a - cur.b < 0.16) cur.b = Math.max(cur.b, s.b); else { L.push(cur); cur = { ...s }; } } L.push(cur); }
+  }
+  const ok = (v: number) => v >= 1.0 && v <= 2.6, tol = 0.1;
+  const caixas: Box[] = [];
+  // canto: linha horizontal e vertical que se encontram na ponta; precisa de um terceiro lado
+  for (const h of L.filter(s => s.o === 'H' && ok(s.b - s.a))) for (const v of L.filter(s => s.o === 'V' && ok(s.b - s.a))) {
+    const xh = Math.abs(v.c - h.a) < tol ? h.a : Math.abs(v.c - h.b) < tol ? h.b : NaN, yv = Math.abs(h.c - v.a) < tol ? v.a : Math.abs(h.c - v.b) < tol ? v.b : NaN;
+    if (!isFinite(xh) || !isFinite(yv)) continue;
+    const b: Box = { x0: h.a, x1: h.b, y0: v.a, y1: v.b };
+    const outroX = xh === h.a ? h.b : h.a, outroY = yv === v.a ? v.b : v.a;
+    const ladoV = [...L, ...ts.map(t => ({ o: t.o, c: t.c, a: t.s, b: t.e }))].some(s => s.o === 'V' && Math.abs(s.c - outroX) < 0.15 && Math.min(s.b, b.y1) - Math.max(s.a, b.y0) > 0.7 * (b.y1 - b.y0));
+    const ladoH = [...L, ...ts.map(t => ({ o: t.o, c: t.c, a: t.s, b: t.e }))].some(s => s.o === 'H' && Math.abs(s.c - outroY) < 0.15 && Math.min(s.b, b.x1) - Math.max(s.a, b.x0) > 0.7 * (b.x1 - b.x0));
+    if ((ladoV || ladoH) && perto(b) && !caixas.some(c => Math.abs(c.x0 - b.x0) < 0.1 && Math.abs(c.x1 - b.x1) < 0.1 && Math.abs(c.y0 - b.y0) < 0.1 && Math.abs(c.y1 - b.y1) < 0.1)) caixas.push(b);
+  }
+  for (const c of circs) if (ok(2 * c.r)) { const b = { x0: c.x - c.r, x1: c.x + c.r, y0: c.y - c.r, y1: c.y + c.r }; if (perto(b)) caixas.push(b); }
+  // fica só com a menor caixa de cada lugar (o contorno da escada, não o ambiente em volta)
+  const fora = caixas.filter(b => !caixas.some(c => c !== b && c.x0 >= b.x0 - 0.05 && c.x1 <= b.x1 + 0.05 && c.y0 >= b.y0 - 0.05 && c.y1 <= b.y1 + 0.05 && (c.x1 - c.x0) * (c.y1 - c.y0) < (b.x1 - b.x0) * (b.y1 - b.y0) - 0.01));
+  const enc = (v: number, o: 'H' | 'V', a0: number, a1: number) => { const t = [...ts, ...apoios].filter(t => t.o === o && Math.abs(t.c - v) <= 0.35 && Math.min(t.e, a1) - Math.max(t.s, a0) > 0.3).sort((p, q) => Math.abs(p.c - v) - Math.abs(q.c - v))[0]; return t ? t.c : v; };
+  return fora.map(b => ({ x0: enc(b.x0, 'V', b.y0, b.y1), x1: enc(b.x1, 'V', b.y0, b.y1), y0: enc(b.y0, 'H', b.x0, b.x1), y1: enc(b.y1, 'H', b.x0, b.x1), lances: 0, degraus: 0, passo: 0 }));
+}
+// círculos fechados do desenho dentro da caixa (escada caracol)
+export function circsEscada(prims: { kind: string; pts: [number, number][]; layer: string; c?: [number, number]; r?: number }[], box: Box): { x: number; y: number; r: number }[] {
+  return prims.filter(q => q.kind === 'arc' && q.c && q.r && q.pts.length > 2 && Math.hypot(q.pts[0][0] - q.pts[q.pts.length - 1][0], q.pts[0][1] - q.pts[q.pts.length - 1][1]) < 0.02
+    && q.c[0] > box.x0 && q.c[0] < box.x1 && q.c[1] > box.y0 && q.c[1] < box.y1).map(q => ({ x: q.c![0], y: q.c![1], r: q.r! }));
 }

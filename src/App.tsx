@@ -9,7 +9,7 @@ import { gerarIfc } from './engine/ifc.ts';
 const Vista3D = lazy(() => import('./Vista3D.tsx'));
 import type { InfoPeca } from './Vista3D.tsx';
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
-import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, escadas, segsEscada, type Escada, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
+import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, escadas, escadasContorno, segsEscada, circsEscada, type Escada, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar, encaixeManual } from './engine/vigas.ts';
@@ -63,7 +63,7 @@ const baixarBin = (nome: string, bin: Uint8Array, tipo: string) => {
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
-interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; escadas: { pav: string; chave: string; e: Escada; ligada: boolean }[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[]; encaixes: Record<string, { x: number; y: number }> }
+interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; escadas: { pav: string; chave: string; e: Escada; ligada: boolean; viga?: { o: 'H' | 'V'; c: number; s: number; e: number } }[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[]; encaixes: Record<string, { x: number; y: number }> }
 
 // desenhos do arquivo (plantas, cortes) e seus papéis, pela camada das paredes escolhida
 function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
@@ -365,11 +365,34 @@ export default function App() {
       // escada desenhada (degraus) que continua no pavimento de cima, no mesmo lugar: vão na laje deste pavimento
       if (novo && cima && al && regras.escadaAuto !== false) {
         const eCima = escadas(segsEscada(leitura.prims, cima.box, camada), tc).map(e => ({ ...e, x0: e.x0 + al.dx, x1: e.x1 + al.dx, y0: e.y0 + al.dy, y1: e.y1 + al.dy }));
-        for (const e of escadas(segsEscada(leitura.prims, p.box, camada), porPav[i], pp)) {
+        const naCx = (b: Box) => (t: { x: number; y: number }) => t.x > b.x0 && t.x < b.x1 && t.y > b.y0 && t.y < b.y1;
+        // helicoidal/caracol: contorno com o texto ESCADA (o texto pode estar só numa das plantas)
+        const txP = leitura.textos.filter(naCx(p.box)), txC = leitura.textos.filter(naCx(cima.box)).map(t => ({ ...t, x: t.x + al.dx, y: t.y + al.dy }));
+        const contC = escadasContorno(segsEscada(leitura.prims, cima.box, camada, true), circsEscada(leitura.prims as never, cima.box), [...leitura.textos.filter(naCx(cima.box)), ...txP.map(t => ({ ...t, x: t.x - al.dx, y: t.y - al.dy }))], tc)
+          .map(e => ({ ...e, x0: e.x0 + al.dx, x1: e.x1 + al.dx, y0: e.y0 + al.dy, y1: e.y1 + al.dy }));
+        eCima.push(...contC);
+        const contP = escadasContorno(segsEscada(leitura.prims, p.box, camada, true), circsEscada(leitura.prims as never, p.box), [...txP, ...txC], porPav[i], pp);
+        for (const e of [...escadas(segsEscada(leitura.prims, p.box, camada), porPav[i], pp), ...contP]) {
           const ov = (c: Box) => Math.max(0, Math.min(e.x1, c.x1) - Math.max(e.x0, c.x0)) * Math.max(0, Math.min(e.y1, c.y1) - Math.max(e.y0, c.y0));
           if (!eCima.some(c => ov(c) > 0.3 * (e.x1 - e.x0) * (e.y1 - e.y0))) continue;
+          if (vazio.escadas.some(x => x.pav === p.id && ov(x.e) > 0.5 * (e.x1 - e.x0) * (e.y1 - e.y0))) continue;   // já achada pelos degraus
           const chave = `${p.id}|${e.x0.toFixed(1)}|${e.y0.toFixed(1)}`, ligada = !(aj.naoEscada || []).includes(chave);
-          vazio.escadas.push({ pav: p.id, chave, e, ligada });
+          // borda do vão que não cai em parede/linha de piso fica solta: viga de borda na borda que dá a viga mais curta, de parede a parede
+          let viga: { o: 'H' | 'V'; c: number; s: number; e: number } | undefined;
+          if (ligada) {
+            const sup = [...porPav[i], ...pp];
+            const presa = (o: 'H' | 'V', c: number, a: number, b: number) => sup.some(t => t.o === o && Math.abs(t.c - c) < 0.1 && Math.min(t.e, b) - Math.max(t.s, a) >= 0.8 * (b - a));
+            const estende = (o: 'H' | 'V', c: number, a: number, b: number) => {   // até a parede perpendicular de cada lado
+              const cruz = sup.filter(t => t.o !== o && t.s - 0.1 <= c && c <= t.e + 0.1);
+              const lo = Math.max(...cruz.filter(t => t.c <= a + 0.01).map(t => t.c)), hi = Math.min(...cruz.filter(t => t.c >= b - 0.01).map(t => t.c));
+              return isFinite(lo) && isFinite(hi) ? { o, c, s: lo, e: hi } : undefined;
+            };
+            const cands = ([['V', e.x0, e.y0, e.y1], ['V', e.x1, e.y0, e.y1], ['H', e.y0, e.x0, e.x1], ['H', e.y1, e.x0, e.x1]] as const)
+              .filter(([o, c, a, b]) => !presa(o, c, a, b)).map(([o, c, a, b]) => estende(o, c, a, b)).filter((v): v is NonNullable<typeof v> => !!v && v.e - v.s <= 6);
+            viga = cands.sort((u, v) => (u.e - u.s) - (v.e - v.s))[0];
+            if (viga) { const tv: Trecho = { id: `${p.id}|vescada|${viga.o}|${viga.c.toFixed(2)}|${viga.s.toFixed(2)}`, pav: p.id, o: viga.o, c: viga.c, s: viga.s, e: viga.e, vaos: [], H: p.altura, esp: regras.vigaLargura }; pp.push(tv); pisos.push(tv); }
+          }
+          vazio.escadas.push({ pav: p.id, chave, e, ligada, viga });
           if (ligada) vz.push({ x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 });
         }
       }
@@ -865,9 +888,10 @@ export default function App() {
                     {calc.escadas.filter(x => x.pav === pavAtual.id).length === 0
                       ? <p className="dica">{regras.escadaAuto === false ? 'Reconhecimento da escada desligado nas regras.' : 'Nenhuma escada reconhecida neste pavimento. O vão abre sozinho quando os degraus estão desenhados aqui e no pavimento de cima (no mesmo lugar). Se não abrir, use "Sem laje aqui" no ambiente da escada.'}</p>
                       : calc.escadas.filter(x => x.pav === pavAtual.id).map(x => <div key={x.chave} className="corte-item">
-                        {x.ligada ? '✔ vão aberto na laje' : '✖ laje fechada'} · {br(x.e.x1 - x.e.x0)} × {br(x.e.y1 - x.e.y0)} m · degraus a cada {Math.round(x.e.passo * 100)} cm
+                        {x.ligada ? '✔ vão aberto na laje' : '✖ laje fechada'} · {br(x.e.x1 - x.e.x0)} × {br(x.e.y1 - x.e.y0)} m · {x.e.passo ? `degraus a cada ${Math.round(x.e.passo * 100)} cm` : 'contorno com o texto ESCADA (helicoidal/caracol)'}
+                        {x.viga && <div>+ viga de borda do vão: {x.viga.o === 'H' ? 'horizontal' : 'vertical'} de {br(x.viga.e - x.viga.s)} m, de parede a parede (apoia a laje que fica do lado do vão; apoia em parede ou linha de piso)</div>}
                         <button onClick={() => setAj({ ...aj, naoEscada: x.ligada ? [...(aj.naoEscada || []), x.chave] : (aj.naoEscada || []).filter(k => k !== x.chave) })}>{x.ligada ? 'não é escada (fechar laje)' : 'abrir o vão de novo'}</button></div>)}
-                    <p className="dica">Reconhecida pelos degraus desenhados (5 ou mais, espaçados por igual). O vão vai de parede a parede e leva o patamar junto; a laje do pavimento de cima não é afetada.</p>
+                    <p className="dica">Reconhecida pelos degraus desenhados (5 ou mais, espaçados por igual) ou, na helicoidal/caracol, pelo contorno de 1,00 a 2,60 m com o texto ESCADA perto. O vão vai de parede a parede e leva o patamar junto; a laje do pavimento de cima não é afetada.</p>
                   </div>
                   <div className="card acoes">
                     <h3>Vigas desenhadas</h3>
