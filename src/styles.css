@@ -276,6 +276,7 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .v3-barra input:not([type=range]) { min-width: 0; flex: 1; }
 .v3-cheia { font-weight: 600; }
 .v3-medidas { margin: 0; padding-left: 20px; font-size: 12px; color: #a33a0a; }
+.v3-medidas .v3-x { border: 0; background: none; color: #a33a0a; cursor: pointer; padding: 0 4px; font-size: 12px; }
 .v3-det { width: 340px; max-height: min(72vh, 820px); overflow-y: auto; border: 1px solid #d8dde3; border-radius: 10px; padding: 10px; background: #fff; font-size: 13px; }
 .vista3d.cheia .v3-det { max-height: none; width: 420px; }
 .v3-det-topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 15px; }

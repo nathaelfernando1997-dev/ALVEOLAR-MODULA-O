@@ -70,7 +70,7 @@ export default function Vista3D(props: Props3D) {
   const [sel, setSel] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void; gF: THREE.Group; chao: THREE.Mesh; grade: THREE.GridHelper; O: OrbitControls; zc: number;
-    tirar: (cod: string) => void; recolocar: () => void; limparTrena: () => void; numeros: (on: boolean) => void } | null>(null);
+    tirar: (cod: string) => void; recolocar: () => void; limparTrena: () => void; desfazerTrena: () => void; apagarMedida: (i: number) => void; numeros: (on: boolean) => void } | null>(null);
   const [verN, setVerN] = useState(true); const verNRef = useRef(verN); verNRef.current = verN;
   const [verF, setVerF] = useState(true);
   // tela cheia, ferramenta (selecionar / trena), peça marcada, peças tiradas, medidas e o detalhamento da ferragem
@@ -80,8 +80,13 @@ export default function Vista3D(props: Props3D) {
   const [selCod, setSelCod] = useState<string | null>(null);
   const [nTiradas, setNTiradas] = useState(0);
   const [medidas, setMedidas] = useState<string[]>([]);
+  const [pend, setPend] = useState(false);   // trena com o primeiro ponto marcado, esperando o segundo
   const [ferr, setFerr] = useState<{ cod: string; svg?: string; resumo?: string; erro?: string; carregando?: boolean } | null>(null);
   const [verDet, setVerDet] = useState(true);
+  useEffect(() => {   // Esc ou Ctrl+Z na trena: desfaz o ponto / a última medida
+    const k = (e: KeyboardEvent) => { if (modoRef.current !== 'trena' || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.key === 'Escape' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) { e.preventDefault(); api.current?.desfazerTrena(); } };
+    addEventListener('keydown', k); return () => removeEventListener('keydown', k); }, []);
   useEffect(() => { const f = () => setCheia(document.fullscreenElement === raiz.current); document.addEventListener('fullscreenchange', f); return () => document.removeEventListener('fullscreenchange', f); }, []);
   const telaCheia = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void raiz.current?.requestFullscreen?.(); };
   const info = selCod && props.info ? props.info(selCod) : null;
@@ -221,13 +226,22 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     // trena: dois cliques em qualquer peça (ou no chão) e mostra a distância
     const gM = new THREE.Group(); S.add(gM); let pA: THREE.Vector3 | null = null;
     const MM = new THREE.MeshBasicMaterial({ color: 0xd9480f, depthTest: false }), LM = new THREE.LineBasicMaterial({ color: 0xd9480f, depthTest: false }), bola = new THREE.SphereGeometry(0.04, 12, 8);
-    const ponto = (v: THREE.Vector3) => { const b = new THREE.Mesh(bola, MM); b.position.copy(v); b.renderOrder = 10; gM.add(b); };
+    // cada medida guarda os seus objetos (bolinhas, linha e rótulo), para desfazer ou apagar uma só
+    let cur: THREE.Object3D[] = []; const feitas: THREE.Object3D[][] = [];
+    const tirarObjs = (os: THREE.Object3D[]) => { for (const o of os) gM.remove(o); };
+    const ponto = (v: THREE.Vector3) => { const b = new THREE.Mesh(bola, MM); b.position.copy(v); b.renderOrder = 10; gM.add(b); cur.push(b); };
     const rotulo = (t: string, v: THREE.Vector3) => {
       const cv = document.createElement('canvas'); cv.width = 320; cv.height = 96; const g = cv.getContext('2d')!; g.fillStyle = '#d9480f'; g.fillRect(0, 0, 320, 96); g.fillStyle = '#fff'; g.font = 'bold 56px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 160, 50);
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false })); sp.scale.set(0.9, 0.27, 1); sp.position.copy(v); sp.renderOrder = 11; gM.add(sp); };
-    const limparTrena = () => { gM.clear(); pA = null; setMedidas([]); };
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false })); sp.scale.set(0.9, 0.27, 1); sp.position.copy(v); sp.renderOrder = 11; gM.add(sp); cur.push(sp); };
+    const limparTrena = () => { gM.clear(); pA = null; cur = []; feitas.length = 0; setMedidas([]); setPend(false); };
+    // desfazer: tira o primeiro ponto que ficou esperando; se não tem, apaga a última medida
+    const desfazerTrena = () => {
+      if (pA) { tirarObjs(cur); cur = []; pA = null; setPend(false); setSel(modoRef.current === 'trena' ? 'Trena: clique no primeiro ponto' : null); return; }
+      const u = feitas.pop(); if (!u) return; tirarObjs(u); setMedidas(ms => ms.slice(0, -1));
+    };
+    const apagarMedida = (i: number) => { const u = feitas[i]; if (!u) return; tirarObjs(u); feitas.splice(i, 1); setMedidas(ms => ms.filter((_, j) => j !== i)); };
     const numeros = (on: boolean) => { for (const m of etqs) m.visible = on && !tiradas.has(m); };
-    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc, tirar, recolocar, limparTrena, numeros };
+    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc, tirar, recolocar, limparTrena, desfazerTrena, apagarMedida, numeros };
     const rs = () => { const w = el.clientWidth, h = el.clientHeight; R.setSize(w, h); C.aspect = w / h; C.updateProjectionMatrix(); };
     const ro = new ResizeObserver(rs); ro.observe(el); rs();
     const rc = new THREE.Raycaster(), mp = new THREE.Vector2(); let dn: [number, number] | null = null;
@@ -240,12 +254,12 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       if (modoRef.current === 'trena') {
         const h = rc.intersectObjects([...vivos, chao], false)[0]; if (!h) return;
         const v = h.point.clone(); ponto(v);
-        if (!pA) { pA = v; setSel('Trena: clique no segundo ponto'); return; }
+        if (!pA) { pA = v; setPend(true); setSel('Trena: clique no segundo ponto (Esc ou “Desfazer ponto” para tirar)'); return; }
         const d = pA.distanceTo(v), dh = Math.hypot(v.x - pA.x, v.y - pA.y), dz = Math.abs(v.z - pA.z);
-        const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pA, v]), LM); ln.renderOrder = 10; gM.add(ln);
+        const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pA, v]), LM); ln.renderOrder = 10; gM.add(ln); cur.push(ln);
         const t = `${d.toFixed(2).replace('.', ',')} m`; rotulo(t, pA.clone().add(v).multiplyScalar(0.5));
         const txt = `${t} (na horizontal ${dh.toFixed(2).replace('.', ',')} m · desnível ${dz.toFixed(2).replace('.', ',')} m)`;
-        setMedidas(ms => [...ms, txt]); setSel(`Trena: ${txt}`); pA = null; return;
+        feitas.push(cur); cur = []; setMedidas(ms => [...ms, txt]); setSel(`Trena: ${txt}`); pA = null; setPend(false); return;
       }
       const h = rc.intersectObjects(vivos, false)[0];
       const t = h ? (h.object.userData.txt as string) : null; setSel(t); marcar(h ? h.object.userData.cod : null); setSelCod(h ? h.object.userData.cod : null);
@@ -297,9 +311,10 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
         <button className={modo === 'trena' ? 'on' : ''} onClick={() => { setModo('trena'); setSel('Trena: clique no primeiro ponto'); }} title="Clique em dois pontos para medir">📏 Trena</button>
         <button disabled={!selCod} onClick={() => { if (selCod) { api.current?.tirar(selCod); api.current?.marcar(null); setSelCod(null); setSel(null); } }} title="Esconde a peça marcada">Tirar peça</button>
         <button disabled={!nTiradas} onClick={() => api.current?.recolocar()}>Recolocar tudo{nTiradas ? ` (${nTiradas})` : ''}</button>
-        <button disabled={!medidas.length} onClick={() => api.current?.limparTrena()}>Limpar medidas</button>
+        <button disabled={!pend && !medidas.length} onClick={() => api.current?.desfazerTrena()} title="Tira o ponto que ficou marcado ou a última medida (atalho: Esc ou Ctrl+Z)">↶ {pend ? 'Desfazer ponto' : 'Desfazer medida'}</button>
+        <button disabled={!medidas.length && !pend} onClick={() => api.current?.limparTrena()}>Limpar medidas</button>
       </div>
-      {medidas.length > 0 && <ol className="v3-medidas">{medidas.map((m, i) => <li key={i}>{m}</li>)}</ol>}
+      {medidas.length > 0 && <ol className="v3-medidas">{medidas.map((m, i) => <li key={i}>{m} <button className="v3-x" title="Apagar esta medida" onClick={() => api.current?.apagarMedida(i)}>✕</button></li>)}</ol>}
       <div className="botoes"><input placeholder="Achar peça (ex.: T-P41, T-L49)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
       <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span>{props.fund && <><span><i style={{ background: '#9c968c' }} />bloco e estaca</span>{props.fund.can && <span><i style={{ background: '#b5aea2' }} />canaleta 14×19 (treliça + concreto)</span>}</>}</div>
       <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · clique numa peça para ver o detalhamento.</p>
