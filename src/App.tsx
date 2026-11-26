@@ -556,7 +556,7 @@ export default function App() {
       const { detalhar } = await import('./engine/pranchasArm.ts'), { paginaParaSvg } = await import('./engine/folhaDoc.ts');
       const E = { obra: projNome || nome.replace(/\.(dxf|dwg|pdf|json)$/i, ''), resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', pavs: ativos.map(p => ({ id: p.id, nome: p.nome })),
         ps: laje ? [] : [peca as Painel], pl: laje ? [peca as PainelLaje] : [], vigas: calc.vigas.filter(v => v.tipo === 'trelica'), regras,
-        espLaje: (q: PainelLaje) => espDaLaje(aj)(q) ?? regras.lajeEsp ?? 0.14, codP: (q: Painel) => codigoParede(q, sg), codL: (q: PainelLaje) => codigoLaje(q, sg),
+        espLaje: (q: PainelLaje) => espDaLaje(aj)(q) ?? regras.lajeEsp ?? 0.14, balanco: balancoLaje(calc.ps), codP: (q: Painel) => codigoParede(q, sg), codL: (q: PainelLaje) => codigoLaje(q, sg),
         liberado: aj.arm?.liberado ?? true, trelBorda16: aj.arm?.trelBorda16 ?? true, revisao: aj.arm?.revisao };
       const d = detalhar(E, laje), pg = d.paginas[1] ?? d.paginas[0];
       return { svg: paginaParaSvg(pg), resumo: `Folha do tipo desta peça · aço ${br(d.kg, 1)} kg${d.avisos.length ? ' · ' + d.avisos.join(' · ') : ''}` };
@@ -571,6 +571,7 @@ export default function App() {
     if (l) {
       const e = espDaLaje(aj)(l) ?? regras.lajeEsp ?? 0.14, kg = pesoLaje(l, regras, e);
       return { titulo: `${cod} · laje`, ferragem: ferragem(true, l), linhas: [['Comprimento × largura', `${fmt(l.comp)} × ${fmt(l.larg)} m`], ['Espessura', `${Math.round(e * 100)} cm${l.comp > 4 + 1e-6 && e >= 0.16 - 1e-6 ? ' (vão acima de 4 m)' : ''}`],
+        ['Vão entre paredes', (() => { const [b0, b1] = balancoLaje(calc.ps)(l); return b0 + b1 > 0.05 ? `${fmt(l.comp - b0 - b1)} m + balanço ${fmt(b0)} / ${fmt(b1)} m` : `${fmt(l.comp)} m (sem balanço)`; })()],
         ['Treliça', trelicaDaEsp(e)], ['Sentido', l.sentido === 'H' ? 'horizontal' : 'vertical'], ['Área', `${fmt(l.comp * l.larg)} m²`], ['Peso', `${br(kg, 0)} kg`], ['Pavimento', nomePav(l.pav)]] };
     }
     return null;
@@ -1475,6 +1476,19 @@ const REGRA_TRELICA = 'até 15 cm TG8 · 16 cm TG12 · 20 cm TG16 · 25 cm ou ma
 const espDoAmb = (aj: Ajustes) => (amb: string) => aj.lajeEspAmb?.[amb] ?? ((aj.laje16 || []).includes(amb) ? 0.16 : undefined) ?? aj.lajeEspPav?.[amb.split('|')[0]];
 // painel de laje: chave estável pelo ambiente e pelo canto (a numeração muda); espessura do painel vale mais que a do ambiente
 const chaveLaje = (p: { amb: string; x0?: number; y0?: number }) => `${p.amb}@${(p.x0 ?? 0).toFixed(1)},${(p.y0 ?? 0).toFixed(1)}`;
+// balanço da laje em cada ponta do vão (beiral): do começo do painel até a primeira parede que apoia, e da última parede até o fim
+const balancoLaje = (ps: Painel[]) => (p: PainelLaje): [number, number] => {
+  const o = p.sentido === 'V' ? 'H' : 'V', [s0, s1] = p.sentido === 'V' ? [Math.min(p.y0, p.y1), Math.max(p.y0, p.y1)] : [Math.min(p.x0, p.x1), Math.max(p.x0, p.x1)];
+  const [t0, t1] = p.sentido === 'V' ? [Math.min(p.x0, p.x1), Math.max(p.x0, p.x1)] : [Math.min(p.y0, p.y1), Math.max(p.y0, p.y1)];
+  // linhas de painel (paredes e tiras em cima de outra laje) embaixo da laje: apoio onde os painéis cobrem pelo menos metade da largura
+  const lin = new Map<number, number>();
+  for (const q of ps) { if (q.pav !== p.pav || q.o !== o || q.c <= s0 - 0.05 || q.c >= s1 + 0.05) continue;
+    const ov = Math.min(Math.max(q.a, q.b), t1) - Math.max(Math.min(q.a, q.b), t0); if (ov <= 0) continue; const k = Math.round(q.c * 20) / 20; lin.set(k, (lin.get(k) ?? 0) + ov); }
+  const cs = [...lin].filter(([, v]) => v >= 0.5 * (t1 - t0)).map(([c]) => c);
+  if (cs.length < 2) return [0, 0];
+  const a = Math.min(...cs), b = Math.max(...cs);
+  return [Math.max(0, a - s0 - 0.15), Math.max(0, s1 - b - 0.15)];   // até 15 cm além do eixo é apoio (espessura da parede + encaixe), não balanço
+};
 // regra: laje com vão (comprimento do painel, no sentido da treliça) acima de 4,00 m vai para 16 cm — o que foi ajustado à mão vale por cima
 const VAO_LAJE16 = 4.0;
 const espDaLaje = (aj: Ajustes) => (p: { amb: string; x0?: number; y0?: number; comp?: number }) => aj.lajeEspPainel?.[chaveLaje(p)] ?? espDoAmb(aj)(p.amb) ?? ((p.comp ?? 0) > VAO_LAJE16 + 1e-6 ? 0.16 : undefined);
@@ -2079,7 +2093,7 @@ function CardArmacao({ ativos, calc, regras, aj, setAj, nome }: { ativos: Pavime
       const sg = siglas(ativos);
       const E = { obra, resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', pavs: ativos.map(p => ({ id: p.id, nome: p.nome })),
         ps: calc.ps.filter(p => pavs.includes(p.pav)), pl: calc.pl.filter(p => pavs.includes(p.pav)), vigas: calc.vigas.filter(v => v.tipo === 'trelica'), regras,
-        espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, codP: (p: Painel) => codigoParede(p, sg), codL: (p: PainelLaje) => codigoLaje(p, sg), liberado, trelBorda16, revisao };
+        espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, balanco: balancoLaje(calc.ps), codP: (p: Painel) => codigoParede(p, sg), codL: (p: PainelLaje) => codigoLaje(p, sg), liberado, trelBorda16, revisao };
       const arq = titulo + (nomesPav.length < ativos.length ? ' - ' + nomesPav.join(' ') : '');
       if (o2 === 'paredes' || o2 === 'lajes') {
         const d = detalhar(E, o2 === 'lajes');

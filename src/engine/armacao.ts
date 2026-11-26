@@ -13,7 +13,7 @@ export interface Vao { x0: number; x1: number; y0: number; y1: number; porta: bo
 export interface Trel { n: number; vert: boolean; pos: number; i0: number; i1: number; tipo: string; borda?: boolean }
 // reforço da laje embaixo de parede do pavimento de cima (sem parede embaixo): faixa maciça (sem isopor) + ferro extra embaixo
 export interface Reforco { modo: 'longo' | 'atravessa'; pos: number; i0: number; i1: number; faixa: number; n: number; bit: number; porNerv: boolean; q: number; Md: number; Vd: number; ok: boolean; macico: boolean; txt: string }
-export interface PecaArm { L: number; Hx: (x: number) => number; ab: Vao[]; slots: [number, number][]; zon: [number, number][]; bars: Barra[]; sobParede: number[]; T: Trel[]; esp: number; ref?: Reforco[]; bitPos?: number }   // bitPos: positivo (L1 e L4) escolhido pela verificação
+export interface PecaArm { L: number; Hx: (x: number) => number; ab: Vao[]; slots: [number, number][]; zon: [number, number][]; bars: Barra[]; sobParede: number[]; T: Trel[]; esp: number; ref?: Reforco[]; bitPos?: number; bal?: [number, number] }   // bitPos: positivo (L1 e L4) escolhido pela verificação
 export interface VigaTrel { id: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; n?: number }
 
 export const COB = 0.025, PASSO_H = 0.25, PASSO_T = 0.30, ESTR = 0.20, PIL = 0.12, NEG_FRAC = 0.25, FAIXA_PAREDE = 0.20;
@@ -206,9 +206,12 @@ function secao(esp = 14, b = 15, cap = 2.5, bw = 3) {
 }
 export const pp = (esp = 0.14, il = 0.12, ia = 0.09, ie = 0.03) => (esp - il / (il + ie) * ia) * 25;   // kN/m² descontando o isopor
 export const lb = (phi: number, aco = 50) => phi / 4 * ((aco === 50 ? fyd50 : fyd60) * 10) / (fbd * 10);   // mm
-export function verLaje(L: number, W: number, nNerv: number, esp: number, bitPos = 6.3, apoio = 0.06) {
+// bal: balanço em cada ponta (laje que passa da parede, ex.: beiral) — L é o comprimento do painel; o vão é entre as paredes
+export function verLaje(Lp: number, W: number, nNerv: number, esp: number, bitPos = 6.3, apoio = 0.06, bal: [number, number] = [0, 0]) {
   const gancho = esp - 0.05, g = pp(esp) + G_REV, q = Q_USO, pd = GF * (g + q);
-  const Md = pd * W * L ** 2 / 8 * 100, Vd = pd * W * L / 2, d = esp * 100 - 2.5 - bitPos / 20, b = W * 100;
+  const [b0, b1] = bal, L = Math.max(0.5, Lp - b0 - b1);
+  // momento no meio do vão: (g+q) no vão menos o alívio dos balanços só com o peso próprio (a favor da segurança, sem sobrecarga na ponta)
+  const Md = Math.max(pd * W * L ** 2 / 8 - GF * g * W * (b0 ** 2 + b1 ** 2) / 4, pd * W * L ** 2 / 8 * 0.6) * 100, Vd = pd * W * (L / 2 + Math.max(b0, b1)), d = esp * 100 - 2.5 - bitPos / 20, b = W * 100;
   const aa = 0.85 * fcd * b * 0.8, disc = d * d - 4 * 0.4 * Md / aa, x = disc > 0 ? (d - Math.sqrt(disc)) / 0.8 : 99, z = d - 0.4 * x;
   const As_nec = Md / (fyd50 * z), As_ef = (nNerv + 4) * AS[String(bitPos)];
   const s1 = secao(esp * 100, 15, (esp * 100 - 9) / 2), nfx = Math.max(1, Math.round(W / 0.15)), As_min = 0.0015 * s1.A * nfx;
@@ -295,8 +298,8 @@ export const kgmDe = (k: string, laje: boolean, tg: string, pos?: number) => fam
 export const kgRel = (rel: Relacao, laje: boolean, tg: string, pos?: number) => rel.reduce((s, [k, L]) => s + L.reduce((t, [c, q]) => t + c / 100 * q * kgmDe(k, laje, tg, pos), 0), 0);
 // positivo da laje: o menor entre ø6,3, ø8,0 e ø10,0 que passa na verificação (flexão, flecha, cortante e ancoragem)
 export const BITS_POS = [6.3, 8, 10];
-export function escolherPositivo(a: PecaArm, esp: number, apoio = 0.06): { bit: number; ok: boolean } {
+export function escolherPositivo(a: PecaArm, esp: number, apoio = 0.06, bal: [number, number] = [0, 0]): { bit: number; ok: boolean } {
   const nn = new Set(a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, Lc = a.Hx(0);
-  for (const bit of BITS_POS) { const c = verLaje(Lc, a.L, nn, esp, bit, apoio); if (c.ok_As && c.ok_f && c.ok_V && c.ok_anc) return { bit, ok: true }; }
+  for (const bit of BITS_POS) { const c = verLaje(Lc, a.L, nn, esp, bit, apoio, bal); if (c.ok_As && c.ok_f && c.ok_V && c.ok_anc) return { bit, ok: true }; }
   return { bit: BITS_POS[BITS_POS.length - 1], ok: false };
 }

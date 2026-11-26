@@ -10,7 +10,7 @@ import {
 
 export interface EntradaArm {
   obra: string; resp: string; pavs: { id: string; nome: string }[]; ps: Painel[]; pl: PainelLaje[]; vigas: VigaTrel[]; regras: Regras;
-  espLaje: (p: PainelLaje) => number; codP: (p: Painel) => string; codL: (p: PainelLaje) => string; liberado: boolean; trelBorda16: boolean; revisao?: string;   // número da revisão das folhas (padrão 00)
+  espLaje: (p: PainelLaje) => number; balanco?: (p: PainelLaje) => [number, number]; codP: (p: Painel) => string; codL: (p: PainelLaje) => string; liberado: boolean; trelBorda16: boolean; revisao?: string;   // número da revisão das folhas (padrão 00)
 }
 type Tipo = { g: (Painel | PainelLaje)[]; a: PecaArm; rel: Relacao; kg: number; vol: number; area: number; alc: [number, number, number][]; ntrab: number; tg: string; esp: number };
 export interface LinhaAco { pav: string; codigo: string; tipo: string; pos: string; bit: number | string; qtd: number; c: number }   // c em m
@@ -260,8 +260,9 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
   const vigasT = E.vigas;
   if (laje) for (const p of E.pl) {
     const esp = E.espLaje(p), tg = tgDaEsp(esp), T = trelicasDoPainel(p, vigasT, tg), a = armarLaje(p, T, R, esp, E.trelBorda16 && esp >= 0.16 - 1e-6, cargaLinha(p.pav));
-    a.bitPos = escolherPositivo(a, esp, R.lajeApoio ?? 0.06).bit;   // positivo pela verificação (ø6,3 → ø8,0 → ø10,0)
-    const k = JSON.stringify([esp, a.bitPos, Math.round(p.larg * 100), Math.round(p.comp * 100), p.dente ?? null, a.T.map(t => [t.vert, Math.round(t.pos * 100), Math.round(t.i0 * 100), Math.round(t.i1 * 100)]).sort(), (a.ref ?? []).map(r => r.txt)]);
+    a.bal = E.balanco?.(p) ?? [0, 0];
+    a.bitPos = escolherPositivo(a, esp, R.lajeApoio ?? 0.06, a.bal).bit;   // positivo pela verificação (ø6,3 → ø8,0 → ø10,0)
+    const k = JSON.stringify([esp, a.bitPos, a.bal.map(v => Math.round(v * 100)), Math.round(p.larg * 100), Math.round(p.comp * 100), p.dente ?? null, a.T.map(t => [t.vert, Math.round(t.pos * 100), Math.round(t.i0 * 100), Math.round(t.i1 * 100)]).sort(), (a.ref ?? []).map(r => r.txt)]);
     const g = grupos.get(k); if (g) { g.g.push(p); continue; }
     const area = p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), w = pesoPeca(p.larg, p.comp, area, [], esp, R);
     const fIso = (R.isoporLarg ?? 0.12) / ((R.isoporLarg ?? 0.12) + (R.isoporEspaco ?? 0.03)) * (R.isoporAlt ?? 0.09);   // m³ de isopor por m² de laje
@@ -282,7 +283,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
   const ver = tipos.map(t => {
     const L = t.a.L, Lc = t.a.Hx(0);
     if (laje) {
-      const nn = new Set(t.a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, c = verLaje(Lc, L, nn, t.esp, t.a.bitPos ?? PD.L1[0], R.lajeApoio ?? 0.06), mh = manuseio(Lc * 0.6, t.esp);
+      const nn = new Set(t.a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, c = verLaje(Lc, L, nn, t.esp, t.a.bitPos ?? PD.L1[0], R.lajeApoio ?? 0.06, t.a.bal), mh = manuseio(Lc * 0.6, t.esp);
       return { ok: c.ok_As && c.ok_f && c.ok_V && c.ok_anc && mh.ok, txt: `Md ${br(c.Md)} kN.m · As ${br(c.As_nec)} <= ${br(c.As_ef)} cm² · flecha ${br(c.f)} <= ${br(c.flim)} cm · Vd ${br(c.Vd)} <= ${br(c.VRd)} kN/nerv. · ancoragem ${br(c.ancor_disp / 10, 1)} >= ${br(c.lb_min / 10, 0)} cm · içamento ${br(mh.sigma)} <= ${br(mh.lim)} MPa` };
     }
     const pvi = Math.min(...t.g.map(q => idxPav.get(q.pav) ?? 0)), c = verParede(Lc, t.esp, cargaParede(pvi, Lc)), mh = manuseio(Lc, t.esp);
