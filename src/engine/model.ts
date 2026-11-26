@@ -45,6 +45,7 @@ export interface Regras {
   orcParede?: number; orcLaje?: number; orcCinza?: number; orcAreaCinza?: number; orcValor1?: number; orcValor2?: number;
   orcCliente?: string; orcObra?: string; orcValidade?: number; orcInicio?: string; orcPrazos?: string; orcPagamento?: string;
   orcEspParede?: number; orcEspLaje?: number;
+  juntaEncontro?: number;  // junta entre o painel que para no encontro e o painel da parede que cruza: 0,04 de cada lado (14 + 4 + 4 = 22 cm)
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
   motorFixo?: boolean;     // o usuário desligou o cálculo novo neste projeto (senão todo projeto abre no cálculo atual)
   paredeDominante?: boolean;  // parede com linha de detalhe junto (soleira, bancada): vale a espessura da maior parte (projetos novos; os antigos ligam na aba Regras)
@@ -83,6 +84,8 @@ export function regrasDoSalvo(s?: Partial<Regras>): Regras {
 }
 
 // largura máxima do painel pela altura: parede mais alta que o pé-direito comum (3,00) tem limite menor
+// encontro: o painel da parede que cruza (isopor + 2 capas = 14 cm) + junta de 4 cm de cada lado = 22 cm entre os painéis que param ali
+export const meiaEncontro = (r: Regras) => ((r.isoporAlt ?? 0.09) + 2 * (r.capeamento ?? 0.025)) / 2 + (r.juntaEncontro ?? 0.04);
 export const larguraMaxDe = (r: Regras, H: number) => r.larguraAlta && H > (r.alturaAlta ?? 3) + 1e-6 ? Math.min(r.larguraMax, r.larguraAlta) : r.larguraMax;
 
 export const REGRAS_PADRAO: Regras = {
@@ -796,7 +799,7 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<stri
       if (r.emendaNoEncontro !== false && (r.motor ?? 1) >= 2) {
         const tol = t.esp / 2 + 0.12;
         const js = (todos ?? ts).filter(x => x !== t && x.pav === t.pav && x.o !== t.o && x.s - tol <= t.c && t.c <= x.e + tol && x.c > sa + 0.5 && x.c < sb - 0.5)
-          .map(x => ({ a: x.c - x.esp / 2 + r.folga, b: x.c + x.esp / 2, c: x.c })).sort((x, y) => x.c - y.c);
+          .map(x => ({ a: x.c - meiaEncontro(r) + r.folga, b: x.c + meiaEncontro(r), c: x.c })).sort((x, y) => x.c - y.c);
         for (const j of js) {
           if (fc.some(f => f.a - 0.3 < j.b && j.a < f.b + 0.3)) continue;   // já tem corte ali
           if (ops.some(o => o.x0 < j.b && j.a < o.x1)) continue;   // cairia na porta/janela (encostada no encontro: vão até a ponta do painel)
@@ -883,7 +886,15 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<stri
         // vão entre eles, ou parede que chega no encontro (atravessa, T ou L — o painel dela ocupa o espaço): não é emenda,
         // a junta de no máximo 17 cm é só para dois painéis seguindo alinhados sem outra parede ali
         if (VI.some(v => v.pav === p.pav && v.o === p.o && Math.abs(v.c - p.c) < 0.05 && v.a < q.a && v.b > fim)) continue;
-        if (P.some(x => x.pav === p.pav && x.o !== p.o && x.c > fim - 0.02 && x.c < q.a + 0.02 && x.a < p.c + 0.3 && x.a + x.larg > p.c - 0.3)) continue;
+        const xc = P.find(x => x.pav === p.pav && x.o !== p.o && x.c > fim - 0.02 && x.c < q.a + 0.02 && x.a < p.c + 0.3 && x.a + x.larg > p.c - 0.3);
+        if (xc) {
+          // encontro: os dois painéis param a 4 cm do painel que cruza (14 + 4 + 4 = 22 cm entre eles), centrado na parede que cruza
+          const m = meiaEncontro(r), fa = xc.c - m, fb = xc.c + m, d = fb - q.a, fq = q.a + q.larg;
+          const cabe = fa - p.a >= 0.3 && fq - fb >= 0.3 && fa - p.a <= larguraMaxDe(r, p.H) + 1e-6 && fq - fb <= larguraMaxDe(r, q.H) + 1e-6
+            && p.recortes.every(rc => rc.dl + rc.w <= fa - p.a + 1e-6) && q.recortes.every(rc => rc.dl - d >= -1e-6);
+          if (cabe && Math.abs(gap - 2 * m) > 0.005) { p.larg = fa - p.a; q.a = fb; q.larg = fq - fb; for (const rc of q.recortes) rc.dl -= d; }
+          continue;
+        }
         const e = gap - max;
         let ep = e / 2, eq = e / 2;
         // fechamento do encontro (parede que muda de altura ali): os painéis ficam nas faces da parede que cruza, não crescem
@@ -897,6 +908,8 @@ export function paineis(ts: Trecho[], r: Regras, aj: Ajustes, Halto: Record<stri
         if (q.aviso === 'n fabricar' && q.larg >= r.naoFabricar) q.aviso = undefined;
       }
     }
+    // a ponta e o comprimento acompanham a largura nova (planta de paredes, cotas e 3D com o mesmo número)
+    for (const p of P) if (p.b > p.a) { p.b = p.a + p.larg + r.folga; p.comp = p.b - p.a; }
   }
   return { paineis: P, vaos: VI };
 }

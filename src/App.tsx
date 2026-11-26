@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
-import { areaPainel, larguraMaxDe, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, chaveNumParede, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
+import { areaPainel, larguraMaxDe, meiaEncontro, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, chaveNumParede, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
 import type { Ajustes, Esquadria, Pavimento, Regras, Painel, Trecho, VaoInteiro, Box, Leitura } from './engine/model.ts';
 import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConteudo, arqSvg, semLetras, lajesConteudo, DEFS_LAJE, vigasConteudo, sequenciaConteudo, escorasConteudo, detalhesSvg, AMBIENTE_RE } from './engine/draw.ts';
 import type { InfoVista } from './engine/draw.ts';
@@ -415,7 +415,7 @@ export default function App() {
         const x = vazio.ts.find(x => x.pav === t.pav && x.o !== t.o && Math.abs(x.c - lim) < 0.3 && x.s <= t.c + 0.1 && x.e >= t.c - 0.1);
         // os dois painéis param nas faces da parede que cruza (o de antes termina na face de baixo, o de depois começa na de cima):
         // o quadrado do encontro fica livre para o fechamento, como nos cantos
-        const e2 = x ? x.esp / 2 : 0, fa = x ? lim - e2 + regras.folga : lim, fb = lim + e2;   // sem parede cruzando embaixo: corte simples
+        const e2 = x ? meiaEncontro(regras) : 0, fa = x ? lim - e2 + regras.folga : lim, fb = lim + e2;   // sem parede cruzando embaixo: corte simples
         if (!(forc[t.id] ??= []).some(f => Math.abs(f.b - fb) < 0.01)) forc[t.id].push({ a: fa, b: fb });   // painel alto: começa/termina na face
         if (!Halto[t.id]) Halto[t.id] = vazio.ps.filter(P => P.trecho === t.id).map(P => ({ a: P.a, b: P.b, H: P.H }));
       }
@@ -784,7 +784,7 @@ export default function App() {
             <h3>Paredes</h3>
             <div className="grade">
               {([
-                ['larguraMax', 'Largura máxima do painel (m)'], ['larguraExcecao', 'Exceção: fabricar painel mais largo até (m) — 0 = não'], ['alturaAlta', 'Parede alta: altura acima de (m)'], ['larguraAlta', 'Parede alta: largura máxima do painel (m) — 0 = não limita'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['isoporLarg', 'Isopor: largura (m)'], ['isoporAlt', 'Isopor: altura (m)'], ['isoporComp', 'Isopor: comprimento da barra (m)'], ['isoporEspaco', 'Concreto entre um isopor e outro (m)'], ['capeamento', 'Capeamento em cima e embaixo do isopor (m)'], ['perda', 'Perda no isopor e no concreto (%)'], ['folga', 'Diminuir de cada painel (m)'],
+                ['larguraMax', 'Largura máxima do painel (m)'], ['larguraExcecao', 'Exceção: fabricar painel mais largo até (m) — 0 = não'], ['alturaAlta', 'Parede alta: altura acima de (m)'], ['larguraAlta', 'Parede alta: largura máxima do painel (m) — 0 = não limita'], ['coluna', 'Coluna entre painéis (m)'], ['espacoMax', 'Espaço máximo entre painéis alinhados (m) — cálculo novo'], ['juntaEncontro', 'Encontro: junta de cada lado do painel que cruza (m) — 0,04 = 22 cm'], ['isoporLarg', 'Isopor: largura (m)'], ['isoporAlt', 'Isopor: altura (m)'], ['isoporComp', 'Isopor: comprimento da barra (m)'], ['isoporEspaco', 'Concreto entre um isopor e outro (m)'], ['capeamento', 'Capeamento em cima e embaixo do isopor (m)'], ['perda', 'Perda no isopor e no concreto (%)'], ['folga', 'Diminuir de cada painel (m)'],
                 ['boneca', 'Boneca de transporte nas laterais e embaixo (m)'], ['acrescimoLargura', 'Vão de porta/janela maior em (m)'],
                 ['janelaDesce', 'Janela: recorte desce e sobe (m)'], ['espMin', 'Espessura mínima de parede (m)'], ['espMax', 'Espessura máxima de parede (m)'],
                 ['minParede', 'Trecho mínimo de parede (m)'], ['naoFabricar', 'Marcar "n fabricar" abaixo de (m)'],
