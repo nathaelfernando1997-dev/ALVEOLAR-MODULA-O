@@ -14,7 +14,8 @@ export interface Props3D {
   espParede: number;
   sg: Map<string, string>;
   peLaje?: (p: PainelLaje) => number | undefined;
-  pilares?: { pav: string; nome: string; x0: number; x1: number; y0: number; y1: number }[];   // pilares de concreto moldados no local   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
+  pilares?: { pav: string; nome: string; x0: number; x1: number; y0: number; y1: number }[];   // pilares de concreto moldados no local
+  vigas?: { pav: string; nome: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; alt: number }[];   // vigas de concreto (topo no topo da laje)   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
   fund?: Fund3D | null;   // fundação do térreo: blocos, estacas e base de canaleta
   info?: (cod: string) => InfoPeca | null;   // painel lateral da peça clicada (medidas, espessura, peso e o detalhamento da ferragem)
 }
@@ -22,7 +23,7 @@ export interface InfoPeca { titulo: string; linhas: [string, string][]; ferragem
 export interface Fund3D { pav: string; pts: { n: number; x: number; y: number; tipo: string; par?: number; cobre?: [number, number][] }[]; lado: number; alt: number; furo: number; comp: number;
   can: { o: 'H' | 'V'; c: number; a: number; b: number; cortada: boolean }[] | null; canAlt: number }
 
-type Caixa = { pav: string; tipo: 'parede' | 'laje'; cod: string; txt: string; ab: boolean; grossa: boolean; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number; topo?: [number, number] };   // topo: parede com topo inclinado (telhado), altura na ponta de menor e de maior coordenada
+type Caixa = { pav: string; tipo: 'parede' | 'laje' | 'viga'; cod: string; txt: string; ab: boolean; grossa: boolean; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number; topo?: [number, number] };   // topo: parede com topo inclinado (telhado), altura na ponta de menor e de maior coordenada
 
 // peças em caixas (parede com abertura vira pedaços em volta do vão)
 function caixas(o: Props3D): Caixa[] {
@@ -60,6 +61,12 @@ function caixas(o: Props3D): Caixa[] {
     for (const pl of (o.pilares || []).filter(q => q.pav === pav.id)) {
       const zt = pav.altura + Math.max(0, ...lajes.map(o.espLaje)), cod = `${sig}-pilar ${pl.nome}`;
       out.push({ pav: pav.id, tipo: 'parede', cod, txt: `${cod} · pilar ${Math.round((pl.x1 - pl.x0) * 100)} × ${Math.round((pl.y1 - pl.y0) * 100)} cm · ${pav.nome}`, ab: true, grossa: false, x0: pl.x0 + dx, x1: pl.x1 + dx, y0: pl.y0 + dy, y1: pl.y1 + dy, z0: zp, z1: zp + zt });
+    }
+    // vigas: topo no nível do topo da laje, na largura e altura da viga
+    for (const v of (o.vigas || []).filter(q => q.pav === pav.id)) {
+      const zt = zp + pav.altura + Math.max(0, ...lajes.map(o.espLaje)), cod = `${sig}-${v.nome}`, h = v.larg / 2;
+      const [x0, x1, y0, y1] = v.o === 'H' ? [v.a, v.b, v.c - h, v.c + h] : [v.c - h, v.c + h, v.a, v.b];
+      out.push({ pav: pav.id, tipo: 'viga', cod, txt: `${cod} · viga ${Math.round(v.larg * 100)} × ${Math.round(v.alt * 100)} cm · ${(v.b - v.a).toFixed(2).replace('.', ',')} m · ${pav.nome}`, ab: false, grossa: false, x0: x0 + dx, x1: x1 + dx, y0: y0 + dy, y1: y1 + dy, z0: zt - v.alt, z1: zt });
     }
     for (const q of lajes) {
       const e = o.espLaje(q), cod = `${sig}-L${q.num}`;
@@ -136,13 +143,13 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     const box = new THREE.BoxGeometry(1, 1, 1), aresta = new THREE.EdgesGeometry(box);
     // polygonOffset: as faces ficam um tico atrás das arestas desenhadas (sem a aresta piscar em cima da face)
     const mat = (c: number, r = 0.92) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
-    const M = { parede: mat(0xece6db), ab: mat(0xddd3c2), laje: mat(0xa7afb8, 0.85), laje16: mat(0x87929e, 0.85), sel: mat(0x2f7de1, 0.6) };
+    const M = { parede: mat(0xece6db), ab: mat(0xddd3c2), laje: mat(0xa7afb8, 0.85), laje16: mat(0x87929e, 0.85), viga: mat(0xb8ae9c, 0.85), sel: mat(0x2f7de1, 0.6) };
     const EM = new THREE.LineBasicMaterial({ color: escuro ? 0x0d1014 : 0x55524c, transparent: true, opacity: escuro ? 0.5 : 0.32 });
     const grupos = new Map<string, { p: THREE.Group; l: THREE.Group }>(); const pick: THREE.Mesh[] = []; const gF = new THREE.Group(); S.add(gF);
     for (const pv of props.pavs) { const g = { p: new THREE.Group(), l: new THREE.Group() }; grupos.set(pv.id, g); S.add(g.p, g.l); }
     const G = 0.006, bb = new THREE.Box3();
     for (const c of cx) {
-      const m = new THREE.Mesh(box, c.tipo === 'laje' ? (c.grossa ? M.laje16 : M.laje) : c.ab ? M.ab : M.parede);
+      const m = new THREE.Mesh(box, c.tipo === 'viga' ? M.viga : c.tipo === 'laje' ? (c.grossa ? M.laje16 : M.laje) : c.ab ? M.ab : M.parede);
       // faces que coincidem (topo da parede no nível do topo da laje, paredes que se cruzam no encontro) brigam na tela e a imagem treme:
       // a laje perde 3 mm em cima e embaixo e cada parede fica 1 a 2 mm mais estreita, alternando, para nenhuma face ficar no mesmo plano
       const eL = c.tipo === 'laje' ? 0.003 : 0, eP = c.tipo === 'laje' ? 0 : (c.x1 - c.x0 > c.y1 - c.y0 ? 0.002 : 0.004);
@@ -159,7 +166,7 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       m.castShadow = true; m.receiveShadow = c.tipo === 'laje';   // parede não recebe sombra: a luz rasante fazia riscos (acne) nas faces
       m.userData = { cod: c.cod, txt: c.txt, mat: m.material };
       m.add(new THREE.LineSegments(c.topo ? new THREE.EdgesGeometry(m.geometry) : aresta, EM));
-      const g = grupos.get(c.pav)!; (c.tipo === 'laje' ? g.l : g.p).add(m); pick.push(m);
+      const g = grupos.get(c.pav)!; (c.tipo === 'parede' ? g.p : g.l).add(m); pick.push(m);
       bb.expandByPoint(new THREE.Vector3(c.x0, c.y0, c.z0)).expandByPoint(new THREE.Vector3(c.x1, c.y1, c.z1));
     }
     // numeração: plaquinha colada na face da parede, no canto superior direito de quem olha (nas duas faces); na laje, deitada no meio
@@ -338,7 +345,7 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       </div>
       {medidas.length > 0 && <ol className="v3-medidas">{medidas.map((m, i) => <li key={i}>{m} <button className="v3-x" title="Apagar esta medida" onClick={() => api.current?.apagarMedida(i)}>✕</button></li>)}</ol>}
       <div className="botoes"><input placeholder="Achar peça (ex.: T-P41, T-L49)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
-      <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span>{props.fund && <><span><i style={{ background: '#9c968c' }} />bloco e estaca</span>{props.fund.can && <span><i style={{ background: '#b5aea2' }} />canaleta 14×19 (treliça + concreto)</span>}</>}</div>
+      <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span><span><i style={{ background: '#b8ae9c' }} />viga</span>{props.fund && <><span><i style={{ background: '#9c968c' }} />bloco e estaca</span>{props.fund.can && <span><i style={{ background: '#b5aea2' }} />canaleta 14×19 (treliça + concreto)</span>}</>}</div>
       <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · clique numa peça para ver o detalhamento.</p>
     </aside>
     <div className="v3-tela" ref={ref}>{sel && <div className="v3-info">{sel}</div>}</div>

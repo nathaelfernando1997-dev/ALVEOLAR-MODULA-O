@@ -623,7 +623,7 @@ export default function App() {
     }
     return null;
   }, [ativos, calc, regras, aj, projNome, nome, espParede3d]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), pilares: aj.pilares, peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
+  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), pilares: aj.pilares, vigas: calc.vigas.filter(v => v.tipo !== 'trelica').map(v => ({ pav: v.pav, nome: `V${v.n}`, o: v.o, c: v.c, a: v.a, b: v.b, larg: regras.vigaLargura ?? 0.15, alt: v.altura ?? regras.vigaAltura ?? 0.3 })), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
     [ativos, ativosT, fund3d, info3d, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
