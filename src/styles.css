@@ -261,9 +261,29 @@ rect.hit:hover { fill: rgba(204, 0, 204, .2); }
 .so-etq textarea { width: 100%; font: inherit; }
 .pavs-imp { align-items: center; gap: 12px; margin-top: 6px; }
 .pavs-imp label { display: inline-flex; align-items: center; gap: 4px; }
-.vista3d { display: flex; flex-direction: column; gap: 8px; }
-.v3-painel .botoes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
-.v3-painel input:not([type=range]) { min-width: 220px; }
+/* 3D: barra de ferramentas à esquerda, tela no meio e o detalhe da peça à direita (cabe na tela cheia) */
+.vista3d { display: grid; grid-template-columns: 250px minmax(0, 1fr) auto; gap: 10px; align-items: stretch; }
+.vista3d.cheia { background: #f4f6f8; padding: 10px; height: 100vh; box-sizing: border-box; }
+.vista3d.cheia .v3-tela { height: auto; min-height: 0; }
+.v3-barra { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; max-height: min(72vh, 820px); padding-right: 4px; }
+.vista3d.cheia .v3-barra { max-height: none; }
+.v3-barra h4 { margin: 8px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #5b6570; }
+.v3-barra .botoes, .v3-det .botoes { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0; }
+.v3-barra .botoes button.on, .v3-det .botoes button.on { background: #1f4e79; border-color: #1f4e79; color: #fff; }
+.v3-barra input:not([type=range]) { min-width: 0; flex: 1; }
+.v3-cheia { font-weight: 600; }
+.v3-medidas { margin: 0; padding-left: 20px; font-size: 12px; color: #a33a0a; }
+.v3-det { width: 340px; max-height: min(72vh, 820px); overflow-y: auto; border: 1px solid #d8dde3; border-radius: 10px; padding: 10px; background: #fff; font-size: 13px; }
+.vista3d.cheia .v3-det { max-height: none; width: 420px; }
+.v3-det-topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 15px; }
+.v3-det-topo button { border: 0; background: none; font-size: 16px; cursor: pointer; }
+.v3-det table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.v3-det td { padding: 3px 4px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+.v3-det td:first-child { color: #5b6570; width: 42%; }
+.v3-ferr { border: 1px solid #d8dde3; border-radius: 6px; background: #fff; cursor: zoom-in; margin: 6px 0; overflow: hidden; }
+.v3-ferr svg { width: 100%; height: auto; display: block; }
+@media (max-width: 900px) { .vista3d { grid-template-columns: 1fr; } .v3-barra, .v3-det { max-height: none; width: auto; } }
+@media (prefers-color-scheme: dark) { .vista3d.cheia { background: #14181d; } .v3-det { background: #1b2027; border-color: #2c333c; } .v3-det td { border-color: #2c333c; } .v3-barra h4, .v3-det td:first-child { color: #9aa4ae; } }
 .v3-sep { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .v3-sep input { flex: 1; max-width: 320px; }
 .v3-leg { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; opacity: .85; }

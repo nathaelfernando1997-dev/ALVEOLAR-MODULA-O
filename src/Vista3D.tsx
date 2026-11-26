@@ -15,7 +15,9 @@ export interface Props3D {
   sg: Map<string, string>;
   peLaje?: (p: PainelLaje) => number | undefined;   // altura da laje no ambiente com pé-direito próprio (sala de 4,5 m)
   fund?: Fund3D | null;   // fundação do térreo: blocos, estacas e base de canaleta
+  info?: (cod: string) => InfoPeca | null;   // painel lateral da peça clicada (medidas, espessura, peso e o detalhamento da ferragem)
 }
+export interface InfoPeca { titulo: string; linhas: [string, string][]; ferragem?: () => Promise<{ svg: string; resumo: string }> }
 export interface Fund3D { pav: string; pts: { n: number; x: number; y: number; tipo: string; par?: number; cobre?: [number, number][] }[]; lado: number; alt: number; furo: number; comp: number;
   can: { o: 'H' | 'V'; c: number; a: number; b: number; cortada: boolean }[] | null; canAlt: number }
 
@@ -66,8 +68,26 @@ export default function Vista3D(props: Props3D) {
   const [verL, setVerL] = useState(true), [verP, setVerP] = useState(true), [sep, setSep] = useState(0);
   const [sel, setSel] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void; gF: THREE.Group; chao: THREE.Mesh; grade: THREE.GridHelper; O: OrbitControls; zc: number } | null>(null);
+  const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void; gF: THREE.Group; chao: THREE.Mesh; grade: THREE.GridHelper; O: OrbitControls; zc: number;
+    tirar: (cod: string) => void; recolocar: () => void; limparTrena: () => void } | null>(null);
   const [verF, setVerF] = useState(true);
+  // tela cheia, ferramenta (selecionar / trena), peça marcada, peças tiradas, medidas e o detalhamento da ferragem
+  const raiz = useRef<HTMLDivElement>(null);
+  const [cheia, setCheia] = useState(false);
+  const [modo, setModo] = useState<'sel' | 'trena'>('sel'); const modoRef = useRef(modo); modoRef.current = modo;
+  const [selCod, setSelCod] = useState<string | null>(null);
+  const [nTiradas, setNTiradas] = useState(0);
+  const [medidas, setMedidas] = useState<string[]>([]);
+  const [ferr, setFerr] = useState<{ cod: string; svg?: string; resumo?: string; erro?: string; carregando?: boolean } | null>(null);
+  const [verDet, setVerDet] = useState(true);
+  useEffect(() => { const f = () => setCheia(document.fullscreenElement === raiz.current); document.addEventListener('fullscreenchange', f); return () => document.removeEventListener('fullscreenchange', f); }, []);
+  const telaCheia = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void raiz.current?.requestFullscreen?.(); };
+  const info = selCod && props.info ? props.info(selCod) : null;
+  const verFerragem = async () => {
+    if (!info?.ferragem || !selCod) return; const cod = selCod; setFerr({ cod, carregando: true });
+    try { const r = await info.ferragem(); setFerr({ cod, ...r }); } catch (e) { setFerr({ cod, erro: (e as Error).message }); }
+  };
+  const abrirGrande = () => { if (!ferr?.svg) return; const u = URL.createObjectURL(new Blob([ferr.svg], { type: 'image/svg+xml' })); window.open(u, '_blank'); };
 
   useEffect(() => {
     const el = ref.current!; const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -141,7 +161,19 @@ export default function Vista3D(props: Props3D) {
     const centrar = () => { const d = raio * 1.5; C.position.set(ctr.x - d * 0.55, ctr.y - d * 1.1, ctr.z + d * 0.7); O.target.copy(ctr); O.update(); };
     centrar();
     const marcar = (cod: string | null) => { for (const m of pick) m.material = m.userData.cod === cod ? M.sel : m.userData.mat; };
-    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc };
+    // peças tiradas da vista (ficam guardadas para recolocar)
+    const tiradas = new Set<THREE.Mesh>();
+    const tirar = (cod: string) => { for (const m of pick) if (m.userData.cod === cod) { m.visible = false; tiradas.add(m); } setNTiradas(new Set([...tiradas].map(m => m.userData.cod)).size); };
+    const recolocar = () => { for (const m of tiradas) m.visible = true; tiradas.clear(); setNTiradas(0); };
+    // trena: dois cliques em qualquer peça (ou no chão) e mostra a distância
+    const gM = new THREE.Group(); S.add(gM); let pA: THREE.Vector3 | null = null;
+    const MM = new THREE.MeshBasicMaterial({ color: 0xd9480f, depthTest: false }), LM = new THREE.LineBasicMaterial({ color: 0xd9480f, depthTest: false }), bola = new THREE.SphereGeometry(0.04, 12, 8);
+    const ponto = (v: THREE.Vector3) => { const b = new THREE.Mesh(bola, MM); b.position.copy(v); b.renderOrder = 10; gM.add(b); };
+    const rotulo = (t: string, v: THREE.Vector3) => {
+      const cv = document.createElement('canvas'); cv.width = 320; cv.height = 96; const g = cv.getContext('2d')!; g.fillStyle = '#d9480f'; g.fillRect(0, 0, 320, 96); g.fillStyle = '#fff'; g.font = 'bold 56px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 160, 50);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false })); sp.scale.set(0.9, 0.27, 1); sp.position.copy(v); sp.renderOrder = 11; gM.add(sp); };
+    const limparTrena = () => { gM.clear(); pA = null; setMedidas([]); };
+    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc, tirar, recolocar, limparTrena };
     const rs = () => { const w = el.clientWidth, h = el.clientHeight; R.setSize(w, h); C.aspect = w / h; C.updateProjectionMatrix(); };
     const ro = new ResizeObserver(rs); ro.observe(el); rs();
     const rc = new THREE.Raycaster(), mp = new THREE.Vector2(); let dn: [number, number] | null = null;
@@ -150,12 +182,23 @@ export default function Vista3D(props: Props3D) {
       if (!dn || Math.hypot(e.clientX - dn[0], e.clientY - dn[1]) > 5) return;
       const r = R.domElement.getBoundingClientRect(); mp.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
       rc.setFromCamera(mp, C);
-      const h = rc.intersectObjects(pick.filter(m => m.parent!.visible), false)[0];
-      const t = h ? (h.object.userData.txt as string) : null; setSel(t); marcar(h ? h.object.userData.cod : null);
+      const vivos = pick.filter(m => m.visible && m.parent!.visible);
+      if (modoRef.current === 'trena') {
+        const h = rc.intersectObjects([...vivos, chao], false)[0]; if (!h) return;
+        const v = h.point.clone(); ponto(v);
+        if (!pA) { pA = v; setSel('Trena: clique no segundo ponto'); return; }
+        const d = pA.distanceTo(v), dh = Math.hypot(v.x - pA.x, v.y - pA.y), dz = Math.abs(v.z - pA.z);
+        const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pA, v]), LM); ln.renderOrder = 10; gM.add(ln);
+        const t = `${d.toFixed(2).replace('.', ',')} m`; rotulo(t, pA.clone().add(v).multiplyScalar(0.5));
+        const txt = `${t} (na horizontal ${dh.toFixed(2).replace('.', ',')} m · desnível ${dz.toFixed(2).replace('.', ',')} m)`;
+        setMedidas(ms => [...ms, txt]); setSel(`Trena: ${txt}`); pA = null; return;
+      }
+      const h = rc.intersectObjects(vivos, false)[0];
+      const t = h ? (h.object.userData.txt as string) : null; setSel(t); marcar(h ? h.object.userData.cod : null); setSelCod(h ? h.object.userData.cod : null);
     };
     R.domElement.addEventListener('pointerdown', down); R.domElement.addEventListener('pointerup', up);
     let raf = 0; const loop = () => { raf = requestAnimationFrame(loop); O.update(); R.render(S, C); }; loop();
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EM.dispose(); chao.geometry.dispose(); grade.dispose(); el.removeChild(R.domElement); api.current = null; };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EM.dispose(); chao.geometry.dispose(); grade.dispose(); el.removeChild(R.domElement); api.current = null; bola.dispose(); MM.dispose(); LM.dispose(); };
   }, [cx, props.pavs, props.fund]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // visibilidade e separação
@@ -173,12 +216,16 @@ export default function Vista3D(props: Props3D) {
     const k = busca.trim().toUpperCase(); if (!k) return;
     const c = cx.find(x => x.cod.toUpperCase() === k); if (!c) { setSel(`Não achei a peça ${k}`); return; }
     setSo(null); setVis(v => ({ ...v, [c.pav]: true })); if (c.tipo === 'laje') setVerL(true); else setVerP(true);
-    api.current?.marcar(c.cod); setSel(c.txt);
+    api.current?.marcar(c.cod); setSel(c.txt); setSelCod(c.cod);
   };
+  useEffect(() => { setFerr(null); setVerDet(true); }, [selCod]);
 
-  return <div className="vista3d">
-    <div className="v3-painel noprint">
-      <div className="botoes">{props.pavs.map(pv => <button key={pv.id} className={(so ? so === pv.id : vis[pv.id] !== false) ? 'on' : ''}
+  const ligado = (pv: string) => so ? so === pv : vis[pv] !== false;
+  return <div className={'vista3d' + (cheia ? ' cheia' : '')} ref={raiz}>
+    <aside className="v3-barra noprint">
+      <button className="v3-cheia" onClick={telaCheia}>{cheia ? '⤡ Sair da tela cheia' : '⤢ Tela cheia'}</button>
+      <h4>Ver</h4>
+      <div className="botoes">{props.pavs.map(pv => <button key={pv.id} className={ligado(pv.id) ? 'on' : ''}
         onClick={() => so ? setSo(pv.id) : setVis(v => ({ ...v, [pv.id]: v[pv.id] === false }))}>{pv.nome}</button>)}</div>
       <div className="botoes">
         <button className={verP ? 'on' : ''} onClick={() => setVerP(!verP)}>Paredes</button>
@@ -187,11 +234,34 @@ export default function Vista3D(props: Props3D) {
         <button className={so ? 'on' : ''} onClick={() => setSo(so ? null : props.pavs[0]?.id ?? null)} title="Mostra um pavimento por vez (toque no nome para trocar)">Um pavimento só</button>
         <button onClick={() => api.current?.centrar()}>Centralizar</button>
       </div>
-      <label className="v3-sep">Separar pavimentos <input type="range" min={0} max={6} step={0.1} value={sep} onChange={e => setSep(+e.target.value)} /></label>
-      <div className="botoes"><input placeholder="Achar peça (ex.: 1-P84, T-L128)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
+      {props.pavs.length > 1 && <label className="v3-sep">Separar pavimentos <input type="range" min={0} max={6} step={0.1} value={sep} onChange={e => setSep(+e.target.value)} /></label>}
+      <h4>Ferramentas</h4>
+      <div className="botoes">
+        <button className={modo === 'sel' ? 'on' : ''} onClick={() => setModo('sel')} title="Clique numa peça para ver medidas, espessura e ferragem">Selecionar</button>
+        <button className={modo === 'trena' ? 'on' : ''} onClick={() => { setModo('trena'); setSel('Trena: clique no primeiro ponto'); }} title="Clique em dois pontos para medir">📏 Trena</button>
+        <button disabled={!selCod} onClick={() => { if (selCod) { api.current?.tirar(selCod); api.current?.marcar(null); setSelCod(null); setSel(null); } }} title="Esconde a peça marcada">Tirar peça</button>
+        <button disabled={!nTiradas} onClick={() => api.current?.recolocar()}>Recolocar tudo{nTiradas ? ` (${nTiradas})` : ''}</button>
+        <button disabled={!medidas.length} onClick={() => api.current?.limparTrena()}>Limpar medidas</button>
+      </div>
+      {medidas.length > 0 && <ol className="v3-medidas">{medidas.map((m, i) => <li key={i}>{m}</li>)}</ol>}
+      <div className="botoes"><input placeholder="Achar peça (ex.: T-P41, T-L49)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
       <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span>{props.fund && <><span><i style={{ background: '#9c968c' }} />bloco e estaca</span>{props.fund.can && <span><i style={{ background: '#b5aea2' }} />canaleta 14×19 (ferro + concreto)</span>}</>}</div>
-      <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · toque numa peça para ver o código.</p>
-    </div>
+      <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · clique numa peça para ver o detalhamento.</p>
+    </aside>
     <div className="v3-tela" ref={ref}>{sel && <div className="v3-info">{sel}</div>}</div>
+    {info && verDet && <aside className="v3-det noprint">
+      <div className="v3-det-topo"><b>{info.titulo}</b><button onClick={() => setVerDet(false)} title="Fechar">✕</button></div>
+      <table><tbody>{info.linhas.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
+      <div className="botoes">
+        {info.ferragem && <button className="on" onClick={verFerragem} disabled={ferr?.carregando}>{ferr?.carregando ? 'Detalhando…' : 'Detalhamento da ferragem'}</button>}
+        <button onClick={() => { if (selCod) { api.current?.tirar(selCod); api.current?.marcar(null); setSelCod(null); setSel(null); } }}>Tirar esta peça</button>
+      </div>
+      {ferr?.cod === selCod && ferr.erro && <p className="aviso">Não consegui detalhar: {ferr.erro}</p>}
+      {ferr?.cod === selCod && ferr.svg && <>
+        <p className="dica">{ferr.resumo}</p>
+        <div className="v3-ferr" onClick={abrirGrande} title="Clique para abrir grande" dangerouslySetInnerHTML={{ __html: ferr.svg }} />
+        <button onClick={abrirGrande}>Abrir grande</button>
+      </>}
+    </aside>}
   </div>;
 }

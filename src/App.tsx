@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDxf } from './engine/dxf.ts';
 import type { Dxf, Prim } from './engine/dxf.ts';
 import { areaPainel, larguraMaxDe, aplicarTelhado, somaAltura, ler, camadaDasParedes, trechos, paineis, numerar, chaveNumParede, resumo, continuarVaos, quantitativos, orcamentoAreas, regrasDoSalvo, REGRAS_PADRAO, AJUSTES_VAZIOS } from './engine/model.ts';
@@ -7,6 +7,7 @@ import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConte
 import type { InfoVista } from './engine/draw.ts';
 import { gerarIfc } from './engine/ifc.ts';
 const Vista3D = lazy(() => import('./Vista3D.tsx'));
+import type { InfoPeca } from './Vista3D.tsx';
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
@@ -548,8 +549,34 @@ export default function App() {
     return { pav: pf.id, pts: pts.map(p => ({ n: p.n, x: p.x, y: p.y, tipo: p.tipo, par: p.par, cobre: p.cobre })), lado: ob.lado, alt: ob.alt, furo: oe.furo, comp: oe.comp,
       can: f.canaleta ? canaletaBase(tf, psf).pecas : null, canAlt: CANALETA.alt };
   }, [ativos, calc, regras, aj]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const props3d = useMemo(() => ({ fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
-    [ativos, ativosT, fund3d, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
+  // 3D: o que aparece no painel lateral ao clicar numa peça (medidas, espessura, peso e a ferragem detalhada do tipo dela)
+  const info3d = useCallback((cod: string): InfoPeca | null => {
+    const sg = siglas(ativos), fmt = (v: number, n = 2) => br(v, n), nomePav = (id: string) => ativos.find(a => a.id === id)?.nome ?? '';
+    const ferragem = (laje: boolean, peca: Painel | PainelLaje) => async () => {
+      const { detalhar } = await import('./engine/pranchasArm.ts'), { paginaParaSvg } = await import('./engine/folhaDoc.ts');
+      const E = { obra: projNome || nome.replace(/\.(dxf|dwg|pdf|json)$/i, ''), resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', pavs: ativos.map(p => ({ id: p.id, nome: p.nome })),
+        ps: laje ? [] : [peca as Painel], pl: laje ? [peca as PainelLaje] : [], vigas: calc.vigas.filter(v => v.tipo === 'trelica'), regras,
+        espLaje: (q: PainelLaje) => espDaLaje(aj)(q) ?? regras.lajeEsp ?? 0.14, codP: (q: Painel) => codigoParede(q, sg), codL: (q: PainelLaje) => codigoLaje(q, sg),
+        liberado: aj.arm?.liberado ?? true, trelBorda16: aj.arm?.trelBorda16 ?? true, revisao: aj.arm?.revisao };
+      const d = detalhar(E, laje), pg = d.paginas[1] ?? d.paginas[0];
+      return { svg: paginaParaSvg(pg), resumo: `Folha do tipo desta peça · aço ${br(d.kg, 1)} kg${d.avisos.length ? ' · ' + d.avisos.join(' · ') : ''}` };
+    };
+    const p = calc.ps.find(q => codigoParede(q, sg) === cod);
+    if (p) {
+      const kg = pesoParede(p, regras);
+      return { titulo: `${cod} · parede`, ferragem: ferragem(false, p), linhas: [['Largura × altura', `${fmt(p.larg)} × ${fmt(p.H)} m`], ['Espessura', `${Math.round(espParede3d * 100 - 1)} cm (isopor ${Math.round((regras.isoporAlt ?? 0.09) * 100)} + 2 capas de ${br((regras.capeamento ?? 0.025) * 100, 1)})`],
+        ['Recortes', p.recortes.length ? p.recortes.map(r => `${r.tipo} ${Math.round(r.w * 100)}×${Math.round(r.h * 100)}`).join(' · ') : 'nenhum'], ['Área', `${fmt(p.larg * p.H)} m²`], ['Peso', `${br(kg, 0)} kg`], ['Pavimento', nomePav(p.pav)], ...(p.aviso ? [['Obs.', p.aviso] as [string, string]] : [])] };
+    }
+    const l = calc.pl.find(q => codigoLaje(q, sg) === cod);
+    if (l) {
+      const e = espDaLaje(aj)(l) ?? regras.lajeEsp ?? 0.14, kg = pesoLaje(l, regras, e);
+      return { titulo: `${cod} · laje`, ferragem: ferragem(true, l), linhas: [['Comprimento × largura', `${fmt(l.comp)} × ${fmt(l.larg)} m`], ['Espessura', `${Math.round(e * 100)} cm${l.comp > 4 + 1e-6 && e >= 0.16 - 1e-6 ? ' (vão acima de 4 m)' : ''}`],
+        ['Treliça', trelicaDaEsp(e)], ['Sentido', l.sentido === 'H' ? 'horizontal' : 'vertical'], ['Área', `${fmt(l.comp * l.larg)} m²`], ['Peso', `${br(kg, 0)} kg`], ['Pavimento', nomePav(l.pav)]] };
+    }
+    return null;
+  }, [ativos, calc, regras, aj, projNome, nome, espParede3d]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
+    [ativos, ativosT, fund3d, info3d, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
   const [notaRev, setNotaRev] = useState('');
