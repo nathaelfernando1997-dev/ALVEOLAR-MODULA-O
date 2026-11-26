@@ -62,7 +62,23 @@ const baixarBin = (nome: string, bin: Uint8Array, tipo: string) => {
 };
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
-type VigaN = Viga & { n: number };
+type VigaN = Viga & { n: number; ini?: number; fim?: number };   // ini/fim: pontas da viga de concreto (face de fora do pilar, dentro da parede de apoio, face da viga que recebe)
+// pontas reais da viga: em cada ponta, o que ela encontra no eixo do apoio — pilar (vai até a face de fora), parede perpendicular
+// (entra na espessura dela: apoio), outra viga (para na face dela) ou nada (meio pilar de 15 cm)
+function pontasViga(v: VigaN, ts: Trecho[], pilares: { x0: number; x1: number; y0: number; y1: number }[], vigas: VigaN[], larg: number) {
+  const ap = v.apoio ?? 0, paredes: { t: Trecho; lado: -1 | 1 }[] = [];
+  const ponta = (u: number, dir: -1 | 1) => {
+    const [px, py] = v.o === 'H' ? [u, v.c] : [v.c, u];
+    const pl = pilares.find(q => px > q.x0 - 0.2 && px < q.x1 + 0.2 && py > q.y0 - 0.05 && py < q.y1 + 0.05 && (v.o === 'H' ? Math.max(q.y0, v.c - larg / 2) < Math.min(q.y1, v.c + larg / 2) : Math.max(q.x0, v.c - larg / 2) < Math.min(q.x1, v.c + larg / 2)));
+    if (pl) return v.o === 'H' ? (dir > 0 ? pl.x1 : pl.x0) : (dir > 0 ? pl.y1 : pl.y0);
+    const w = vigas.find(x => x !== v && x.tipo !== 'trelica' && x.o !== v.o && Math.abs(x.c - u) <= 0.25 && x.a - 0.05 <= v.c && v.c <= x.b + 0.05);
+    if (w) return w.c - dir * larg / 2;
+    const t = ts.find(x => x.o !== v.o && Math.abs(x.c - u) <= 0.25 && x.s - 0.1 <= v.c && v.c <= x.e + 0.1);
+    if (t) { paredes.push({ t, lado: dir }); return t.c + dir * t.esp / 2; }
+    return u + dir * 0.075;
+  };
+  return { a: ponta(v.a + ap, -1), b: ponta(v.b - ap, 1), paredes };
+}
 interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; escadas: { pav: string; chave: string; e: Escada; ligada: boolean; viga?: { o: 'H' | 'V'; c: number; s: number; e: number } }[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[]; encaixes: Record<string, { x: number; y: number }> }
 
 // desenhos do arquivo (plantas, cortes) e seus papéis, pela camada das paredes escolhida
@@ -572,6 +588,26 @@ export default function App() {
       if (desceu.has(p)) { desceu.delete(p); for (const r of p.recortes) r.base = Math.max(0, r.base - (p.desce ?? 0)); delete p.desce; p.aviso = p.aviso?.split(' · ').filter(x => !x.includes('(vazio)')).join(' · ') || undefined; }
       somaAltura(p, para - p.H); p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(para)} m: apoia em cima da viga V${v.n}`;
     }
+    // vigas de concreto: pontas reais e encaixe no topo da parede de apoio
+    // (viga com seção definida que desce abaixo do topo da parede: o painel ganha um recorte no topo do tamanho da viga, onde ela apoia)
+    for (const v of vazio.vigas) {
+      if (v.tipo === 'trelica') continue;
+      const pav = ativos.find(q => q.id === v.pav); if (!pav) continue;
+      const sec = aj.vigaSecao?.[v.id], larg = sec?.larg ?? regras.vigaLargura ?? 0.15, alt = sec?.alt ?? v.altura ?? regras.vigaAltura ?? 0.3;
+      const pt = pontasViga(v, vazio.ts.filter(t => t.pav === v.pav), (aj.pilares || []).filter(q => q.pav === v.pav), vazio.vigas.filter(x => x.pav === v.pav), larg);
+      v.ini = pt.a; v.fim = pt.b;
+      const fundo = pav.altura + (sec?.abaixo ? 0 : espLaje) - alt;   // fundo da viga, a partir do piso do pavimento
+      if (!sec) continue;   // encaixe só nas vigas com a seção definida pelo engenheiro (as sugeridas não mexem na fabricação)
+      for (const { t } of pt.paredes) for (const P of vazio.ps) {
+        if (P.pav !== v.pav || P.o !== t.o || Math.abs(P.c - t.c) > 0.05) continue;
+        const a0 = Math.min(P.a, P.b), a1 = a0 + P.larg, f0 = v.c - larg / 2 - 0.01, f1 = v.c + larg / 2 + 0.01;
+        if (f1 <= a0 || f0 >= a1) continue;
+        const desce = P.H - fundo; if (desce < 0.02) continue;
+        const dl = Math.max(0, f0 - a0), w = Math.min(a1, f1) - a0 - dl; if (w < 0.05) continue;
+        P.recortes.push({ tipo: `apoio da ${sec?.nome || `V${v.n}`}`, dl, w, base: P.H - desce, h: desce });
+        P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `recorte de ${Math.round(w * 100)} × ${Math.round(desce * 100)} cm no topo: apoio da viga ${sec?.nome || `V${v.n}`}`;
+      }
+    }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
   const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
@@ -623,7 +659,7 @@ export default function App() {
     }
     return null;
   }, [ativos, calc, regras, aj, projNome, nome, espParede3d]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), pilares: aj.pilares, vigas: calc.vigas.filter(v => v.tipo !== 'trelica').map(v => { const s = aj.vigaSecao?.[v.id]; return { pav: v.pav, nome: s?.nome || `V${v.n}`, o: v.o, c: v.c, a: v.a, b: v.b, larg: s?.larg ?? regras.vigaLargura ?? 0.15, alt: s?.alt ?? v.altura ?? regras.vigaAltura ?? 0.3, abaixo: s?.abaixo }; }), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
+  const props3d = useMemo(() => ({ info: info3d, fund: fund3d, pavs: ativosT, desloc: desloc3d, ps: calc.ps, pl: calc.pl, espLaje: (p: PainelLaje) => espDaLaje(aj)(p) ?? regras.lajeEsp ?? 0.14, espParede: espParede3d, sg: siglas(ativos), pilares: aj.pilares, vigas: calc.vigas.filter(v => v.tipo !== 'trelica').map(v => { const s = aj.vigaSecao?.[v.id]; return { pav: v.pav, nome: s?.nome || `V${v.n}`, o: v.o, c: v.c, a: v.ini ?? v.a, b: v.fim ?? v.b, larg: s?.larg ?? regras.vigaLargura ?? 0.15, alt: s?.alt ?? v.altura ?? regras.vigaAltura ?? 0.3, abaixo: s?.abaixo }; }), peLaje: (p: PainelLaje) => { const v = aj.peAmb?.[p.amb]; return v != null && p.pav === ativosT[0]?.id ? v - (ativosT[0].baseAcima ?? 0) : v; } }),
     [ativos, ativosT, fund3d, info3d, desloc3d, calc, aj, regras.lajeEsp, espParede3d]);   // imprimir só estes pavimentos (vazio = todos)
   const [soEtq, setSoEtq] = useState('');   // imprimir só estas etiquetas (códigos separados por vírgula, espaço ou linha)
   const [revBase, setRevBase] = useState<number | null>(null);
