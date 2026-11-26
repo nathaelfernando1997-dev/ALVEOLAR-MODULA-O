@@ -110,7 +110,7 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
 
   useEffect(() => {
     const el = ref.current!; const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
-    const R = new THREE.WebGLRenderer({ antialias: true, alpha: true }); R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x000000, 0);
+    const R = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true }); R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x000000, 0);
     R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.9; el.appendChild(R.domElement);
     const S = new THREE.Scene();   // fundo em degradê vem do CSS (.v3-tela)
     const C = new THREE.PerspectiveCamera(35, 1, 0.1, 2000); C.up.set(0, 0, 1);
@@ -119,7 +119,8 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     const sol = new THREE.DirectionalLight(0xfff4e6, escuro ? 2.0 : 2.6); sol.castShadow = true; sol.shadow.mapSize.set(4096, 4096); sol.shadow.bias = -0.0004; sol.shadow.normalBias = 0.02; sol.shadow.radius = 4; S.add(sol, sol.target);
     const luz2 = new THREE.DirectionalLight(0xdfe8f5, 0.6); luz2.position.set(40, 30, 25); S.add(luz2);   // luz de preenchimento do outro lado
     const box = new THREE.BoxGeometry(1, 1, 1), aresta = new THREE.EdgesGeometry(box);
-    const mat = (c: number, r = 0.92) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0 });
+    // polygonOffset: as faces ficam um tico atrás das arestas desenhadas (sem a aresta piscar em cima da face)
+    const mat = (c: number, r = 0.92) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     const M = { parede: mat(0xece6db), ab: mat(0xddd3c2), laje: mat(0xa7afb8, 0.85), laje16: mat(0x87929e, 0.85), sel: mat(0x2f7de1, 0.6) };
     const EM = new THREE.LineBasicMaterial({ color: escuro ? 0x0d1014 : 0x55524c, transparent: true, opacity: escuro ? 0.5 : 0.32 });
     const grupos = new Map<string, { p: THREE.Group; l: THREE.Group }>(); const pick: THREE.Mesh[] = []; const gF = new THREE.Group(); S.add(gF);
@@ -127,7 +128,11 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     const G = 0.006, bb = new THREE.Box3();
     for (const c of cx) {
       const m = new THREE.Mesh(box, c.tipo === 'laje' ? (c.grossa ? M.laje16 : M.laje) : c.ab ? M.ab : M.parede);
-      m.scale.set(Math.max(c.x1 - c.x0 - G, 0.01), Math.max(c.y1 - c.y0 - G, 0.01), c.z1 - c.z0);
+      // faces que coincidem (topo da parede no nível do topo da laje, paredes que se cruzam no encontro) brigam na tela e a imagem treme:
+      // a laje perde 3 mm em cima e embaixo e cada parede fica 1 a 2 mm mais estreita, alternando, para nenhuma face ficar no mesmo plano
+      const eL = c.tipo === 'laje' ? 0.003 : 0, eP = c.tipo === 'laje' ? 0 : (c.x1 - c.x0 > c.y1 - c.y0 ? 0.002 : 0.004);
+      const lx = c.x1 - c.x0 > c.y1 - c.y0 ? c.x1 - c.x0 - G : c.x1 - c.x0 - G - eP, ly = c.x1 - c.x0 > c.y1 - c.y0 ? c.y1 - c.y0 - G - eP : c.y1 - c.y0 - G;
+      m.scale.set(Math.max(lx, 0.01), Math.max(ly, 0.01), Math.max(c.z1 - c.z0 - 2 * eL, 0.01));
       m.position.set((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, (c.z0 + c.z1) / 2);
       m.castShadow = true; m.receiveShadow = c.tipo === 'laje';   // parede não recebe sombra: a luz rasante fazia riscos (acne) nas faces
       m.userData = { cod: c.cod, txt: c.txt, mat: m.material };
@@ -196,6 +201,7 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     // sol de fim de tarde vindo da frente-esquerda; a sombra cobre o prédio todo
     sol.position.set(ctr.x - raio * 0.8, ctr.y - raio * 1.1, ctr.z + raio * 1.3); sol.target.position.copy(ctr);
     const sc = sol.shadow.camera; sc.left = sc.bottom = -raio * 1.1; sc.right = sc.top = raio * 1.1; sc.near = 0.5; sc.far = raio * 5; sc.updateProjectionMatrix();
+    sol.shadow.normalBias = Math.max(0.02, 2.2 * raio / 4096 * 1.5);   // prédio grande: texel da sombra maior, sem listras (acne) nas faces da laje
     // chão: piso claro que recebe sombra + malha de 1 m bem leve
     const LC = Math.max(tam.x, tam.y) + 40;
     const chao = new THREE.Mesh(new THREE.PlaneGeometry(LC * 3, LC * 3), new THREE.MeshStandardMaterial({ color: escuro ? 0x20262e : 0xe9ecef, roughness: 1, transparent: true }));
