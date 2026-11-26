@@ -9,7 +9,7 @@ import { gerarIfc } from './engine/ifc.ts';
 const Vista3D = lazy(() => import('./Vista3D.tsx'));
 import type { InfoPeca } from './Vista3D.tsx';
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
-import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
+import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, escadas, segsEscada, type Escada, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
 import { lerCortes, conferir, detectarPes, adivinharPapeis } from './engine/cortes.ts';
 import { sugerirVigas, cargasDeCima, trelicasNasLajes, alinhar, encaixeManual } from './engine/vigas.ts';
@@ -63,7 +63,7 @@ const baixarBin = (nome: string, bin: Uint8Array, tipo: string) => {
 interface Salvo { camada: string; pavs: Pavimento[]; quadro: Esquadria[]; regras: Regras; ajustes: Ajustes }
 const chave = (n: string) => `modulacao:${n}`;
 type VigaN = Viga & { n: number };
-interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[]; encaixes: Record<string, { x: number; y: number }> }
+interface Calc { ts: Trecho[]; ps: Painel[]; vaos: VaoInteiro[]; lajes: LajeAmb[]; pl: PainelLaje[]; vigas: VigaN[]; muros: Trecho[]; vigasParede: Trecho[]; guardas: Trecho[]; escadas: { pav: string; chave: string; e: Escada; ligada: boolean }[]; orcExtra: { pav: string; area: number }[]; areaPav: { pav: string; area: number }[]; encaixes: Record<string, { x: number; y: number }> }
 
 // desenhos do arquivo (plantas, cortes) e seus papéis, pela camada das paredes escolhida
 function desenhosAuto(d: Dxf, cam: string): { auto: Pavimento[]; L: Leitura } {
@@ -281,7 +281,7 @@ export default function App() {
   const pesLidos = useMemo(() => dxf ? detectarPes(dxf, pavs.filter(p => !p.ativo).map(p => p.box)) : [], [dxf, pavs]);
   const calc: Calc = useMemo(() => {
     const ativos = ativosT;
-    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], orcExtra: [], areaPav: [], encaixes: {} };
+    const vazio: Calc = { ts: [], ps: [], vaos: [], lajes: [], pl: [], vigas: [], muros: [], vigasParede: [], guardas: [], escadas: [], orcExtra: [], areaPav: [], encaixes: {} };
     if (!leitura) return vazio;
     const porPav = ativos.map(p => trechos(leitura, p, quadro, regras, aj));
     // linhas do desenho desta planta (a projeção do beiral pode ficar até 2,5 m para fora das paredes)
@@ -362,6 +362,17 @@ export default function App() {
       // projeções de laje/beiral desta planta e áreas marcadas VAZIO no pavimento de cima
       const bordas = leitura.linhas.filter(l => l.tipo === 'proj' && naCaixa(p.box, l));
       const vz = cima && al ? vaziosDeCima(cima, tc, leitura.textos, al.dx, al.dy) : [];
+      // escada desenhada (degraus) que continua no pavimento de cima, no mesmo lugar: vão na laje deste pavimento
+      if (novo && cima && al && regras.escadaAuto !== false) {
+        const eCima = escadas(segsEscada(leitura.prims, cima.box, camada), tc).map(e => ({ ...e, x0: e.x0 + al.dx, x1: e.x1 + al.dx, y0: e.y0 + al.dy, y1: e.y1 + al.dy }));
+        for (const e of escadas(segsEscada(leitura.prims, p.box, camada), porPav[i], pp)) {
+          const ov = (c: Box) => Math.max(0, Math.min(e.x1, c.x1) - Math.max(e.x0, c.x0)) * Math.max(0, Math.min(e.y1, c.y1) - Math.max(e.y0, c.y0));
+          if (!eCima.some(c => ov(c) > 0.3 * (e.x1 - e.x0) * (e.y1 - e.y0))) continue;
+          const chave = `${p.id}|${e.x0.toFixed(1)}|${e.y0.toFixed(1)}`, ligada = !(aj.naoEscada || []).includes(chave);
+          vazio.escadas.push({ pav: p.id, chave, e, ligada });
+          if (ligada) vz.push({ x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 });
+        }
+      }
       // área escrita "LAJE IMPERMEÁVEL" na própria planta é laje descoberta deste nível (é a laje do pavimento de baixo):
       // não leva laje em cima
       const txP = leitura.textos.filter(x => /LAJE\s+IMPERME/i.test(x.text) && x.x > p.box.x0 && x.x < p.box.x1 && x.y > p.box.y0 && x.y < p.box.y1);
@@ -793,6 +804,7 @@ export default function App() {
                 <label key={k}>{t}<input type="number" step="0.01" value={(regras[k] as number) ?? 0} onChange={e => setRegras({ ...regras, [k]: parseFloat(e.target.value) || 0 })} /></label>
               ))}
               <label className="chk"><input type="checkbox" checked={(regras.motor ?? 1) >= 2} onChange={e => setRegras({ ...regras, motor: e.target.checked ? 2 : 1, motorFixo: !e.target.checked })} /> Cálculo atual (padrão): muros fora, laje na garagem e na laje impermeabilizada, paredes tortas, esquadrias pela etiqueta, 17 cm entre painéis, boneca de transporte, produção das lajes e quantitativos. Desmarque só para refazer um projeto pelo cálculo antigo</label>
+              <label className="chk"><input type="checkbox" checked={regras.escadaAuto !== false} onChange={e => setRegras({ ...regras, escadaAuto: e.target.checked })} /> Reconhecer a escada desenhada (degraus) e abrir o vão na laje sozinho. Na aba Lajes dá para fechar uma escada que não seja escada.</label>
               <label className="chk"><input type="checkbox" checked={!!regras.paredeDominante} onChange={e => { if (!e.target.checked || confirm('Ligar a leitura nova das paredes? Paredes que tinham uma linha de detalhe junto (soleira, bancada) passam a ter a espessura e o eixo certos. ATENÇÃO: as paredes que encostam nelas podem mudar a modulação dos painéis. Use em projeto que ainda não foi para produção, ou confira as peças depois (↶ Desfazer volta).')) setRegras({ ...regras, paredeDominante: e.target.checked }); }} /> Leitura nova das paredes: linha de detalhe junto da parede (soleira, bancada) não muda a espessura nem o eixo dela. Já vem ligada nos projetos novos. (As lajes já usam a face certa da parede em todos os projetos, ligada ou não.)</label>
               <label className="chk"><input type="checkbox" checked={regras.pinarAuto} onChange={e => setRegras({ ...regras, pinarAuto: e.target.checked })} /> No encontro em T, pinar a parede que chega e deixar a parede contínua sem emenda quando ela couber num painel só</label>
             </div>
@@ -847,6 +859,15 @@ export default function App() {
                       if (!isFinite(v) || Math.abs(v / 100 - regras.lajeEsp) < 1e-6) delete m[pavAtual.id]; else m[pavAtual.id] = v / 100;
                       setAj({ ...aj, lajeEspPav: m }); }} /></label>
                     <p className="dica">Vale para todos os ambientes deste pavimento que não têm espessura própria. 16 cm usa treliça TG12.</p>
+                  </div>
+                  <div className="card acoes">
+                    <h3>Escada</h3>
+                    {calc.escadas.filter(x => x.pav === pavAtual.id).length === 0
+                      ? <p className="dica">{regras.escadaAuto === false ? 'Reconhecimento da escada desligado nas regras.' : 'Nenhuma escada reconhecida neste pavimento. O vão abre sozinho quando os degraus estão desenhados aqui e no pavimento de cima (no mesmo lugar). Se não abrir, use "Sem laje aqui" no ambiente da escada.'}</p>
+                      : calc.escadas.filter(x => x.pav === pavAtual.id).map(x => <div key={x.chave} className="corte-item">
+                        {x.ligada ? '✔ vão aberto na laje' : '✖ laje fechada'} · {br(x.e.x1 - x.e.x0)} × {br(x.e.y1 - x.e.y0)} m · degraus a cada {Math.round(x.e.passo * 100)} cm
+                        <button onClick={() => setAj({ ...aj, naoEscada: x.ligada ? [...(aj.naoEscada || []), x.chave] : (aj.naoEscada || []).filter(k => k !== x.chave) })}>{x.ligada ? 'não é escada (fechar laje)' : 'abrir o vão de novo'}</button></div>)}
+                    <p className="dica">Reconhecida pelos degraus desenhados (5 ou mais, espaçados por igual). O vão vai de parede a parede e leva o patamar junto; a laje do pavimento de cima não é afetada.</p>
                   </div>
                   <div className="card acoes">
                     <h3>Vigas desenhadas</h3>
@@ -1429,7 +1450,7 @@ export default function App() {
                 <label className="botao">Abrir só os ajustes das LAJES (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try {
                   const j = JSON.parse(await f.text()), sa = (j.config?.ajustes ?? j.ajustes ?? {}) as Partial<Ajustes>;
                   // só o que é da laje: giro, inteira, emendas, juntar, fora, espessuras, treliças, numeração fixa e armação; paredes e vigas ficam como estão
-                  const K = ['lajeGiro', 'lajeInteira', 'lajeEmendas', 'lajeJuntar', 'lajeFora', 'lajeEspAmb', 'lajeEspPainel', 'lajeEspPav', 'laje16', 'trelicasPainel', 'lajeNumFixa', 'arm'] as const;
+                  const K = ['lajeGiro', 'lajeInteira', 'lajeEmendas', 'lajeJuntar', 'lajeFora', 'lajeEspAmb', 'lajeEspPainel', 'lajeEspPav', 'laje16', 'trelicasPainel', 'lajeNumFixa', 'arm', 'naoEscada'] as const;
                   const novo = { ...aj } as Record<string, unknown>; for (const k of K) if (k in sa) novo[k] = (sa as Record<string, unknown>)[k];
                   setAj(novo as unknown as Ajustes); alert('Ajustes das lajes aplicados. Paredes e vigas não foram mexidas.');
                 } catch (er) { alert('Arquivo inválido: ' + (er as Error).message); } e.target.value = ''; }} /></label>

@@ -45,6 +45,7 @@ export interface Regras {
   orcParede?: number; orcLaje?: number; orcCinza?: number; orcAreaCinza?: number; orcValor1?: number; orcValor2?: number;
   orcCliente?: string; orcObra?: string; orcValidade?: number; orcInicio?: string; orcPrazos?: string; orcPagamento?: string;
   orcEspParede?: number; orcEspLaje?: number;
+  escadaAuto?: boolean;    // reconhece a escada desenhada (degraus) e abre o vão na laje (padrão: sim)
   juntaEncontro?: number;  // junta entre o painel que para no encontro e o painel da parede que cruza: 0,04 de cada lado (14 + 4 + 4 = 22 cm)
   espacoMax?: number;      // espaço máximo entre dois painéis alinhados (cálculo novo): 0,17
   motorFixo?: boolean;     // o usuário desligou o cálculo novo neste projeto (senão todo projeto abre no cálculo atual)
@@ -437,6 +438,7 @@ export interface Ajustes {
   lajeEspPainel?: Record<string, number>;  // espessura de um painel de laje só (chave = ambiente@canto), vale mais que a do ambiente
   viga?: string[];                         // trechos que são viga (muxarabi, vidro, esquadria): não viram painel, a laje apoia neles
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
+  naoEscada?: string[];                    // escadas reconhecidas que NÃO abrem vão na laje (chave pav|x0|y0)
   trelicasPainel?: Record<string, { compMin: number; borda: number; qtd?: number }>;   // por pavimento: painéis de laje a partir de compMin levam treliças ao longo (uma em cada lateral, a borda da beira, e as outras distribuídas)
   telhado?: Record<string, Telhado>;
   bonecaLateral?: Record<string, number>;  // boneca lateral própria do trecho (m), ex.: porta/vidro na parede toda — o painel sai inteiro e as bonecas saem depois da montagem       // por pavimento: telhado em caimento (paredes no sentido do caimento saem chanfradas)

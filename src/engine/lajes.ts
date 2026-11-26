@@ -505,3 +505,91 @@ export function areaConstruida(ambs: { x0: number; x1: number; y0: number; y1: n
   // meia parede no contorno + os quatro cantos de fora
   return area + borda * esp / 2 + (ambs.length ? 4 * (esp / 2) ** 2 : 0);
 }
+
+// ---------------- escada: reconhece os degraus desenhados e abre o vão na laje ----------------
+// seg = linha reta do desenho (horizontal ou vertical), já sem a camada das paredes
+export type SegEsc = { o: 'H' | 'V'; c: number; a: number; b: number };
+export interface Escada extends Box { lances: number; degraus: number; passo: number }
+// degraus: linhas paralelas do mesmo tamanho (0,60 a 2,00 m), alinhadas, espaçadas por igual (22 a 36 cm), 5 ou mais em seguida
+// (degrau tracejado vem em pedaços: junta os pedaços da mesma linha). Lances lado a lado (escada em U ou L) viram uma escada só;
+// na escada em U o patamar vai junto (lado com parede a até 1,5 m); as bordas encostam na parede que estiver a até 35 cm
+export function escadas(segs: SegEsc[], ts: Trecho[], apoios: Trecho[] = []): Escada[] {   // apoios: linha de piso/viga (só para encostar a borda)
+  const inteiras: SegEsc[] = [];
+  for (const o of ['H', 'V'] as const) {
+    const lin = new Map<number, SegEsc[]>();
+    for (const s of segs) if (s.o === o) { const k = Math.round(s.c * 200); (lin.get(k) ?? lin.set(k, []).get(k)!).push(s); }
+    for (const ss of lin.values()) {
+      ss.sort((p, q) => p.a - q.a); let cur = { ...ss[0] };
+      for (const s of ss.slice(1)) { if (s.a - cur.b < 0.12) cur.b = Math.max(cur.b, s.b); else { inteiras.push(cur); cur = { ...s }; } }
+      inteiras.push(cur);
+    }
+  }
+  const cand = inteiras.filter(s => s.b - s.a >= 0.5 && s.b - s.a <= 2.0).sort((p, q) => p.c - q.c);
+  // lances: linhas que se sobrepõem (60% do menor) e com tamanho parecido; passo constante (aceita 1 degrau faltando,
+  // cortado pela linha do caminho da escada)
+  type Lance = { o: 'H' | 'V'; a: number; b: number; c0: number; c1: number; n: number; passo: number };
+  const lances: Lance[] = [], usado = new Set<SegEsc>();
+  const junto = (p: SegEsc, q: SegEsc) => { const L = Math.min(p.b - p.a, q.b - q.a); return Math.min(p.b, q.b) - Math.max(p.a, q.a) >= 0.6 * L && L >= 0.6 * Math.max(p.b - p.a, q.b - q.a); };
+  for (const s of cand) {
+    if (usado.has(s)) continue;
+    const grupo = cand.filter(q => q.o === s.o && !usado.has(q) && Math.abs(q.c - s.c) < 6 && junto(q, s));
+    const cs: SegEsc[] = []; for (const q of grupo) if (!cs.length || q.c - cs[cs.length - 1].c > 0.04) cs.push(q);   // linha dupla do degrau (bocel) conta uma vez
+    let run = [cs[0]];
+    const fecha = () => {
+      if (run.length < 5) return;
+      const passo = Math.min(...run.slice(1).map((q, k) => q.c - run[k].c)), as = run.map(q => q.a).sort((x, y) => x - y), bs = run.map(q => q.b).sort((x, y) => x - y);
+      lances.push({ o: s.o, a: as[Math.floor(as.length / 2)], b: bs[Math.floor(bs.length / 2)], c0: run[0].c, c1: run[run.length - 1].c, n: Math.round((run[run.length - 1].c - run[0].c) / passo) + 1, passo });
+      run.forEach(q => usado.add(q));
+    };
+    for (const q of cs.slice(1)) {
+      const d = q.c - run[run.length - 1].c, p0 = run.length >= 2 ? Math.min(...run.slice(1).map((x, k) => x.c - run[k].c)) : 0;
+      const ok = d >= 0.22 && d <= 0.36 && (!p0 || Math.abs(d - p0) < 0.025) || (p0 && Math.abs(d - 2 * p0) < 0.035);
+      if (ok) run.push(q); else { fecha(); run = [q]; }
+    }
+    fecha(); usado.add(s);
+  }
+  // lances lado a lado (mesma direção, até 60 cm um do outro) = uma escada
+  const caixa = (l: Lance): Box => l.o === 'V' ? { x0: l.c0, x1: l.c1, y0: l.a, y1: l.b } : { x0: l.a, x1: l.b, y0: l.c0, y1: l.c1 };
+  const grupos: { o: 'H' | 'V'; ls: Lance[]; bx: Box }[] = [];
+  for (const l of lances) {
+    const b = caixa(l), g = grupos.find(g => g.o === l.o && b.x0 < g.bx.x1 + 0.6 && g.bx.x0 < b.x1 + 0.6 && b.y0 < g.bx.y1 + 0.6 && g.bx.y0 < b.y1 + 0.6);
+    if (g) { g.ls.push(l); g.bx = { x0: Math.min(g.bx.x0, b.x0), x1: Math.max(g.bx.x1, b.x1), y0: Math.min(g.bx.y0, b.y0), y1: Math.max(g.bx.y1, b.y1) }; }
+    else grupos.push({ o: l.o, ls: [l], bx: b });
+  }
+  const out: Escada[] = [];
+  for (const g of grupos) {
+    const b = { ...g.bx }, passo = g.ls.reduce((s, l) => s + l.passo, 0) / g.ls.length;
+    // degrau vertical (o = 'V'): a escada anda em x; paredes que fecham o caminho são as verticais
+    const anda: 'x' | 'y' = g.o === 'V' ? 'x' : 'y';
+    const cobre = (t: Trecho) => anda === 'x' ? Math.min(t.e, b.y1) - Math.max(t.s, b.y0) > 0.5 * (b.y1 - b.y0) : Math.min(t.e, b.x1) - Math.max(t.s, b.x0) > 0.5 * (b.x1 - b.x0);
+    const [lo, hi] = anda === 'x' ? [b.x0, b.x1] : [b.y0, b.y1];
+    // escada em U: o patamar fica do lado fechado por parede (o outro lado é a chegada no piso)
+    if (g.ls.length >= 2) {
+      const paredes = ts.filter(t => t.o === g.o && cobre(t));
+      const dAntes = Math.min(...paredes.filter(t => t.c < lo).map(t => lo - t.c)), dDepois = Math.min(...paredes.filter(t => t.c > hi).map(t => t.c - hi));
+      const larg = Math.max(...g.ls.map(l => l.b - l.a));
+      if (dAntes <= 1.5 && dAntes <= dDepois) { if (anda === 'x') b.x0 = lo - dAntes; else b.y0 = lo - dAntes; }
+      else if (dDepois <= 1.5) { if (anda === 'x') b.x1 = hi + dDepois; else b.y1 = hi + dDepois; }
+      else { if (anda === 'x') b.x0 = lo - larg; else b.y0 = lo - larg; }   // sem parede: patamar do tamanho da largura do lance
+    }
+    // bordas encostam na parede que estiver a até 35 cm (não sobra tira de laje entre a parede e o vão)
+    const enc = (v: number, o: 'H' | 'V', a0: number, a1: number) => { const t = [...ts, ...apoios].filter(t => t.o === o && Math.abs(t.c - v) <= 0.35 && Math.min(t.e, a1) - Math.max(t.s, a0) > 0.3).sort((p, q) => Math.abs(p.c - v) - Math.abs(q.c - v))[0]; return t ? t.c : v; };
+    const r = { x0: enc(b.x0, 'V', b.y0, b.y1), x1: enc(b.x1, 'V', b.y0, b.y1), y0: enc(b.y0, 'H', b.x0, b.x1), y1: enc(b.y1, 'H', b.x0, b.x1) };
+    out.push({ ...r, lances: g.ls.length, degraus: g.ls.reduce((s, l) => s + l.n, 0), passo });
+  }
+  return out;
+}
+// linhas retas (horizontais/verticais) do desenho dentro da caixa, fora da camada das paredes
+export function segsEscada(prims: { kind: string; pts: [number, number][]; layer: string }[], box: Box, camadaParede: string): SegEsc[] {
+  const out: SegEsc[] = [];
+  for (const q of prims) {
+    if (q.kind !== 'line' || q.layer === camadaParede) continue;
+    for (let k = 0; k < q.pts.length - 1; k++) {
+      const [x1, y1] = q.pts[k], [x2, y2] = q.pts[k + 1];
+      if (Math.min(x1, x2) < box.x0 - 0.2 || Math.max(x1, x2) > box.x1 + 0.2 || Math.min(y1, y2) < box.y0 - 0.2 || Math.max(y1, y2) > box.y1 + 0.2) continue;
+      if (Math.abs(y1 - y2) < 0.01 && Math.abs(x1 - x2) > 0.02) out.push({ o: 'H', c: (y1 + y2) / 2, a: Math.min(x1, x2), b: Math.max(x1, x2) });
+      else if (Math.abs(x1 - x2) < 0.01 && Math.abs(y1 - y2) > 0.02) out.push({ o: 'V', c: (x1 + x2) / 2, a: Math.min(y1, y2), b: Math.max(y1, y2) });
+    }
+  }
+  return out;
+}
