@@ -3,14 +3,14 @@ import type { Painel, Regras } from './model.ts';
 import type { PainelLaje } from './lajes.ts';
 import { Folha, type Pagina } from './folhaDoc.ts';
 import {
-  armarParede, armarLaje, trelicasDoPainel, alcas, relacao, pesoPeca, verLaje, verParede, manuseio, tgDaEsp, comp, fam, bitDe, kgmDe, kgRel,
+  armarParede, armarLaje, betaParede, trelicasDoPainel, alcas, relacao, pesoPeca, verLaje, verParede, manuseio, tgDaEsp, comp, fam, bitDe, kgmDe, kgRel,
   POS, POSL, COB, ALCA_CAP, COEF_ICA, ALCA_KEY, TG_KG, pp, G_REV, Q_USO, GF, lb, type PecaArm, type Relacao, type VigaTrel,
   escolherPositivo,
 } from './armacao.ts';
 
 export interface EntradaArm {
   obra: string; resp: string; pavs: { id: string; nome: string }[]; ps: Painel[]; pl: PainelLaje[]; vigas: VigaTrel[]; regras: Regras;
-  espLaje: (p: PainelLaje) => number; balanco?: (p: PainelLaje) => [number, number]; codP: (p: Painel) => string; codL: (p: PainelLaje) => string; liberado: boolean; trelBorda16: boolean; revisao?: string;   // número da revisão das folhas (padrão 00)
+  espLaje: (p: PainelLaje) => number; balanco?: (p: PainelLaje) => [number, number]; travamento?: (p: Painel) => { L: number; n: number } | null; codP: (p: Painel) => string; codL: (p: PainelLaje) => string; liberado: boolean; trelBorda16: boolean; revisao?: string;   // número da revisão das folhas (padrão 00)
 }
 type Tipo = { g: (Painel | PainelLaje)[]; a: PecaArm; rel: Relacao; kg: number; vol: number; area: number; alc: [number, number, number][]; ntrab: number; tg: string; esp: number };
 export interface LinhaAco { pav: string; codigo: string; tipo: string; pos: string; bit: number | string; qtd: number; c: number }   // c em m
@@ -290,8 +290,9 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       const nn = new Set(t.a.bars.filter(b => b.f === 'VI' && !b.borda).map(b => Math.round(b.x0 * 1000))).size, c = verLaje(Lc, L, nn, t.esp, t.a.bitPos ?? PD.VI[0], R.lajeApoio ?? 0.06, t.a.bal), mh = manuseio(Lc * 0.6, t.esp);
       return { ok: c.ok_As && c.ok_f && c.ok_V && c.ok_anc && mh.ok, txt: `Md ${br(c.Md)} kN.m · As ${br(c.As_nec)} <= ${br(c.As_ef)} cm² · flecha ${br(c.f)} <= ${br(c.flim)} cm · Vd ${br(c.Vd)} <= ${br(c.VRd)} kN/nerv. · ancoragem ${br(c.ancor_disp / 10, 1)} >= ${br(c.lb_min / 10, 0)} cm · içamento ${br(mh.sigma)} <= ${br(mh.lim)} MPa` };
     }
-    const pvi = Math.min(...t.g.map(q => idxPav.get(q.pav) ?? 0)), c = verParede(Lc, t.esp, cargaParede(pvi, Lc)), mh = manuseio(Lc, t.esp);
-    return { ok: c.ok_lam && c.ok_N && mh.ok, txt: `esbeltez ${br(c.lam, 0)} <= 86 · Nd ${br(c.Nd, 0)} <= NRd ${br(c.NRd, 0)} kN/m · desforma ${br(mh.sigma)} <= ${br(mh.lim)} MPa` };
+    const pvi = Math.min(...t.g.map(q => idxPav.get(q.pav) ?? 0)), trav = t.g.map(q => E.travamento?.(q as Painel) ?? null).sort((p, q) => betaParede(Lc, q) - betaParede(Lc, p))[0];   // a peça do tipo menos travada
+    const c = verParede(Lc, t.esp, cargaParede(pvi, Lc), trav), mh = manuseio(Lc, t.esp, t.alc.some(p => p[2] === 0) ? 0.21 * Lc : 0);
+    return { ok: c.ok_lam && c.ok_N && mh.ok, txt: `esbeltez ${br(c.lam, 0)} <= 86 (le = ${br(c.beta, 2)}·H${trav?.n ? `, travada em ${trav.n} borda${trav.n > 1 ? 's' : ''}, L = ${br(trav.L)} m` : ''}) · Nd ${br(c.Nd, 0)} <= NRd ${br(c.NRd, 0)} kN/m · desforma ${br(mh.sigma)} <= ${br(mh.lim)} MPa` };
   });
   if (laje) tipos.forEach((t, i) => { for (const rf of t.a.ref ?? []) if (!rf.ok) avisos.push(`${pref}-${String(i + 1).padStart(2, '0')} (${t.g.map(cod).join(', ')}): parede de cima ${rf.modo === 'longo' ? 'ao longo do vão' : 'atravessando'} com ${br(rf.q, 1)} kN/m — ${rf.txt}`); });
   tipos.forEach((t, i) => { if (!ver[i].ok) avisos.push(`${pref}-${String(i + 1).padStart(2, '0')}: verificação não atendida (${ver[i].txt})`); if (t.kg * COEF_ICA / t.ntrab > ALCA_CAP) avisos.push(`${pref}-${String(i + 1).padStart(2, '0')}: peso por alça acima do limite`); });
@@ -319,6 +320,8 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       'PILAR (PL + estribo ES): 4 ø6,3 + estribo ø4,2 a cada 20 cm nas 2 pontas da parede e dos lados das portas (isopor cortado onde o pilar entra).',
       'VERGA (VG) e CONTRAVERGA (CV): 4 ø6,3 (2 em cada face) em cima das portas/janelas e embaixo das janelas, passando L/5 para cada lado.',
       'ALÇAS: 4 em cima + 4 embaixo (2 + 2 em peça com menos de 1,20 m; mais alças em peça pesada), fora das portas.',
+      'PAREDE ALTA (que não pode sair da mesa pelas pontas): + 4 alças de DESFORMA na face de cima, a 21% da altura de cada ponta · tirar da mesa deitada por elas e só depois virar pelas alças da ponta.',
+      'ESBELTEZ: comprimento de flambagem pela NBR 16055, com a parede travada nas bordas pelas paredes perpendiculares (ver verificações) · montar e escorar até ligar com as paredes do encontro e a laje.',
       'ORDEM: espaçadores → INFERIOR (HI nos espaçadores, VI por cima) → pilares e vergas → isopor → SUPERIOR (VS, depois HS por fora) → alças → concretar.',
       'DESFORMA / IÇAMENTO: com fcj >= 15 MPa · cura mínima de 3 dias com a peça úmida.',
     ];
@@ -359,7 +362,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const kpa = t.kg * COEF_ICA / t.ntrab, xd = 158;
     F.t(xd, 91, 'DADOS DA PEÇA', 6.4, { bold: true });
     [`Medida: ${cm(L)} x ${cm(Hm)} x ${cm(t.esp)} cm`, `Peso: ${br(t.kg, 0)} kg · concreto ${br(t.vol, 3)} m³`, `Aço: ${br(kgT, 1)} kg por peça`,
-      laje ? `Alças: ${t.alc.length} na face de cima` : `Alças: ${t.alc.length / 2} em cima + ${t.alc.length / 2} embaixo`, `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`]
+      laje ? `Alças: ${t.alc.length} na face de cima` : (() => { const nf = t.alc.filter(p => p[2] === 0).length, nb = (t.alc.length - nf) / 2; return `Alças: ${nb} em cima + ${nb} embaixo${nf ? ` + ${nf} na face (desforma)` : ''}`; })(), `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`]
       .forEach((s, i) => F.t(xd, 86.5 - i * 3.9, s, 5.8));
     F.t(xd, 64, 'ORDEM DE MONTAGEM', 6.4, { bold: true });
     (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. Jogo INFERIOR (folha 1/2): VI e HI', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. Jogo SUPERIOR (folha 2/2): VS e HS', '6. Alças na face de cima · conferir e concretar']

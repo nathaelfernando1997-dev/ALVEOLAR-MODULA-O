@@ -230,12 +230,17 @@ export function verLaje(Lp: number, W: number, nNerv: number, esp: number, bitPo
   const lbn = Math.max(0.3 * lb(bitPos), 10 * bitPos, 100), disp = (apoio - 0.025) * 1000 + gancho * 1000;
   return { Md: Md / 100, As_nec, As_ef, As_min, ok_As: As_ef >= Math.max(As_nec, As_min), f, flim, ok_f: f <= flim, Vd: Vd1, VRd, ok_V: Vd1 <= VRd, lb_min: lbn, ancor_disp: disp, ok_anc: disp >= lbn };
 }
-export function verParede(H: number, esp: number, carga: number) {
-  const lam = H * Math.sqrt(12) / esp, Ac = (esp - 0.12 / 0.15 * 0.09) * 100 * 100, Nd = GF * (carga + pp(esp) * H), NRd = 0.85 * fcd * Ac * 0.6;
-  return { lam, ok_lam: lam <= 86, Nd, NRd, ok_N: Nd <= NRd };
+// comprimento de flambagem (NBR 16055): parede travada nas bordas verticais por paredes perpendiculares (L = distância entre elas)
+//   2 bordas travadas: β = 1 / (1 + (H/L)²) se H <= L; β = L / (2H) se H > L · 1 borda: β = 1 / (1 + (H / 3L)²) · nenhuma: β = 1
+export const betaParede = (H: number, trav?: { L: number; n: number } | null) => !trav || trav.n === 0 || trav.L <= 0 ? 1
+  : trav.n >= 2 ? (H <= trav.L ? 1 / (1 + (H / trav.L) ** 2) : trav.L / (2 * H)) : 1 / (1 + (H / (3 * trav.L)) ** 2);
+export function verParede(H: number, esp: number, carga: number, trav?: { L: number; n: number } | null) {
+  const beta = Math.max(0.3, betaParede(H, trav)), lam = beta * H * Math.sqrt(12) / esp, Ac = (esp - 0.12 / 0.15 * 0.09) * 100 * 100, Nd = GF * (carga + pp(esp) * H), NRd = 0.85 * fcd * Ac * 0.6;
+  return { lam, beta, ok_lam: lam <= 86, Nd, NRd, ok_N: Nd <= NRd };
 }
-export function manuseio(vao: number, esp: number) {
-  const w = pp(esp) * 1.3 * 0.15 / 100, M = w * (vao * 100) ** 2 / 8, s1 = secao(esp * 100, 15, (esp * 100 - 9) / 2);
+// a: distância dos pontos de içamento até as pontas (0 = içada pelas pontas, painel biapoiado)
+export function manuseio(vao: number, esp: number, a = 0) {
+  const w = pp(esp) * 1.3 * 0.15 / 100, Lc = vao * 100, ac = a * 100, M = ac > 0 ? Math.max(w * ac ** 2 / 2, w * (Lc - 2 * ac) ** 2 / 8 - w * ac ** 2 / 2) : w * Lc ** 2 / 8, s1 = secao(esp * 100, 15, (esp * 100 - 9) / 2);
   const s = M * s1.y / s1.I * 10, lim = 0.7 * 0.3 * FCJ ** (2 / 3);
   return { sigma: s, lim, ok: s <= lim };
 }
@@ -261,6 +266,9 @@ export function alcas(a: PecaArm, kg: number, laje: boolean): { pts: [number, nu
     const ys = Array.from({ length: lin }, (_, i) => Lc / 5 + (Lc * 3 / 5) * (lin > 1 ? i / (lin - 1) : 0));
     return { pts: ys.flatMap(y => xs.map(x => [x, y, 0] as [number, number, number])), ntrab: lin * 2 };
   }
+  // parede alta: tirar da mesa pelas pontas não passa → 4 alças de desforma na face de cima, a 21% da altura de cada ponta
+  const Hm = Math.max(Hx(0), Hx(L)), face: [number, number, number][] = [];
+  if (!manuseio(Hm, a.esp).ok) { const xf = nerv.length > 2 ? [nerv[1], nerv[nerv.length - 2]] : [L / 4, 3 * L / 4]; for (const y of [0.21 * Hm, 0.79 * Hm]) for (const x of xf) face.push([x, y, 0]); }
   let por = L >= 1.80 - 1e-6 ? 4 : L >= 1.20 - 1e-6 ? 3 : 2;
   if (kg * COEF_ICA / por > ALCA_CAP) por = 5;
   if (kg * COEF_ICA / por > ALCA_CAP) por = 6;
@@ -274,7 +282,7 @@ export function alcas(a: PecaArm, kg: number, laje: boolean): { pts: [number, nu
       usados.push(v); pts.push([v, base ? 0.03 : Hx(v) - 0.03, base ? -1 : 1]);
     }
   }
-  return { pts, ntrab: por };
+  return { pts: [...pts, ...face], ntrab: por };
 }
 // família da posição (tira a letra minúscula das variantes de comprimento: VIa, VS1b…)
 export const fam = (k: string) => k.startsWith('T') ? 'T' : k.startsWith('A') ? 'A' : k.replace(/[a-z]$/, '');
