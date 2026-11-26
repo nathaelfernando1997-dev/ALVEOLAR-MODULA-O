@@ -137,7 +137,9 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       // faces que coincidem (topo da parede no nível do topo da laje, paredes que se cruzam no encontro) brigam na tela e a imagem treme:
       // a laje perde 3 mm em cima e embaixo e cada parede fica 1 a 2 mm mais estreita, alternando, para nenhuma face ficar no mesmo plano
       const eL = c.tipo === 'laje' ? 0.003 : 0, eP = c.tipo === 'laje' ? 0 : (c.x1 - c.x0 > c.y1 - c.y0 ? 0.002 : 0.004);
-      const lx = c.x1 - c.x0 > c.y1 - c.y0 ? c.x1 - c.x0 - G : c.x1 - c.x0 - G - eP, ly = c.x1 - c.x0 > c.y1 - c.y0 ? c.y1 - c.y0 - G - eP : c.y1 - c.y0 - G;
+      // a folguinha G (linha entre peças encostadas) só na laje: os painéis de parede nunca encostam, e assim a trena mede a junta exata
+      const gg = c.tipo === 'laje' ? G : 0;
+      const lx = c.x1 - c.x0 > c.y1 - c.y0 ? c.x1 - c.x0 - gg : c.x1 - c.x0 - gg - eP, ly = c.x1 - c.x0 > c.y1 - c.y0 ? c.y1 - c.y0 - gg - eP : c.y1 - c.y0 - gg;
       m.scale.set(Math.max(lx, 0.01), Math.max(ly, 0.01), Math.max(c.z1 - c.z0 - 2 * eL, 0.01));
       m.position.set((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, (c.z0 + c.z1) / 2);
       m.castShadow = true; m.receiveShadow = c.tipo === 'laje';   // parede não recebe sombra: a luz rasante fazia riscos (acne) nas faces
@@ -232,7 +234,8 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     const ponto = (v: THREE.Vector3) => { const b = new THREE.Mesh(bola, MM); b.position.copy(v); b.renderOrder = 10; gM.add(b); cur.push(b); };
     const rotulo = (t: string, v: THREE.Vector3) => {
       const cv = document.createElement('canvas'); cv.width = 320; cv.height = 96; const g = cv.getContext('2d')!; g.fillStyle = '#d9480f'; g.fillRect(0, 0, 320, 96); g.fillStyle = '#fff'; g.font = 'bold 56px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 160, 50);
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false })); sp.scale.set(0.9, 0.27, 1); sp.position.copy(v); sp.renderOrder = 11; gM.add(sp); cur.push(sp); };
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false })); sp.scale.set(0.6, 0.18, 1); sp.center.set(0.5, -0.35); sp.position.copy(v);   // rótulo em cima da linha, sem tapar a junta medida
+      sp.renderOrder = 11; gM.add(sp); cur.push(sp); };
     const limparTrena = () => { gM.clear(); pA = null; cur = []; feitas.length = 0; setMedidas([]); setPend(false); };
     // desfazer: tira o primeiro ponto que ficou esperando; se não tem, apaga a última medida
     const desfazerTrena = () => {
