@@ -447,7 +447,7 @@ export default function App() {
           const cb = P.o === 'H' ? P.c + ds.dy : P.c + ds.dx, ab = P.o === 'H' ? P.a + ds.dx : P.a + ds.dy, bb = P.o === 'H' ? P.b + ds.dx : P.b + ds.dy;
           const paredeEmbaixo = vazio.ts.some(t => t.pav === ds.baixo && t.o === P.o && Math.abs(t.c - cb) < 0.15 && Math.min(t.e, bb) - Math.max(t.s, ab) > 0.3);
           if (paredeEmbaixo && !emBaixo.some(([x, y]) => temLaje(ds.baixo, x, y))) {
-            somaAltura(P, esp); desceu.add(P); P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: sem laje embaixo (vazio), a parede desce até a parede de baixo`;
+            somaAltura(P, esp); P.desce = esp; for (const r of P.recortes) r.base += esp; desceu.add(P); P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `${br(P.H)} m: sem laje embaixo (vazio), a parede desce até a parede de baixo`;
           }
         }
         const dsc = descob.get(P.pav) || [];
@@ -522,7 +522,7 @@ export default function App() {
       const p = vazio.ps.find(x => x.num === d.painel); if (!p) continue;
       const para = desceu.has(p) ? d.para - espLaje : d.para;
       if (p.H <= para) continue;
-      if (desceu.has(p)) { desceu.delete(p); p.aviso = p.aviso?.split(' · ').filter(x => !x.includes('(vazio)')).join(' · ') || undefined; }
+      if (desceu.has(p)) { desceu.delete(p); for (const r of p.recortes) r.base = Math.max(0, r.base - (p.desce ?? 0)); delete p.desce; p.aviso = p.aviso?.split(' · ').filter(x => !x.includes('(vazio)')).join(' · ') || undefined; }
       somaAltura(p, para - p.H); p.aviso = (p.aviso ? p.aviso + ' · ' : '') + `altura reduzida para ${br(para)} m: apoia em cima da viga V${v.n}`;
     }
     return vazio;

@@ -739,7 +739,7 @@ export function continuarVaos(baixo: Trecho[], cima: Trecho[], quadro: Esquadria
 export interface Recorte { tipo: string; dl: number; w: number; base: number; h: number }
 export interface Painel { num: number; trecho: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; larg: number; H: number; comp: number; recortes: Recorte[]; aviso?: string; chave?: string;
   chanfro?: { ha: number; hb: number }
-  z0?: number }   // tira: painel em cima da laje (base acima do piso do pavimento)   // topo inclinado (telhado em caimento): altura na ponta a e na ponta b; H = a maior
+  z0?: number; desce?: number }   // desce: quanto a parede passa para baixo do piso (vazio embaixo: desce até a parede de baixo; os recortes sobem junto)   // tira: painel em cima da laje (base acima do piso do pavimento)   // topo inclinado (telhado em caimento): altura na ponta a e na ponta b; H = a maior
 // área de um painel (com topo inclinado: trapézio)
 export const areaPainel = (p: Pick<Painel, 'larg' | 'H' | 'chanfro'>) => p.larg * (p.chanfro ? (p.chanfro.ha + p.chanfro.hb) / 2 : p.H);
 // muda a altura do painel (soma d), levando junto as duas pontas do chanfro

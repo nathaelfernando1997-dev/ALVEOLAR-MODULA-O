@@ -47,7 +47,7 @@ function caixas(o: Props3D): Caixa[] {
       for (const [s0, s1, h0, h1] of ped) {
         const c = p.c + (p.o === 'H' ? dy : dx);
         const [x0, x1, y0, y1] = p.o === 'H' ? [s0 + dx, s1 + dx, c - T / 2, c + T / 2] : [c - T / 2, c + T / 2, s0 + dy, s1 + dy];
-        const zb = zp + (p.z0 ?? 0);
+        const zb = zp + (p.z0 ?? 0) - (p.desce ?? 0);   // parede que desce no vazio: o pedaço a mais fica embaixo, no nível da laje de baixo
         out.push({ pav: pav.id, tipo: 'parede', cod, txt, ab: p.recortes.length > 0, grossa: false, x0, y0, z0: zb + h0, x1, y1, z1: zb + h1 });
       }
     }
