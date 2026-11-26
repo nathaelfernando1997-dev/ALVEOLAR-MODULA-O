@@ -319,21 +319,22 @@ export function folhaCanaleta(I: InfoProj, c: Canaleta, arq: XY[][], blocos: { x
   d.R(W(-18), Hh(0), 50 * kk, 12 * kk, 0.35, CZ, [1.5, 1]); d.T(W(7), Hh(-6), 'bloco de fundação (50 cm)', 2, { a: 'middle' });
   d.PL([[W(0), Hh(19)], [W(0), Hh(0)], [W(14), Hh(0)], [W(14), Hh(19)], [W(11.5), Hh(19)], [W(11.5), Hh(3)], [W(2.5), Hh(3)], [W(2.5), Hh(19)]], 0.5, K, true);
   d.R(W(2.5), Hh(19), 9 * kk, 16 * kk, 0.15, CZ, undefined, '#e6e6e6');
-  for (const xx of [5, 9]) d.Cf(W(xx), Hh(6.5), 0.5);
+  // treliça TG8 deitada no fundo: 2 banzos de baixo, 1 de cima (8 cm) e as diagonais
+  for (const xx of [3.6, 10.4]) { d.Cf(W(xx), Hh(5.5), 0.45); d.L(W(xx), Hh(5.5), W(7), Hh(13.5), 0.25); } d.Cf(W(7), Hh(13.5), 0.55);
   d.R(W(0), Hh(19 + 26), 14 * kk, 26 * kk, 0.4); d.T(W(7), Hh(19 + 13), 'PAINEL', 2.2, { a: 'middle', rot: 90 });
   d.L(W(-2), Hh(19), W(16), Hh(19), 0.25); d.T(W(17), Hh(19.8), 'argamassa de assentamento 1 cm', 1.9);
   cotaH(d, W(0), W(14), Hh(-14) + 1, '14'); cotaV(d, W(-6), Hh(19), Hh(0), '19');
   const cham = (x: number, y: number, xt: number, yt: number, t: string) => { d.L(x, y, xt, yt, 0.18); d.Cf(x, y, 0.4); d.T(xt + 1, yt + 0.8, t, 2.1); };
-  cham(W(9), Hh(6.5), W(26), Hh(10), `${c.aco.barras} ø${c.aco.bit} corridos (CA-50)`);
-  cham(W(7), Hh(14), W(26), Hh(16), 'concreto C25 (enchimento)');
+  cham(W(10.4), Hh(5.5), W(26), Hh(8), `treliça ${c.trelica.tipo} corrida (h = 8 cm)`);
+  cham(W(4.5), Hh(16.5), W(26), Hh(16), 'concreto C25 (enchimento)');
   cham(W(1.2), Hh(10), W(-22), Hh(26), 'canaleta 14 × 19 × 39');
   // ---- quadro
-  const lin = [['Canaleta 14 × 19 × 39', 'un', String(c.un)], ['Comprimento corrido', 'm', br(c.L, 1)], ['Concreto de enchimento C25', 'm³', br(c.concreto, 2)], [`Aço CA-50 ø${c.aco.bit} (${c.aco.barras} barras)`, 'kg', br(c.aco.kg, 0)]];
+  const lin = [['Canaleta 14 × 19 × 39', 'un', String(c.un)], ['Comprimento corrido', 'm', br(c.L, 1)], ['Concreto de enchimento C25', 'm³', br(c.concreto, 2)], [`Treliça ${c.trelica.tipo} (peças de 12 m)`, 'm', `${br(c.trelica.m, 0)} (${c.trelica.pecas} pç)`], [`Peso da treliça ${c.trelica.tipo}`, 'kg', br(c.trelica.kg, 0)]];
   tabela(d, 270, 196, 'QUANTITATIVO DA BASE DE CANALETA', lin, ['ITEM', 'UN', 'QUANT.'], [62, 14, 22]);
   const notas = ['1. Medidas em centímetros. A canaleta corre embaixo de todas as paredes do térreo e NÃO passa no vão das portas (a boneca de baixo',
     '    é retirada): para dos dois lados, só embaixo da parede. Nem nos vãos sem parede (frente da garagem). Nos encontros a fiada horizontal passa.',
     '2. Assentar sobre os blocos de fundação já concretados, nivelada, com argamassa 1 cm. Entre blocos apoia no terreno compactado.',
-    `3. Armar com ${c.aco.barras} ø${c.aco.bit} corridos, traspasse de 50 cm e dobrados nos cantos (L de 40 cm). Concretar a canaleta por inteiro (vibrar).`,
+    `3. Armar com treliça ${c.trelica.tipo} corrida, deitada no fundo sobre pastilhas de 2,5 cm; emendas com traspasse de 20 cm e nos cantos as treliças se cruzam. Concretar a canaleta por inteiro (vibrar).`,
     '4. Os painéis assentam em cima da canaleta com argamassa; as esperas do bloco atravessam a canaleta (furar o fundo no lugar delas).',
     `5. Quantidade com 5% de perdas. Peso considerado na carga das estacas: ${br(c.kNm, 2)} kN/m.`];
   d.T(20, 256, 'NOTAS', 3, { b: true }); notas.forEach((t, i) => d.T(20, 262 + i * 3.9, t, 2.2));

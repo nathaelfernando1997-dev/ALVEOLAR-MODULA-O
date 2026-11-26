@@ -1,13 +1,14 @@
 // Base de canaleta 14 × 19 × 39 embaixo de todas as paredes do térreo: assentada em cima dos blocos de fundação;
-// por dentro passa a ferragem e é concretada (vira uma viga corrida); os painéis assentam em cima dela.
+// por dentro vai uma treliça corrida (TG8) e é concretada (vira uma viga corrida); os painéis assentam em cima dela.
 // Não passa no vão das portas (as bonecas de baixo são retiradas): para dos dois lados, embaixo da parede; nem nos vãos inteiros (sem parede).
 import type { Trecho, Painel } from './model.ts';
+import { TG_KG } from './armacao.ts';
 
 export const CANALETA = { larg: 0.14, alt: 0.19, comp: 0.39, vazio: 0.09 * 0.15, peso: 22 };   // vazio interno ≈ 9 × 15 cm; kN/m³ da canaleta concretada
 
-export interface Canaleta { segs: { o: 'H' | 'V'; c: number; a: number; b: number }[]; pecas: { o: 'H' | 'V'; c: number; a: number; b: number; cortada: boolean }[]; L: number; un: number; concreto: number; aco: { barras: number; bit: number; m: number; kg: number }; kNm: number }
+export interface Canaleta { segs: { o: 'H' | 'V'; c: number; a: number; b: number }[]; pecas: { o: 'H' | 'V'; c: number; a: number; b: number; cortada: boolean }[]; L: number; un: number; concreto: number; trelica: { tipo: string; m: number; kg: number; pecas: number }; kNm: number }
 
-export function canaletaBase(ts: Trecho[], ps: Painel[] = [], perdas = 0.05, barras = 2, bit = 10): Canaleta {
+export function canaletaBase(ts: Trecho[], ps: Painel[] = [], perdas = 0.05, tg = 'TG8'): Canaleta {
   const h = CANALETA.larg / 2;
   const segs: Canaleta['segs'] = [];
   for (const t of ts) {
@@ -45,6 +46,6 @@ export function canaletaBase(ts: Trecho[], ps: Painel[] = [], perdas = 0.05, bar
   }
   const L = cel.size / (R * R) / CANALETA.larg;
   const un = Math.ceil(pecas.length * (1 + perdas));   // cada pedaço cortado conta como uma canaleta
-  const m = barras * L * 1.1;   // 10% de traspasse e ancoragem nos cantos
-  return { segs, pecas, L, un, concreto: L * CANALETA.vazio, aco: { barras, bit, m, kg: m * (bit * bit / 162) }, kNm: CANALETA.larg * CANALETA.alt * CANALETA.peso };
+  const m = L * 1.08;   // treliça corrida: traspasse de 20 cm nas emendas e nos cantos (8%)
+  return { segs, pecas, L, un, concreto: L * CANALETA.vazio, trelica: { tipo: tg, m, kg: m * (TG_KG[tg] ?? 0.735), pecas: Math.ceil(m / 12) }, kNm: CANALETA.larg * CANALETA.alt * CANALETA.peso };
 }

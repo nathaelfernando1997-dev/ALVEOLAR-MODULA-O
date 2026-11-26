@@ -364,12 +364,14 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     [`Medida: ${cm(L)} x ${cm(Hm)} x ${cm(t.esp)} cm`, `Peso: ${br(t.kg, 0)} kg · concreto ${br(t.vol, 3)} m³`, `Aço: ${br(kgT, 1)} kg por peça`,
       laje ? `Alças: ${t.alc.length} na face de cima` : (() => { const nf = t.alc.filter(p => p[2] === 0).length, nb = (t.alc.length - nf) / 2; return `Alças: ${nb} em cima + ${nb} embaixo${nf ? ` + ${nf} na face (desforma)` : ''}`; })(), `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`, ...(() => { const f = t.alc.filter(p => p[2] === 0); if (laje || !f.length) return [];
         const ys = [...new Set(f.map(p => Math.round(p[1] * 100)))].sort((p, q) => p - q), xs = [...new Set(f.map(p => Math.round(p[0] * 100)))].sort((p, q) => p - q);
-        void xs; return ys.map((y, i) => `Alças de desforma (face de cima): ${i ? `a ${Math.round(Hm * 100) - y} cm do topo` : `a ${y} cm do pé`}, a ${f.filter(p => Math.round(p[1] * 100) === y).map(p => Math.round(p[0] * 100)).sort((p, q) => p - q).join(' e ')} cm da borda esquerda`); })()]
+        void xs; const em = (y: number) => f.filter(p => Math.round(p[1] * 100) === y).map(p => Math.round(p[0] * 100)).sort((p, q) => p - q).join(' e ');
+        return [`Desforma (face de cima, cm da borda esq.): ${ys[0]} do pé em ${em(ys[0])} · ${Math.round(Hm * 100) - ys[ys.length - 1]} do topo em ${em(ys[ys.length - 1])}`]; })()]
       .forEach((s, i) => F.t(xd, 86.5 - i * 3.9, s, 5.8));
-    F.t(xd, 64, 'ORDEM DE MONTAGEM', 6.4, { bold: true });
+    const dsf = !laje && t.alc.some(p => p[2] === 0) ? 3.9 : 0;   // linha a mais nos dados (alças de desforma)
+    F.t(xd, 64 - dsf, 'ORDEM DE MONTAGEM', 6.4, { bold: true });
     (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. Jogo INFERIOR (folha 1/2): VI e HI', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. Jogo SUPERIOR (folha 2/2): VS e HS', '6. Alças na face de cima · conferir e concretar']
       : ['1. Espaçadores de 2,5 cm na forma', '2. INFERIOR: HI deitado nos espaçadores, VI em pé por cima', '3. Pilares (PL + estribos ES) e vergas (VG / CV)', '4. Isopor entre as nervuras (VI fica na nervura)', '5. SUPERIOR: VS nas nervuras, HS deitado por cima', '6. Alças · conferir e concretar'])
-      .forEach((s, i) => F.t(xd, 59.5 - i * 3.9, s, 5.6));
+      .forEach((s, i) => F.t(xd, 59.5 - dsf - i * (dsf ? 3.5 : 3.9), s, 5.6));
     if (laje && t.a.ref?.length) {
       const wrap = (txt: string, n = 64) => { const o: string[] = []; let c = ''; for (const w of txt.split(' ')) { if ((c + ' ' + w).trim().length > n) { o.push(c); c = w; } else c = (c + ' ' + w).trim(); } if (c) o.push(c); return o; };
       let yy = 30;

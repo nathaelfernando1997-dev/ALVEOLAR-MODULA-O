@@ -175,14 +175,21 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
         if (p.tipo === 'apoio') continue;
         for (const r of [p, ...(q ? [q] : [])]) { const e = new THREE.Mesh(cil, ME); e.scale.set(1, 1, F.comp); e.position.set(r.x + dx, r.y + dy, -F.alt - F.comp / 2 + 0.1); e.userData = { cod, txt, mat: ME }; gF.add(e); pick.push(e); }
       }
-      // canaleta 14 × 19 × 39 em U, com 2 ø10 e concreto dentro
+      // canaleta 14 × 19 × 39 em U, com treliça TG8 corrida e concreto dentro
       for (const s of F.can || []) {
         const C = (d0: number, d1: number, z0: number, z1: number, M: THREE.Material, linha = false) => s.o === 'H' ? caixa(M, s.a, s.c + d0, z0, s.b, s.c + d1, z1, 'canaleta', txtC, linha) : caixa(M, s.c + d0, s.a, z0, s.c + d1, s.b, z1, 'canaleta', txtC, linha);
-        const txtC = `Canaleta 14 × 19 × 39${s.cortada ? ` cortada com ${Math.round((s.b - s.a) * 100)} cm` : ''} · por dentro 2 ø10 corridos e concreto`;
+        const txtC = `Canaleta 14 × 19 × 39${s.cortada ? ` cortada com ${Math.round((s.b - s.a) * 100)} cm` : ''} · por dentro treliça TG8 corrida e concreto`;
         C(-0.07, 0.07, 0, 0.03, MC); C(-0.07, -0.045, 0.03, zc, MC); C(0.045, 0.07, 0.03, zc, MC); C(-0.045, 0.045, 0.03, zc, MCon).renderOrder = 2;
         const cont = C(-0.07, 0.07, 0, zc, MC, true); cont.material = new THREE.MeshBasicMaterial({ visible: false });
-        for (const d of [-0.025, 0.025]) { const f = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, s.b - s.a, 6), MA);
-          if (s.o === 'H') { f.rotation.z = Math.PI / 2; f.position.set((s.a + s.b) / 2 + dx, s.c + d + dy, 0.07); } else f.position.set(s.c + d + dx, (s.a + s.b) / 2 + dy, 0.07); gF.add(f); }
+        // treliça TG8: 2 banzos embaixo (2,5 cm do fundo), 1 em cima (8 cm acima) e as diagonais em zigue-zague a cada 20 cm
+        const P3 = (u: number, d: number, z: number) => s.o === 'H' ? new THREE.Vector3(u + dx, s.c + d + dy, z) : new THREE.Vector3(s.c + d + dx, u + dy, z);
+        for (const [d, z, rr] of [[-0.034, 0.055, 0.0042], [0.034, 0.055, 0.0042], [0, 0.135, 0.006]] as const) {
+          const f = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, s.b - s.a, 6), MA); const m0 = P3((s.a + s.b) / 2, d, z);
+          if (s.o === 'H') f.rotation.z = Math.PI / 2; f.position.copy(m0); gF.add(f);
+        }
+        const dg: THREE.Vector3[] = [];
+        for (let u = s.a; u < s.b - 0.1; u += 0.2) for (const d of [-0.034, 0.034]) dg.push(P3(u, d, 0.055), P3(Math.min(s.b, u + 0.1), 0, 0.135), P3(Math.min(s.b, u + 0.1), 0, 0.135), P3(Math.min(s.b, u + 0.2), d, 0.055));
+        gF.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(dg), new THREE.LineBasicMaterial({ color: 0x8b3a1a })));
       }
     }
     const ctr = bb.getCenter(new THREE.Vector3()), tam = bb.getSize(new THREE.Vector3()), raio = Math.max(tam.x, tam.y, tam.z, 1);
@@ -287,7 +294,7 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       </div>
       {medidas.length > 0 && <ol className="v3-medidas">{medidas.map((m, i) => <li key={i}>{m}</li>)}</ol>}
       <div className="botoes"><input placeholder="Achar peça (ex.: T-P41, T-L49)" value={busca} onChange={e => setBusca(e.target.value)} onKeyDown={e => e.key === 'Enter' && achar()} /><button onClick={achar}>Achar</button></div>
-      <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span>{props.fund && <><span><i style={{ background: '#9c968c' }} />bloco e estaca</span>{props.fund.can && <span><i style={{ background: '#b5aea2' }} />canaleta 14×19 (ferro + concreto)</span>}</>}</div>
+      <div className="v3-leg"><span><i style={{ background: '#ece6db' }} />parede</span><span><i style={{ background: '#ddd3c2' }} />parede com porta/janela</span><span><i style={{ background: '#a7afb8' }} />laje</span><span><i style={{ background: '#87929e' }} />laje 16 cm ou mais</span>{props.fund && <><span><i style={{ background: '#9c968c' }} />bloco e estaca</span>{props.fund.can && <span><i style={{ background: '#b5aea2' }} />canaleta 14×19 (treliça + concreto)</span>}</>}</div>
       <p className="dica">Arraste para girar · roda/pinça para zoom · botão direito ou dois dedos para mover · clique numa peça para ver o detalhamento.</p>
     </aside>
     <div className="v3-tela" ref={ref}>{sel && <div className="v3-info">{sel}</div>}</div>
