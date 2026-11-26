@@ -1,14 +1,16 @@
 // Armação das paredes e lajes alveolares: ferros de cada peça, alças, relação do aço e verificações.
 // Padrão Alveolar:
-//  paredes — N1 ø4,2 em cada nervura (2 faces) · N2 ø4,2 deitado c/25 (2 faces) · N3 pilar 4 ø6,3 nas pontas e dos lados das portas
-//            · N4 estribo ø4,2 c/20 · N5 verga e N6 contraverga 4 ø6,3, transpasse L/5
-//  lajes   — L1 positivo ø6,3 em cada nervura (gancho 90° nas pontas) · L2 ø8,0 em cima nas pontas (L/4) ou corrido sob parede de cima
-//            · L7 ø5,0 corrido em cima · L3 ø4,2 atravessado c/30 (2 faces) · L4/L5 borda 2 ø6,3 embaixo + 2 ø8,0 em cima · treliças
+// Posições pela camada (I = inferior, S = superior) e pela direção (V = vertical, no comprimento da peça; H = horizontal, atravessado):
+//  paredes (moldadas deitadas; inferior = face de baixo, na mesa) — VI/VS ø4,2 em pé em cada nervura · HI/HS ø4,2 deitado c/25
+//            · PL pilar 4 ø6,3 nas pontas e dos lados das portas · ES estribo ø4,2 c/20 · VG verga e CV contraverga 4 ø6,3, transpasse L/5
+//  lajes   — VI positivo nas nervuras e nas bordas (gancho 90° nas pontas; bitola pela verificação) · HI/HS ø4,2 atravessado c/30
+//            · VS1 ø8,0 em cima nas pontas (L/4) ou corrido sob parede de cima · VS2 borda 2 ø8,0 em cima · VS3 ø5,0 corrido em cima
+//            · RI1/RI2 reforço embaixo de parede de cima · treliças
 // Verificações resumidas (NBR 6118 / 9062): sobrecarga 1,5 kN/m², revestimento 1,0 kN/m², fck 30 MPa, CA-50/60, γc 1,4, γs 1,15, γf 1,4.
 import type { Painel, Regras } from './model.ts';
 import type { PainelLaje } from './lajes.ts';
 
-export interface Barra { f: string; x0: number; y0: number; x1: number; y1: number; c?: number }
+export interface Barra { f: string; x0: number; y0: number; x1: number; y1: number; c?: number; borda?: boolean }   // borda: ferro da lateral (não é nervura)
 export interface Vao { x0: number; x1: number; y0: number; y1: number; porta: boolean; tag: string }
 export interface Trel { n: number; vert: boolean; pos: number; i0: number; i1: number; tipo: string; borda?: boolean }
 // reforço da laje embaixo de parede do pavimento de cima (sem parede embaixo): faixa maciça (sem isopor) + ferro extra embaixo
@@ -22,17 +24,19 @@ export const TG_KG: Record<string, number> = { TG8: 0.735, TG12: 0.886, TG16: 1.
 export const tgDaEsp = (e: number) => e >= 0.25 - 1e-6 ? 'TG20' : e >= 0.20 - 1e-6 ? 'TG16' : e >= 0.16 - 1e-6 ? 'TG12' : 'TG8';
 // posições: bitola (mm) e descrição
 export const POS: Record<string, [number, string]> = {
-  N1: [4.2, 'Vertical nas nervuras (2 faces)'], N2: [4.2, 'Horizontal c/25 (2 faces)'], N3: [6.3, 'Pilar 4 ø6,3'], N4: [4.2, 'Estribo do pilar c/20'],
-  N5: [6.3, 'Verga 4 ø6,3 (transpasse L/5)'], N6: [6.3, 'Contraverga 4 ø6,3 (transpasse L/5)'],
+  VI: [4.2, 'Vertical inferior: em pé nas nervuras, face de baixo (na mesa)'], HI: [4.2, 'Horizontal inferior: deitado c/25, face de baixo'],
+  VS: [4.2, 'Vertical superior: em pé nas nervuras, face de cima'], HS: [4.2, 'Horizontal superior: deitado c/25, face de cima'],
+  PL: [6.3, 'Pilar 4 ø6,3'], ES: [4.2, 'Estribo do pilar c/20'], VG: [6.3, 'Verga 4 ø6,3 (transpasse L/5)'], CV: [6.3, 'Contraverga 4 ø6,3 (transpasse L/5)'],
 };
 export const POSL: Record<string, [number, string]> = {
-  L1: [6.3, 'Positivo (inferior) nas nervuras, gancho 90° nas pontas'], L2: [8.0, 'Negativo ø8,0 nas pontas (L/4) ou corrido sob parede de cima'],
-  L7: [5.0, 'Construtivo superior ø5,0 corrido'], L3: [4.2, 'Transversal c/30 (2 faces)'], L4: [6.3, 'Borda: 2 ø6,3 inferior, gancho 90° nas pontas'], L5: [8.0, 'Borda: 2 ø8,0 superior'],
-  L8: [10, 'Reforço sob parede ø10 (embaixo), gancho 90° nas pontas'], L9: [12.5, 'Reforço sob parede ø12,5 (embaixo), gancho 90° nas pontas'],
+  VI: [6.3, 'Vertical inferior: positivo nas nervuras e nas 2 bordas, gancho 90° nas pontas'], RI1: [10, 'Reforço inferior ø10 sob parede de cima, gancho 90° nas pontas'],
+  RI2: [12.5, 'Reforço inferior ø12,5 sob parede de cima, gancho 90° nas pontas'], HI: [4.2, 'Horizontal inferior: atravessado c/30, embaixo'],
+  VS1: [8.0, 'Vertical superior: negativo ø8,0 nas pontas (L/4) ou corrido sob parede de cima'], VS2: [8.0, 'Vertical superior: borda, 2 ø8,0 em cada lateral'],
+  VS3: [5.0, 'Vertical superior: construtivo ø5,0 corrido'], HS: [4.2, 'Horizontal superior: atravessado c/30, em cima'],
 };
 export const comp = (b: Barra) => b.c ?? Math.hypot(b.x1 - b.x0, b.y1 - b.y0);
 
-function armar(L: number, Hx: (x: number) => number, ab: Vao[], P: (string | null)[], r: Regras, portasPilar = true) {
+function armar(L: number, Hx: (x: number) => number, ab: Vao[], P: (string | null)[], r: Regras, portasPilar = true, passoH = PASSO_H) {   // P[2]/P[8]: horizontal de baixo/de cima
   const IL = r.isoporLarg ?? 0.12, IE = r.isoporEspaco ?? 0.03;
   const n = Math.max(0, Math.floor(L / (IL + IE) + 1e-6)), m = (L - n * (IL + IE) + IE) / 2;
   const slots: [number, number][] = []; for (let i = 0; i < n; i++) slots.push([m + i * (IL + IE), m + i * (IL + IE) + IL]);
@@ -66,12 +70,12 @@ function armar(L: number, Hx: (x: number) => number, ab: Vao[], P: (string | nul
   }
   let y = 0.20; const Hmin = Math.min(Hx(0), Hx(L));
   while (y < Hmin - 0.10) {
-    for (const [s0, s1] of corta(y, COB, L - COB, false)) { const b = { f: P[2]!, x0: s0, y0: y, x1: s1, y1: y }; bars.push(b, { ...b }); }
-    y += P[2] === 'L3' ? PASSO_T : PASSO_H;
+    for (const [s0, s1] of corta(y, COB, L - COB, false)) { const b = { f: P[2]!, x0: s0, y0: y, x1: s1, y1: y }; bars.push(b, { ...b, f: P[8] ?? P[2]! }); }
+    y += passoH;
   }
   for (const [z0, z1] of zon) {
     const xc = (z0 + z1) / 2, Hp = Math.min(Hx(z0), Hx(z1));
-    for (const dx of [-0.03, 0.03]) bars.push({ f: P[3]!, x0: xc + dx, y0: COB, x1: xc + dx, y1: Hp - COB }, { f: P[4]!, x0: xc + dx, y0: COB, x1: xc + dx, y1: Hp - COB });
+    for (const dx of [-0.03, 0.03]) bars.push({ f: P[3]!, x0: xc + dx, y0: COB, x1: xc + dx, y1: Hp - COB, borda: true }, { f: P[4]!, x0: xc + dx, y0: COB, x1: xc + dx, y1: Hp - COB, borda: true });
     const k = Math.floor((Hp - 2 * COB) / ESTR + 1e-6) + 1;
     for (let j = 0; j < k; j++) { const yy = COB + j * (Hp - 2 * COB) / (k > 1 ? k - 1 : 1); bars.push({ f: P[5]!, x0: z0 + 0.025, y0: yy, x1: z1 - 0.025, y1: yy, c: 0.42 }); }
   }
@@ -92,7 +96,7 @@ export function armarParede(p: Painel, r: Regras): PecaArm {
   const Hx = ch ? (x: number) => ch.ha + (ch.hb - ch.ha) * x / L : () => p.H;
   const ab: Vao[] = p.recortes.map(q => ({ x0: q.dl, x1: q.dl + q.w, y0: q.base, y1: q.base + q.h, porta: q.tipo.toUpperCase().startsWith('P'), tag: q.tipo }));
   const esp = (r.isoporAlt ?? 0.09) + 2 * (r.capeamento ?? 0.025);
-  return { ...armar(L, Hx, ab, ['N1', 'N1', 'N2', 'N3', 'N3', 'N4', 'N5', 'N6'], r), sobParede: [], T: [], esp };
+  return { ...armar(L, Hx, ab, ['VI', 'VS', 'HI', 'PL', 'PL', 'ES', 'VG', 'CV', 'HS'], r), sobParede: [], T: [], esp };
 }
 
 // treliças de um painel: embaixo das paredes do pavimento de cima e as pedidas no painel (-trp-)
@@ -117,7 +121,7 @@ export function armarLaje(p: PainelLaje, Tin: Trel[], r: Regras, esp: number, tr
     const [u0, u1, v0, v1] = p.sentido === 'H' ? [d.x0 - p.x0, d.x1 - p.x0, d.y0 - p.y0, d.y1 - p.y0] : [d.y0 - p.y0, d.y1 - p.y0, d.x0 - p.x0, d.x1 - p.x0];
     ab.push({ x0: v0, x1: v1, y0: u0, y1: u1, porta: false, tag: 'recorte' });
   }
-  const a = armar(W, () => Lc, ab, ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', null, null], r, false);
+  const a = armar(W, () => Lc, ab, ['VI', 'VS1', 'HI', 'VI', 'VS2', 'L6', null, null, 'HS'], r, false, PASSO_T);
   const T = [...Tin];
   if (trelBorda) for (let zi = 0; zi < Math.min(2, a.zon.length); zi++) {   // treliça nas duas laterais do painel
     const xc = (a.zon[zi][0] + a.zon[zi][1]) / 2;
@@ -127,23 +131,23 @@ export function armarLaje(p: PainelLaje, Tin: Trel[], r: Regras, esp: number, tr
   const atravessa = Tp.some(t => !t.vert);
   const novo: Barra[] = [], sob: number[] = [];
   for (const b of a.bars) {
-    if (b.f !== 'L2') { novo.push(b); continue; }
+    if (b.f !== 'VS1' || b.borda) { novo.push(b); continue; }
     const x = b.x0;
     if (atravessa || Tp.some(t => t.vert && Math.abs(t.pos - x) <= FAIXA_PAREDE)) { novo.push(b); sob.push(x); continue; }
     const c = NEG_FRAC * Lc;
     if (b.y1 - b.y0 <= 2 * c + 0.15) { novo.push(b); continue; }
-    novo.push({ f: 'L2', x0: x, y0: b.y0, x1: x, y1: b.y0 + c }, { f: 'L2', x0: x, y0: b.y1 - c, x1: x, y1: b.y1 }, { f: 'L7', x0: x, y0: b.y0, x1: x, y1: b.y1 });
+    novo.push({ f: 'VS1', x0: x, y0: b.y0, x1: x, y1: b.y0 + c }, { f: 'VS1', x0: x, y0: b.y1 - c, x1: x, y1: b.y1 }, { f: 'VS3', x0: x, y0: b.y0, x1: x, y1: b.y1 });
   }
   const g = esp - 0.05;   // perna do gancho do positivo: sobe até a capa de cima
-  const ref = carga > 0 ? reforcos(Tp, Lc, W, esp, carga, a.bars.filter(b => b.f === 'L1').map(b => b.x0)) : [];
+  const ref = carga > 0 ? reforcos(Tp, Lc, W, esp, carga, a.bars.filter(b => b.f === 'VI' && !b.borda).map(b => b.x0)) : [];
   for (const rf of ref) {   // ferro de reforço embaixo, de apoio a apoio, com gancho como o positivo
-    const f = rf.bit === 10 ? 'L8' : 'L9';
-    const xs = rf.porNerv ? [...new Set(a.bars.filter(b => b.f === 'L1').map(b => b.x0))]
+    const f = rf.bit === 10 ? 'RI1' : 'RI2';
+    const xs = rf.porNerv ? [...new Set(a.bars.filter(b => b.f === 'VI' && !b.borda).map(b => b.x0))]
       : rf.modo === 'atravessa' ? Array.from({ length: rf.n }, (_, i) => COB + (W - 2 * COB) * (rf.n > 1 ? i / (rf.n - 1) : 0.5))
       : Array.from({ length: rf.n }, (_, i) => rf.pos - rf.faixa / 2 + COB + (rf.faixa - 2 * COB) * (rf.n > 1 ? i / (rf.n - 1) : 0.5));
     for (const x of xs) novo.push({ f, x0: x + 0.012, y0: COB, x1: x + 0.012, y1: Lc - COB });
   }
-  const bars = novo.filter(b => b.f !== 'L6').map(b => ['L1', 'L4', 'L8', 'L9'].includes(b.f) ? { ...b, c: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) + 2 * g } : b);
+  const bars = novo.filter(b => b.f !== 'L6').map(b => ['VI', 'RI1', 'RI2'].includes(b.f) ? { ...b, c: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) + 2 * g } : b);
   return { ...a, bars, sobParede: sob, T, esp, ref };
 }
 
@@ -247,7 +251,7 @@ export function pesoPeca(larg: number, compr: number, area: number, furos: { w: 
   return { kg: vol * (r.densidade ?? 2500), vol, area: area - ab };
 }
 export function alcas(a: PecaArm, kg: number, laje: boolean): { pts: [number, number, number][]; ntrab: number } {
-  const nerv = [...new Set(a.bars.filter(b => b.f === 'N1' || b.f === 'L1').map(b => Math.round(b.x0 * 1000) / 1000))].sort((p, q) => p - q);
+  const nerv = [...new Set(a.bars.filter(b => b.f === 'VI' && !b.borda).map(b => Math.round(b.x0 * 1000) / 1000))].sort((p, q) => p - q);
   const L = a.L, Hx = a.Hx;
   if (!nerv.length) nerv.push(L / 2);
   if (laje) {
@@ -272,7 +276,8 @@ export function alcas(a: PecaArm, kg: number, laje: boolean): { pts: [number, nu
   }
   return { pts, ntrab: por };
 }
-export const fam = (k: string) => k.startsWith('T') ? 'T' : k.startsWith('A') ? 'A' : k.slice(0, 2);
+// família da posição (tira a letra minúscula das variantes de comprimento: VIa, VS1b…)
+export const fam = (k: string) => k.startsWith('T') ? 'T' : k.startsWith('A') ? 'A' : k.replace(/[a-z]$/, '');
 export type Relacao = [string, [number, number][]][];   // posição → [(comprimento cm, quantidade)]
 export function relacao(a: PecaArm, nal: number, laje: boolean): Relacao {
   const PD = laje ? POSL : POS, g: Relacao = [];
@@ -288,18 +293,18 @@ export function relacao(a: PecaArm, nal: number, laje: boolean): Relacao {
   }
   g.push(['A', [[Math.round((laje ? 1.20 : 0.90) * 100), nal]]]);
   const out: Relacao = [];
-  for (const [k, L] of g) { if (L.length === 1) out.push([k, L]); else L.forEach((cq, i) => out.push([k + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i], [cq]])); }
+  for (const [k, L] of g) { if (L.length === 1) out.push([k, L]); else L.forEach((cq, i) => out.push([k + 'abcdefghijklmnopqrstuvwxyz'[i], [cq]])); }
   return out;
 }
 export const ALCA_KEY = 'ø8,0 CA-25';
 // pos: bitola do positivo da laje (L1 e L4) escolhida na verificação; sem ela vale a do padrão (ø6,3)
-export const bitDe = (k: string, laje: boolean, tg: string, pos?: number): number | string => fam(k) === 'T' ? tg : fam(k) === 'A' ? ALCA_KEY : laje && pos && (fam(k) === 'L1' || fam(k) === 'L4') ? pos : (laje ? POSL : POS)[fam(k)][0];
+export const bitDe = (k: string, laje: boolean, tg: string, pos?: number): number | string => fam(k) === 'T' ? tg : fam(k) === 'A' ? ALCA_KEY : laje && pos && fam(k) === 'VI' ? pos : (laje ? POSL : POS)[fam(k)][0];
 export const kgmDe = (k: string, laje: boolean, tg: string, pos?: number) => fam(k) === 'T' ? TG_KG[tg] ?? 0.886 : fam(k) === 'A' ? 0.395 : KG[String(bitDe(k, laje, tg, pos))];
 export const kgRel = (rel: Relacao, laje: boolean, tg: string, pos?: number) => rel.reduce((s, [k, L]) => s + L.reduce((t, [c, q]) => t + c / 100 * q * kgmDe(k, laje, tg, pos), 0), 0);
 // positivo da laje: o menor entre ø6,3, ø8,0 e ø10,0 que passa na verificação (flexão, flecha, cortante e ancoragem)
 export const BITS_POS = [6.3, 8, 10];
 export function escolherPositivo(a: PecaArm, esp: number, apoio = 0.06, bal: [number, number] = [0, 0]): { bit: number; ok: boolean } {
-  const nn = new Set(a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, Lc = a.Hx(0);
+  const nn = new Set(a.bars.filter(b => b.f === 'VI' && !b.borda).map(b => Math.round(b.x0 * 1000))).size, Lc = a.Hx(0);
   for (const bit of BITS_POS) { const c = verLaje(Lc, a.L, nn, esp, bit, apoio, bal); if (c.ok_As && c.ok_f && c.ok_V && c.ok_anc) return { bit, ok: true }; }
   return { bit: BITS_POS[BITS_POS.length - 1], ok: false };
 }

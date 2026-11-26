@@ -17,8 +17,10 @@ export interface LinhaAco { pav: string; codigo: string; tipo: string; pos: stri
 export interface Detalhamento { paginas: Pagina[]; linhas: LinhaAco[]; tipos: number; kg: number; avisos: string[]; reforcos: { codigo: string; tipo: string; txt: string; ok: boolean }[] }
 
 const INK = '#111111';
-const COR: Record<string, string> = { N1: '#b03a2e', N2: '#1e8449', N3: '#1a5276', N4: '#6c3483', N5: '#ca6f1e', N6: '#9a7d0a', L1: '#b03a2e', L2: '#1a5276', L7: '#117a65', L3: '#1e8449', L4: '#ca6f1e', L5: '#2e86c1', L8: '#d35400', L9: '#d35400', T: '#7d3c98', A: '#c0392b' };
-const DUAS_FACES = new Set(['N1', 'N2', 'L3']);
+// cores: inferiores em vermelho/laranja, superiores em azuis; pilar, estribo, verga e contraverga à parte
+const COR: Record<string, string> = { VI: '#b03a2e', HI: '#d35400', RI1: '#7b241c', RI2: '#7b241c', VS: '#1a5276', VS1: '#1a5276', VS2: '#2e86c1', VS3: '#148f9e', HS: '#3949ab',
+  PL: '#6e2c00', ES: '#6c3483', VG: '#9a7d0a', CV: '#7d6608', T: '#7d3c98', A: '#c0392b' };
+const DUAS_FACES = new Set<string>();   // (antes: posições das 2 faces juntas; agora cada camada tem a sua)
 const br = (v: number, n = 2) => v.toLocaleString('pt-BR', { minimumFractionDigits: n, maximumFractionDigits: n });
 const cm = (v: number) => String(Math.round(v * 1000) / 10).replace('.', ',');
 const bitTxt = (b: number | string) => typeof b === 'string' ? b : 'ø' + br(b, 1);
@@ -67,7 +69,7 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
   const vis = new Set<string>(), PD = laje ? POSL : POS;
   for (const b of a.bars) {
     const k = `${b.f}|${b.x0.toFixed(4)}|${b.y0.toFixed(4)}|${b.x1.toFixed(4)}|${b.y1.toFixed(4)}`; if (vis.has(k)) continue; vis.add(k);
-    const dx = b.f === 'L2' || b.f === 'L7' ? 0.014 : 0, [x0, y0] = P(b.x0 + dx, b.y0), [x1, y1] = P(b.x1 + dx, b.y1), bt = laje && a.bitPos && (b.f === 'L1' || b.f === 'L4') ? a.bitPos : PD[b.f]?.[0] ?? 4.2;
+    const dx = b.f === 'VS1' || b.f === 'VS3' ? 0.014 : 0, [x0, y0] = P(b.x0 + dx, b.y0), [x1, y1] = P(b.x1 + dx, b.y1), bt = laje && a.bitPos && b.f === 'VI' ? a.bitPos : PD[b.f]?.[0] ?? 4.2;
     F.seg(x0, y0, x1, y1, bt < 5 ? 0.45 : bt < 6 ? 0.6 : 0.85, COR[b.f]);
   }
   for (const t of a.T) {
@@ -81,8 +83,8 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
     else { F.arco(cx, cy, 1.6, sd > 0 ? 0 : 180, sd > 0 ? 180 : 360, 0.9, COR.A); F.seg(cx - 1.6, cy, cx - 1.6, cy - 2.2 * sd, 0.9, COR.A); F.seg(cx + 1.6, cy, cx + 1.6, cy - 2.2 * sd, 0.9, COR.A); }
   }
   const uniq = (v: number[]) => { const s = [...new Set(v)].sort((p, q) => p - q); return s.filter((x, i) => i === 0 || x - s[i - 1] > 0.004); };
-  let base = uniq(a.bars.filter(b => ['N1', 'N3', 'L1', 'L4'].includes(b.f)).map(b => Math.round(b.x0 * 1000) / 1000));
-  if (!base.length) base = uniq(a.bars.filter(b => ['L2', 'L7', 'L5'].includes(b.f)).map(b => Math.round(b.x0 * 1000) / 1000));
+  let base = uniq(a.bars.filter(b => ['VI', 'VS', 'PL'].includes(b.f)).map(b => Math.round(b.x0 * 1000) / 1000));
+  if (!base.length) base = uniq(a.bars.filter(b => ['VS1', 'VS3', 'VS2'].includes(b.f)).map(b => Math.round(b.x0 * 1000) / 1000));
   const xs = [0, ...base, L], yd = Y0 - 6;
   F.seg(X0, yd, X0 + L * esc, yd, 0.25, '#333333');
   for (const x of xs) { F.seg(X0 + x * esc, yd - 1.1, X0 + x * esc, yd + 1.1, 0.25, '#333333'); tick(F, X0 + x * esc, yd); }
@@ -91,7 +93,7 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
   F.seg(X0, yt, X0 + L * esc, yt, 0.3, '#333333');
   for (const x of [0, L]) { F.seg(X0 + x * esc, yt - 1.3, X0 + x * esc, yt + 1.3, 0.3, '#333333'); tick(F, X0 + x * esc, yt, '#333333', 0.8, 0.45); }
   F.t(X0 + L * esc / 2, yt + 0.8, cm(L), 6, { ha: 'center', va: 'bottom', bold: true });
-  const ys = [0, ...uniq(a.bars.filter(b => ['N2', 'N5', 'N6', 'L3'].includes(b.f)).map(b => Math.round(b.y0 * 1000) / 1000)), Math.min(Hx(0), Hx(L))], xd = X0 - 6;
+  const ys = [0, ...uniq(a.bars.filter(b => ['HI', 'HS', 'VG', 'CV'].includes(b.f)).map(b => Math.round(b.y0 * 1000) / 1000)), Math.min(Hx(0), Hx(L))], xd = X0 - 6;
   F.seg(xd, Y0, xd, Y0 + ys[ys.length - 1] * esc, 0.25, '#333333');
   for (const y of ys) { F.seg(xd - 1.1, Y0 + y * esc, xd + 1.1, Y0 + y * esc, 0.25, '#333333'); tick(F, xd, Y0 + y * esc); }
   for (let i = 0; i < ys.length - 1; i++) if (ys[i + 1] - ys[i] > 0.003) F.t(xd - 1.3, Y0 + (ys[i] + ys[i + 1]) / 2 * esc, cm(ys[i + 1] - ys[i]), 4.3, { ha: 'right', va: 'center', rot: 90, color: '#222222' });
@@ -115,12 +117,14 @@ function espac(v: number[]) {
 }
 function nomear(k: string, c: number, Lc: number, esp: number, laje: boolean) {
   const f = fam(k);
-  if (f === 'L2') return c > 0.6 * Lc * 100 ? 'reforço de cima CORRIDO (embaixo de parede de cima)' : `reforço de cima SÓ NAS PONTAS (${c} cm em cada ponta)`;
-  return ({ L1: `ferro principal de BAIXO · gancho de ${cm(esp - 0.05)} cm nas 2 pontas`, L4: 'ferro de BAIXO da borda · com gancho nas pontas', L3: 'ferro atravessado (amarra os ferros principais)',
-    L7: 'ferro fino corrido de CIMA, em cada nervura', L5: 'ferro de CIMA da borda (2 em cada lateral)', T: 'treliça — apoiada nos ferros de baixo',
-    A: 'alça de içamento — ' + (laje ? 'face de cima, pernas de 50 cm na nervura' : 'metade em cima, metade embaixo'), N1: 'ferro em pé em cada nervura — nas 2 faces',
-    N3: 'ferros do pilar: 4 em cada ponta e ao lado das portas', N2: 'ferro deitado — nas 2 faces', N4: 'estribo do pilar (7 x 9 cm)', N5: 'verga — em cima da porta / janela (2 em cada face)',
-    N6: 'contraverga — embaixo da janela (2 em cada face)', L8: 'REFORÇO embaixo da parede de cima · gancho nas 2 pontas', L9: 'REFORÇO embaixo da parede de cima · gancho nas 2 pontas' } as Record<string, string>)[f] ?? '';
+  if (f === 'VS1') return c > 0.6 * Lc * 100 ? 'SUPERIOR · reforço de cima CORRIDO (embaixo de parede de cima)' : `SUPERIOR · reforço de cima SÓ NAS PONTAS (${c} cm em cada ponta)`;
+  return (laje ? { VI: `INFERIOR · positivo nas nervuras e nas 2 bordas · gancho de ${cm(esp - 0.05)} cm nas 2 pontas`, HI: 'INFERIOR · atravessado embaixo (amarra os ferros de baixo)',
+    HS: 'SUPERIOR · atravessado em cima (amarra os ferros de cima)', VS3: 'SUPERIOR · ferro fino corrido em cada nervura', VS2: 'SUPERIOR · ferro da borda (2 em cada lateral)',
+    T: 'treliça — apoiada nos ferros de baixo', A: 'alça de içamento — face de cima, pernas de 50 cm na nervura',
+    RI1: 'INFERIOR · REFORÇO embaixo da parede de cima · gancho nas 2 pontas', RI2: 'INFERIOR · REFORÇO embaixo da parede de cima · gancho nas 2 pontas' }
+    : { VI: 'INFERIOR (face na mesa) · em pé em cada nervura', HI: 'INFERIOR (face na mesa) · deitado', VS: 'SUPERIOR (face de cima) · em pé em cada nervura', HS: 'SUPERIOR (face de cima) · deitado',
+    PL: 'pilar: 4 em cada ponta e ao lado das portas', ES: 'estribo do pilar (7 x 9 cm)', VG: 'verga — em cima da porta / janela (2 em cada face)', CV: 'contraverga — embaixo da janela (2 em cada face)',
+    A: 'alça de içamento — metade em cima, metade embaixo' } as Record<string, string>)[f] ?? '';
 }
 function chamadas(F: Folha, a: PecaArm, rel: Relacao, alc: [number, number, number][], P: (x: number, y: number) => [number, number], xlab: number, ybot: number, ytop: number, laje: boolean, tg: string) {
   const STEP = 8.6, alvo: { pt: [number, number]; txt: string; f: string; y: number; k: string; c: number }[] = [], idx = new Map<string, number>(), PD = laje ? POSL : POS;
@@ -129,26 +133,26 @@ function chamadas(F: Folha, a: PecaArm, rel: Relacao, alc: [number, number, numb
     if (f === 'A') { if (!alc.length) continue; const pt = laje ? P(alc[alc.length - 1][0], alc[alc.length - 1][1]) : P(...[...alc].sort((p, r) => r[1] - p[1] || r[0] - p[0])[0].slice(0, 2) as [number, number]); alvo.push({ pt, txt: `${q} ø8,0 CA-25 liso · ${c} cm`, f, y: pt[1], k, c }); continue; }
     if (f === 'T') { const t = a.T.find(t => Math.round((t.i1 - t.i0 - 2 * COB) * 100) === c) ?? a.T[0]; const m = t.i0 + (t.i1 - t.i0) * 0.6, pt = t.vert ? P(t.pos, m) : P(m, t.pos); alvo.push({ pt, txt: `${q} ${tg} · ${c} cm`, f, y: pt[1], k, c }); continue; }
     let bs = a.bars.filter(b => b.f === f && Math.round(comp(b) * 100) === c); if (!bs.length) bs = a.bars.filter(b => b.f === f);
-    const bit = 'ø' + br(laje && a.bitPos && (f === 'L1' || f === 'L4') ? a.bitPos : PD[f][0], 1), qtxt = DUAS_FACES.has(f) && q % 2 === 0 && q > 2 ? `2×${q / 2}` : String(q);
+    const bit = 'ø' + br(laje && a.bitPos && f === 'VI' ? a.bitPos : PD[f][0], 1), qtxt = DUAS_FACES.has(f) && q % 2 === 0 && q > 2 ? `2×${q / 2}` : String(q);
     const i = idx.get(f) ?? 0; idx.set(f, i + 1);
     let pt: [number, number], txt: string;
     const xs = [...new Set(bs.map(b => Math.round(b.x0 * 1000) / 1000))].sort((p, r) => p - r), ys = [...new Set(bs.map(b => Math.round(b.y0 * 1000) / 1000))].sort((p, r) => p - r);
-    if (['N1', 'L1', 'L2', 'L7'].includes(f) && xs.length >= 2) {
+    if (['VI', 'VS', 'VS1', 'VS3'].includes(f) && xs.length >= 2) {
       const esp = espac(xs), y0 = Math.max(...bs.map(b => b.y0)), y1 = Math.min(...bs.map(b => b.y1));
-      const fr = ({ N1: 0.22, L1: 0.22, L2: 0.08, L7: 0.5 } as Record<string, number>)[f] + 0.13 * i, yy = y0 + (y1 - y0) * Math.min(0.92, fr);
+      const fr = ({ VI: 0.22, VS: 0.62, VS1: 0.08, VS3: 0.5 } as Record<string, number>)[f] + 0.13 * i, yy = y0 + (y1 - y0) * Math.min(0.92, fr);
       const [ax, ay] = P(xs[0], yy), [bx, by] = P(xs[xs.length - 1], yy);
       F.seg(ax, ay, bx, by, 0.3, COR[f]); for (const x of xs) tick(F, P(x, yy)[0], ay, COR[f], 0.8, 0.4);
       pt = [bx, by]; txt = `${qtxt} ${bit}` + (esp ? ` · a cada ${esp} cm` : '') + ` · ${c} cm`;
-    } else if (['N2', 'L3', 'N4'].includes(f) && ys.length >= 2) {
-      let bb = bs; if (f === 'N4') { const mx = Math.max(...bs.map(b => b.x0)); bb = bs.filter(b => b.x0 >= mx - 0.01); }
+    } else if (['HI', 'HS', 'ES'].includes(f) && ys.length >= 2) {
+      let bb = bs; if (f === 'ES') { const mx = Math.max(...bs.map(b => b.x0)); bb = bs.filter(b => b.x0 >= mx - 0.01); }
       const yv = [...new Set(bb.map(b => Math.round(b.y0 * 1000) / 1000))].sort((p, r) => p - r), esp = espac(yv);
-      const x0_ = Math.max(...bb.map(b => b.x0)), x1_ = Math.min(...bb.map(b => b.x1)), xx = f !== 'N4' ? x1_ - (x1_ - x0_) * (0.12 + 0.1 * i) : (x0_ + x1_) / 2;
+      const x0_ = Math.max(...bb.map(b => b.x0)), x1_ = Math.min(...bb.map(b => b.x1)), xx = f !== 'ES' ? x1_ - (x1_ - x0_) * ((f === 'HS' ? 0.32 : 0.12) + 0.1 * i) : (x0_ + x1_) / 2;
       const [ax, ay] = P(xx, yv[0]), [, by] = P(xx, yv[yv.length - 1]);
       F.seg(ax, ay, ax, by, 0.3, COR[f]); for (const y of yv) tick(F, ax, P(xx, y)[1], COR[f], 0.8, 0.4);
       pt = [ax, (ay + by) / 2]; txt = `${qtxt} ${bit}` + (esp ? ` · a cada ${esp} cm` : '') + ` · ${c} cm`;
     } else {
-      if (['N3', 'L4', 'L5'].includes(f)) { const b = bs.filter(b => Math.round(b.x0 * 1000) / 1000 === xs[xs.length - 1])[0]; pt = P(b.x0, b.y0 + (b.y1 - b.y0) * (f !== 'L5' ? 0.86 : 0.62)); }
-      else if (['N1', 'L1', 'L2', 'L7'].includes(f)) { const b = bs[bs.length - 1]; pt = P(b.x0, b.y0 + (b.y1 - b.y0) * 0.5); }
+      if (['PL', 'VS2'].includes(f)) { const b = bs.filter(b => Math.round(b.x0 * 1000) / 1000 === xs[xs.length - 1])[0]; pt = P(b.x0, b.y0 + (b.y1 - b.y0) * (f !== 'VS2' ? 0.86 : 0.62)); }
+      else if (['VI', 'VS', 'VS1', 'VS3'].includes(f)) { const b = bs[bs.length - 1]; pt = P(b.x0, b.y0 + (b.y1 - b.y0) * 0.5); }
       else { const b = [...bs].sort((p, r) => r.x1 - p.x1 || r.y0 - p.y0)[0]; pt = P(b.x1 - 0.05, b.y0); }
       txt = `${qtxt} ${bit} · ${c} cm`;
     }
@@ -165,7 +169,7 @@ function chamadas(F: Folha, a: PecaArm, rel: Relacao, alc: [number, number, numb
     F.c(pt[0], pt[1], 0.7, COR[f]);
     F.l([pt, [xlab - 3, y], [xlab, y]], 0.28, COR[f]);
     F.arco(xlab + 3.4, y, 2.6, 0, 360, 0.6, COR[f]);
-    F.t(xlab + 3.4, y, k, k.length > 2 ? 4.6 : 5.2, { ha: 'center', va: 'center', color: COR[f], bold: true });
+    F.t(xlab + 3.4, y, k, k.length > 3 ? 3.7 : k.length > 2 ? 4.4 : 5.2, { ha: 'center', va: 'center', color: COR[f], bold: true });
     F.t(xlab + 7, y + 1.5, txt, 6.4, { va: 'center', color: COR[f], bold: true });
     F.t(xlab + 7, y - 2.2, nomear(k, c, a.Hx(0), a.esp, laje), 4.9, { va: 'center', color: '#333333' });
   }
@@ -182,18 +186,18 @@ function corteA(F: Folha, a: PecaArm, X0: number, Y0: number, laje: boolean) {
   }
   F.l([[X0 + W + 1.5, Y0 - 1], [X0 + W - 1.5, Y0 + e / 3], [X0 + W + 1.5, Y0 + e * 2 / 3], [X0 + W - 1.5, Y0 + e + 1]], 0.3, '#555555');
   const rb = (bit: number) => bit / 10 / 2 * 1.6;
-  for (const x of [...new Set(a.bars.filter(b => (b.f === 'N1' || b.f === 'L1') && b.x0 * 100 < W).map(b => Math.round(b.x0 * 1000) / 1000))]) {
-    if (laje) { const sp = a.sobParede.some(q => Math.abs(x - q) < 0.002); F.c(X0 + x * 100, Y0 + 2.9, rb(6.3), COR.L1); F.c(X0 + x * 100, Y0 + e - 3.0, rb(sp ? 8 : 5), sp ? COR.L2 : COR.L7); }
-    else for (const yy of [3.1, e - 3.1]) F.c(X0 + x * 100, Y0 + yy, rb(4.2), COR.N1);
+  for (const x of [...new Set(a.bars.filter(b => b.f === 'VI' && !b.borda && b.x0 * 100 < W).map(b => Math.round(b.x0 * 1000) / 1000))]) {
+    if (laje) { const sp = a.sobParede.some(q => Math.abs(x - q) < 0.002); F.c(X0 + x * 100, Y0 + 2.9, rb(a.bitPos ?? 6.3), COR.VI); F.c(X0 + x * 100, Y0 + e - 3.0, rb(sp ? 8 : 5), sp ? COR.VS1 : COR.VS3); }
+    else { F.c(X0 + x * 100, Y0 + 3.1, rb(4.2), COR.VI); F.c(X0 + x * 100, Y0 + e - 3.1, rb(4.2), COR.VS); }
   }
   const [z0, z1] = a.zon[0], xc = (z0 + z1) / 2 * 100;
-  if (!laje) F.r(X0 + z0 * 100 + 2.5, Y0 + 2.5, (z1 - z0) * 100 - 5, e - 5, { stroke: COR.N4, lw: 0.5 });
+  if (!laje) F.r(X0 + z0 * 100 + 2.5, Y0 + 2.5, (z1 - z0) * 100 - 5, e - 5, { stroke: COR.ES, lw: 0.5 });
   for (const dx of [-3, 3]) {
-    if (laje) { F.c(X0 + xc + dx, Y0 + 2.9, rb(6.3), COR.L4); F.c(X0 + xc + dx, Y0 + e - 3.0, rb(8), COR.L5); }
-    else for (const yy of [2.9, e - 2.9]) F.c(X0 + xc + dx, Y0 + yy, rb(6.3), COR.N3);
+    if (laje) { F.c(X0 + xc + dx, Y0 + 2.9, rb(a.bitPos ?? 6.3), COR.VI); F.c(X0 + xc + dx, Y0 + e - 3.0, rb(8), COR.VS2); }
+    else for (const yy of [2.9, e - 2.9]) F.c(X0 + xc + dx, Y0 + yy, rb(6.3), COR.PL);
   }
   if (laje) {
-    const nv = a.bars.filter(b => b.f === 'L1' && b.x0 > 0.25 && b.x0 < 0.5).map(b => b.x0).sort((p, q) => p - q), xa = X0 + (nv.length ? nv[0] * 100 : 40);
+    const nv = a.bars.filter(b => b.f === 'VI' && !b.borda && b.x0 > 0.25 && b.x0 < 0.5).map(b => b.x0).sort((p, q) => p - q), xa = X0 + (nv.length ? nv[0] * 100 : 40);
     F.seg(xa, Y0 + 3, xa, Y0 + e + 7.2, 0.9, COR.A); F.arco(xa, Y0 + e + 7.2, 0.8, 0, 180, 0.9, COR.A);
     F.seg(xa + 6, Y0 + e, xa + 6, Y0 + e + 8, 0.25, '#333333'); F.t(xa + 7, Y0 + e + 4, '8', 4.8, { va: 'center' });
     F.t(xa + 9.5, Y0 + e + 6.5, 'alça na face superior: sai 8 cm, pernas de 50 cm ao longo da nervura', 4.6, { color: COR.A, va: 'center' });
@@ -201,14 +205,14 @@ function corteA(F: Folha, a: PecaArm, X0: number, Y0: number, laje: boolean) {
   F.seg(X0 - 3, Y0, X0 - 3, Y0 + e, 0.25, '#333333'); F.t(X0 - 4, Y0 + e / 2, cm(e / 100), 5, { ha: 'center', va: 'bottom', rot: 90 });
   for (const yy of [0, e]) F.seg(X0 - 4, Y0 + yy, X0 - 2, Y0 + yy, 0.25, '#333333');
   if (!laje) {
-    // em cada face: N2 deitado por fora (encostado nos espaçadores) e N1 em pé por dentro, na nervura
-    for (const yy of [2.7, e - 2.7]) F.seg(X0 + 1, Y0 + yy, X0 + W - 1, Y0 + yy, 0.45, COR.N2);
+    // em cada face: horizontal deitado por fora (encostado nos espaçadores) e vertical em pé por dentro, na nervura
+    F.seg(X0 + 1, Y0 + 2.7, X0 + W - 1, Y0 + 2.7, 0.45, COR.HI); F.seg(X0 + 1, Y0 + e - 2.7, X0 + W - 1, Y0 + e - 2.7, 0.45, COR.HS);
     F.t(X0 + W + 3, Y0 + e - 1.2, 'FACE DE CIMA', 4.6, { bold: true, va: 'center' });
-    F.t(X0 + W + 3, Y0 + e - 4.2, 'N2 por fora (verde) · N1 por dentro (vermelho)', 4.2, { va: 'center', color: '#333333' });
-    F.t(X0 + W + 3, Y0 + 4.2, 'N2 por fora (verde) · N1 por dentro (vermelho)', 4.2, { va: 'center', color: '#333333' });
+    F.t(X0 + W + 3, Y0 + e - 4.2, 'SUPERIOR: HS por fora · VS por dentro', 4.2, { va: 'center', color: '#333333' });
+    F.t(X0 + W + 3, Y0 + 4.2, 'INFERIOR: HI por fora · VI por dentro', 4.2, { va: 'center', color: '#333333' });
     F.t(X0 + W + 3, Y0 + 1.2, 'FACE DE BAIXO (na mesa)', 4.6, { bold: true, va: 'center' });
   }
-  F.t(X0 + W / 2, Y0 - 3, 'cobrimento 2,5 cm' + (laje ? ' · L1/L4 embaixo · L7/L2/L5 em cima' : ' · as 2 faces iguais · pilar N3 + estribo N4'), 4.8, { ha: 'center', va: 'top', color: '#333333' });
+  F.t(X0 + W / 2, Y0 - 3, 'cobrimento 2,5 cm' + (laje ? ' · VI e HI embaixo · VS1, VS2, VS3 e HS em cima' : ' · faces iguais: VI/HI embaixo, VS/HS em cima · pilar PL + estribo ES'), 4.8, { ha: 'center', va: 'top', color: '#333333' });
 }
 
 function tabela(F: Folha, rel: Relacao, qtd: number, X0: number, Ytop: number, laje: boolean, tg: string, esp: number, W = 137, pos?: number) {
@@ -225,10 +229,10 @@ function tabela(F: Folha, rel: Relacao, qtd: number, X0: number, Ytop: number, l
     x = X0;
     cols.forEach(([cc, w], i) => { F.t(x + w / 2, y + h / 2, vals[i], 5.4, { ha: 'center', va: 'center', color: cc === 'POS.' ? COR[f] : INK, bold: cc === 'POS.' }); x += w; });
     const fx = x + 3, fw = X0 + W - fx - 3, ym = y + h / 2;
-    if (f === 'N4') { F.r(fx + fw / 2 - 5, y + 1, 10, h - 2, { stroke: COR[f], lw: 0.6 }); F.t(fx + fw / 2 + 6, ym, '7 x 9 + ganchos 5', 4.4, { va: 'center' }); }
+    if (f === 'ES') { F.r(fx + fw / 2 - 5, y + 1, 10, h - 2, { stroke: COR[f], lw: 0.6 }); F.t(fx + fw / 2 + 6, ym, '7 x 9 + ganchos 5', 4.4, { va: 'center' }); }
     else if (f === 'T') F.l(Array.from({ length: 11 }, (_, i) => [fx + i * fw / 10, ym + (i % 2 ? 0.9 : -0.9)] as [number, number]), 0.45, COR[f]);
     else if (f === 'A') { const cx = fx + fw / 2; F.arco(cx, ym + 0.6, 1.5, 0, 180, 0.8, COR[f]); F.seg(cx - 1.5, ym + 0.6, cx - 1.5, ym - 1.6, 0.8, COR[f]); F.seg(cx + 1.5, ym + 0.6, cx + 1.5, ym - 1.6, 0.8, COR[f]); F.t(cx + 4, ym, laje ? 'pernas 50 + laço (8 fora)' : 'pernas 35 + laço', 4.4, { va: 'center' }); }
-    else if (f === 'L1' || f === 'L4') { const G = Math.round((esp - 0.05) * 100); F.l([[fx + 4, ym + 1.6], [fx + 4, ym - 1.2], [fx + fw - 4, ym - 1.2], [fx + fw - 4, ym + 1.6]], 0.9, COR[f]); F.t(fx + fw / 2, ym - 0.7, `${G} | ${c - 2 * G} | ${G}`, 4.4, { ha: 'center', va: 'bottom' }); }
+    else if (laje && (f === 'VI' || f === 'RI1' || f === 'RI2')) { const G = Math.round((esp - 0.05) * 100); F.l([[fx + 4, ym + 1.6], [fx + 4, ym - 1.2], [fx + fw - 4, ym - 1.2], [fx + fw - 4, ym + 1.6]], 0.9, COR[f]); F.t(fx + fw / 2, ym - 0.7, `${G} | ${c - 2 * G} | ${G}`, 4.4, { ha: 'center', va: 'bottom' }); }
     else { F.seg(fx + 2, ym - 0.6, fx + fw - 2, ym - 0.6, 0.9, COR[f]); F.t(fx + fw / 2, ym - 0.1, String(c), 4.4, { ha: 'center', va: 'bottom' }); }
     F.seg(X0, y, X0 + W, y, 0.15, '#999999');
   }
@@ -283,7 +287,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
   const ver = tipos.map(t => {
     const L = t.a.L, Lc = t.a.Hx(0);
     if (laje) {
-      const nn = new Set(t.a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, c = verLaje(Lc, L, nn, t.esp, t.a.bitPos ?? PD.L1[0], R.lajeApoio ?? 0.06, t.a.bal), mh = manuseio(Lc * 0.6, t.esp);
+      const nn = new Set(t.a.bars.filter(b => b.f === 'VI' && !b.borda).map(b => Math.round(b.x0 * 1000))).size, c = verLaje(Lc, L, nn, t.esp, t.a.bitPos ?? PD.VI[0], R.lajeApoio ?? 0.06, t.a.bal), mh = manuseio(Lc * 0.6, t.esp);
       return { ok: c.ok_As && c.ok_f && c.ok_V && c.ok_anc && mh.ok, txt: `Md ${br(c.Md)} kN.m · As ${br(c.As_nec)} <= ${br(c.As_ef)} cm² · flecha ${br(c.f)} <= ${br(c.flim)} cm · Vd ${br(c.Vd)} <= ${br(c.VRd)} kN/nerv. · ancoragem ${br(c.ancor_disp / 10, 1)} >= ${br(c.lb_min / 10, 0)} cm · içamento ${br(mh.sigma)} <= ${br(mh.lim)} MPa` };
     }
     const pvi = Math.min(...t.g.map(q => idxPav.get(q.pav) ?? 0)), c = verParede(Lc, t.esp, cargaParede(pvi, Lc)), mh = manuseio(Lc, t.esp);
@@ -298,23 +302,24 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       `MATERIAIS: concreto fck 30 MPa · aço CA-50 (ø6,3, ø8,0${tipos.some(t => (t.a.bitPos ?? 0) >= 10) ? ' e ø10,0' : ''}) e CA-60 (ø4,2 e ø5,0) · alças de içamento em aço CA-25 liso ø8,0 · treliças TG conforme espessura.`,
       'COBRIMENTO: 2,5 cm (pastilhas de 2,5 cm embaixo; apoios na camada de cima).',
       `ESPESSURAS: ${[...new Set(tipos.map(t => cm(t.esp)))].join(' / ')} cm · isopor 12 x 9 cm a cada 15 cm · capas de concreto em cima e embaixo do isopor.`,
-      `POSITIVO (L1 nas nervuras e L4 nas bordas): ${[...new Set(tipos.map(t => t.a.bitPos ?? PD.L1[0]))].sort((x, y) => x - y).map(v => 'ø' + br(v, 1)).join(' / ')} conforme o vão (o sistema escolhe o menor que passa na verificação; ver cada folha), com gancho a 90° nas 2 pontas subindo até a capa de cima.`,
-      'EM CIMA: L2 ø8,0 nas pontas (1/4 do vão) e L7 ø5,0 corrido; nas nervuras embaixo de parede do pavimento de cima, L2 ø8,0 corrido.',
-      'BORDA: 2 barras embaixo (L4, com gancho, mesma bitola do positivo da peça) + 2 ø8,0 em cima (L5) em cada lateral · L3 ø4,2 atravessado a cada 30 cm (2 faces).',
+      `NOMES DAS POSIÇÕES: V = vertical (no comprimento da laje) · H = horizontal (atravessado) · I = inferior (embaixo) · S = superior (em cima). Monte primeiro tudo que é I, depois tudo que é S.`,
+      `VI (vertical inferior, positivo nas nervuras e nas 2 bordas): ${[...new Set(tipos.map(t => t.a.bitPos ?? PD.VI[0]))].sort((x, y) => x - y).map(v => 'ø' + br(v, 1)).join(' / ')} conforme o vão (o sistema escolhe o menor que passa na verificação; ver cada folha), com gancho a 90° nas 2 pontas subindo até a capa de cima.`,
+      'VS1 (vertical superior): ø8,0 nas pontas (1/4 do vão), ou corrido nas nervuras embaixo de parede do pavimento de cima · VS3: ø5,0 corrido em cada nervura.',
+      'VS2 (vertical superior da borda): 2 ø8,0 em cada lateral · HI e HS (horizontal inferior e superior): ø4,2 atravessado a cada 30 cm, embaixo e em cima.',
       'TRELIÇAS: embaixo das paredes do pavimento de cima, na posição de cada folha' + (E.trelBorda16 ? '; lajes de 16 cm ou mais: treliça também nas 2 laterais de cada painel.' : '.'),
-      'REFORÇO SOB PAREDE DE CIMA (L8 ø10 / L9 ø12,5): onde a parede do pavimento de cima fica em cima da laje sem parede embaixo, faixa maciça (sem isopor) e ferro a mais embaixo, conforme a folha de cada laje.',
+      'REFORÇO SOB PAREDE DE CIMA (RI1 ø10 / RI2 ø12,5, inferiores): onde a parede do pavimento de cima fica em cima da laje sem parede embaixo, faixa maciça (sem isopor) e ferro a mais embaixo, conforme a folha de cada laje.',
       'ALÇAS: 4 na face de cima (6 ou 8 nos painéis pesados, com parte maciça), pernas de 50 cm ao longo da nervura, laço saindo 8 cm.',
-      'ORDEM: espaçadores → ferros de baixo (L1, L4, L3) → treliças → isopor → ferros de cima (L2, L7, L5, L3) → alças → conferir → concretar.',
+      'ORDEM: espaçadores → INFERIORES (VI, RI, HI) → treliças → isopor → SUPERIORES (VS1, VS2, VS3, HS) → alças → conferir → concretar.',
       'DESFORMA / IÇAMENTO: com fcj >= 15 MPa · cura mínima de 3 dias com a peça úmida.',
     ] : [
       'MATERIAIS: concreto fck 30 MPa · aço CA-50 (ø6,3) e CA-60 (ø4,2) · alças de içamento em aço CA-25 liso ø8,0.',
       `COBRIMENTO: 2,5 cm · espessura da parede ${cm(espPar)} cm (isopor 12 x 9 cm a cada 15 cm).`,
-      'N1: ø4,2 em pé em cada nervura · N2: ø4,2 deitado a cada 25 cm · as 2 faces são IGUAIS (face de baixo na mesa = face de cima).',
-      'EM CADA FACE: N2 (deitado) por FORA, perto do concreto · N1 (em pé) por DENTRO, na nervura entre os isopores.',
-      'PILAR (N3 + N4): 4 ø6,3 + estribo ø4,2 a cada 20 cm nas 2 pontas da parede e dos lados das portas (isopor cortado onde o pilar entra).',
-      'VERGA (N5) e CONTRAVERGA (N6): 4 ø6,3 (2 em cada face) em cima das portas/janelas e embaixo das janelas, passando L/5 para cada lado.',
+      'NOMES DAS POSIÇÕES: V = vertical (em pé) · H = horizontal (deitado) · I = inferior (face de baixo, na mesa) · S = superior (face de cima).',
+      'VI e VS: ø4,2 em pé em cada nervura · HI e HS: ø4,2 deitado a cada 25 cm · as 2 faces são iguais · em cada face o H vai por FORA (perto do concreto) e o V por DENTRO, na nervura.',
+      'PILAR (PL + estribo ES): 4 ø6,3 + estribo ø4,2 a cada 20 cm nas 2 pontas da parede e dos lados das portas (isopor cortado onde o pilar entra).',
+      'VERGA (VG) e CONTRAVERGA (CV): 4 ø6,3 (2 em cada face) em cima das portas/janelas e embaixo das janelas, passando L/5 para cada lado.',
       'ALÇAS: 4 em cima + 4 embaixo (2 + 2 em peça com menos de 1,20 m; mais alças em peça pesada), fora das portas.',
-      'ORDEM: espaçadores → tela de baixo (N2 nos espaçadores, N1 por cima) → pilares e vergas → isopor → tela de cima (N1, depois N2 por fora) → alças → concretar.',
+      'ORDEM: espaçadores → INFERIOR (HI nos espaçadores, VI por cima) → pilares e vergas → isopor → SUPERIOR (VS, depois HS por fora) → alças → concretar.',
       'DESFORMA / IÇAMENTO: com fcj >= 15 MPa · cura mínima de 3 dias com a peça úmida.',
     ];
     F.t(15, 262, 'NOTAS GERAIS', 8, { bold: true });
@@ -335,17 +340,17 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     moldura(F, `ARMAÇÃO ${laje ? 'DA LAJE' : 'DO PAINEL'} ${nome}`, `${laje ? 'LAJE' : 'PAREDE'} TIPO ${nome} — ${cm(L)} x ${cm(Hm)}${laje ? ' x ' + cm(t.esp) : ''} cm — ${qtd} peça${qtd > 1 ? 's' : ''}`, it + 2, TOTAL, `vistas 1:${esc} · corte 1:10`, E);
     const cods = g.map(cod).join(', ');
     F.t(15, 267.5, 'PEÇAS DESTE TIPO:', 6.2, { bold: true }); F.t(45, 267.5, cods.length < 150 ? cods : cods.slice(0, 150) + ' …', 6.6, { bold: true, color: '#1f3b57' });
-    const GR: [string, string[], string][] = laje ? [['1º  FERROS DE BAIXO + TRELIÇAS', ['L1', 'L4', 'L8', 'L9', 'L3', 'T'], '#b03a2e'], ['2º  FERROS DE CIMA + ALÇAS', ['L2', 'L7', 'L5', 'L3', 'A'], '#1a5276']]
-      : [['1º  FERROS EM PÉ + ALÇAS', ['N1', 'N3', 'A'], '#b03a2e'], ['2º  FERROS DEITADOS + ESTRIBOS', ['N2', 'N4', 'N5', 'N6'], '#1e8449']];
+    const GR: [string, string[], string][] = laje ? [['1º  INFERIORES (VI · HI) + TRELIÇAS', ['VI', 'RI1', 'RI2', 'HI', 'T'], '#b03a2e'], ['2º  SUPERIORES (VS · HS) + ALÇAS', ['VS1', 'VS3', 'VS2', 'HS', 'A'], '#1a5276']]
+      : [['1º  INFERIOR (VI · HI) + PILARES', ['VI', 'HI', 'PL', 'ES', 'VG', 'CV'], '#b03a2e'], ['2º  SUPERIOR (VS · HS) + ALÇAS', ['VS', 'HS', 'A'], '#1a5276']];
     const W = L * m, X0 = 36, passo = Math.max(W + 74 + 26, 185), Y0 = 118 + (130 - Hm * m) / 2;
     GR.forEach(([tit, fams, cor], i) => {
       const x0 = X0 + i * passo, as: PecaArm = { ...a, bars: a.bars.filter(b => fams.includes(b.f)), T: fams.includes('T') ? a.T : [] };
       F.r(x0 - 2, Y0 + Hm * m + 7.5, W + 4, 6.2, { fill: cor, stroke: cor, lw: 0 }); F.t(x0 + W / 2, Y0 + Hm * m + 10.6, tit, 7.2, { ha: 'center', va: 'center', color: '#ffffff', bold: true });
       const alc = fams.includes('A') ? t.alc : [], P = vista(F, as, alc, x0, Y0, m, laje);
-      const rl: Relacao = t.rel.filter(([k]) => fams.includes(fam(k))).map(([k, Lr]) => [k, fam(k) === 'L3' ? Lr.map(([c, q]) => [c, q / 2] as [number, number]) : Lr]);
+      const rl: Relacao = t.rel.filter(([k]) => fams.includes(fam(k)));
       chamadas(F, as, rl, alc, P, x0 + W + 9, Y0 - 2, Y0 + Hm * m + 2, laje, t.tg);
     });
-    if (!laje) F.t(15, 100.5, 'AS DUAS FACES SÃO IGUAIS: esta armação vale para a face de baixo (na mesa) e para a face de cima · em cada face o N2 (deitado) vai por FORA e o N1 (em pé) por DENTRO, na nervura', 5.6, { bold: true, color: '#1e8449' });
+    if (!laje) F.t(15, 100.5, 'AS DUAS FACES SÃO IGUAIS: INFERIOR (VI, HI) na mesa e SUPERIOR (VS, HS) em cima · em cada face o H (deitado) vai por FORA e o V (em pé) por DENTRO, na nervura', 5.6, { bold: true, color: '#1e8449' });
     F.seg(15, 97, 405, 97, 0.3, '#999999');
     const { kgT } = tabela(F, t.rel, qtd, 15, 88, laje, t.tg, t.esp, undefined, t.a.bitPos);
     const kpa = t.kg * COEF_ICA / t.ntrab, xd = 158;
@@ -354,8 +359,8 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       laje ? `Alças: ${t.alc.length} na face de cima` : `Alças: ${t.alc.length / 2} em cima + ${t.alc.length / 2} embaixo`, `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`]
       .forEach((s, i) => F.t(xd, 86.5 - i * 3.9, s, 5.8));
     F.t(xd, 64, 'ORDEM DE MONTAGEM', 6.4, { bold: true });
-    (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. Ferros de baixo (vista 1º): L1, L4 e L3', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. Ferros de cima (vista 2º): L2, L7, L5 e L3', '6. Alças na face de cima · conferir e concretar']
-      : ['1. Espaçadores de 2,5 cm na forma', '2. Tela de baixo: N2 deitado nos espaçadores, N1 em pé por cima', '3. Pilares (N3 + estribos N4) e vergas (N5 / N6)', '4. Isopor entre as nervuras (N1 fica na nervura)', '5. Tela de cima: N1 nas nervuras, N2 deitado por cima', '6. Alças · conferir e concretar'])
+    (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. INFERIORES (vista 1º): VI e HI', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. SUPERIORES (vista 2º): VS1, VS2, VS3 e HS', '6. Alças na face de cima · conferir e concretar']
+      : ['1. Espaçadores de 2,5 cm na forma', '2. INFERIOR: HI deitado nos espaçadores, VI em pé por cima', '3. Pilares (PL + estribos ES) e vergas (VG / CV)', '4. Isopor entre as nervuras (VI fica na nervura)', '5. SUPERIOR: VS nas nervuras, HS deitado por cima', '6. Alças · conferir e concretar'])
       .forEach((s, i) => F.t(xd, 59.5 - i * 3.9, s, 5.6));
     if (laje && t.a.ref?.length) {
       const wrap = (txt: string, n = 64) => { const o: string[] = []; let c = ''; for (const w of txt.split(' ')) { if ((c + ' ' + w).trim().length > n) { o.push(c); c = w; } else c = (c + ' ' + w).trim(); } if (c) o.push(c); return o; };
