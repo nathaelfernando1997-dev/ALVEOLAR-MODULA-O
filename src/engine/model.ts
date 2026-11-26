@@ -440,6 +440,7 @@ export interface Ajustes {
   naoMuro?: string[];                      // trechos que parecem muro (fora dos ambientes) mas são parede
   pilares?: { pav: string; nome: string; x0: number; x1: number; y0: number; y1: number }[];   // pilares de concreto moldados no local: a parede para na face deles
   vigaSecao?: Record<string, { nome?: string; larg: number; alt: number; abaixo?: boolean }>;   // seção definida pelo engenheiro (id da viga): largura e altura (m), toda embaixo da laje ou com o topo no topo da laje
+  escadaVao?: Record<string, { x0?: number; x1?: number; y0?: number; y1?: number }>;   // bordas do vão da escada ajustadas à mão (chave da escada), ex.: até a junta das lajes já produzidas
   naoEscada?: string[];                    // escadas reconhecidas que NÃO abrem vão na laje (chave pav|x0|y0)
   trelicasPainel?: Record<string, { compMin: number; borda: number; qtd?: number }>;   // por pavimento: painéis de laje a partir de compMin levam treliças ao longo (uma em cada lateral, a borda da beira, e as outras distribuídas)
   telhado?: Record<string, Telhado>;

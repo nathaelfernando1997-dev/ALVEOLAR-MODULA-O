@@ -406,6 +406,7 @@ export default function App() {
           if (!eCima.some(c => ov(c) > 0.3 * (e.x1 - e.x0) * (e.y1 - e.y0))) continue;
           if (vazio.escadas.some(x => x.pav === p.id && ov(x.e) > 0.5 * (e.x1 - e.x0) * (e.y1 - e.y0))) continue;   // já achada pelos degraus
           const chave = `${p.id}|${e.x0.toFixed(1)}|${e.y0.toFixed(1)}`, ligada = !(aj.naoEscada || []).includes(chave);
+          const ajv = aj.escadaVao?.[chave]; if (ajv) Object.assign(e, ajv);   // bordas do vão ajustadas à mão
           // borda do vão que não cai em parede/linha de piso fica solta: viga de borda na borda que dá a viga mais curta, de parede a parede
           let viga: { o: 'H' | 'V'; c: number; s: number; e: number } | undefined;
           if (ligada) {
@@ -938,6 +939,14 @@ export default function App() {
                       ? <p className="dica">{regras.escadaAuto === false ? 'Reconhecimento da escada desligado nas regras.' : 'Nenhuma escada reconhecida neste pavimento. O vão abre sozinho quando os degraus estão desenhados aqui e no pavimento de cima (no mesmo lugar). Se não abrir, use "Sem laje aqui" no ambiente da escada.'}</p>
                       : calc.escadas.filter(x => x.pav === pavAtual.id).map(x => <div key={x.chave} className="corte-item">
                         {x.ligada ? '✔ vão aberto na laje' : '✖ laje fechada'} · {br(x.e.x1 - x.e.x0)} × {br(x.e.y1 - x.e.y0)} m · {x.e.passo ? `degraus a cada ${Math.round(x.e.passo * 100)} cm` : 'contorno com o texto ESCADA (helicoidal/caracol)'}
+                        {x.ligada && <div className="secao-viga">
+                          <b>Bordas do vão (m)</b>
+                          {([['x0', 'esquerda (x)'], ['x1', 'direita (x)'], ['y0', 'embaixo (y)'], ['y1', 'em cima (y)']] as const).map(([k, rot]) => <label key={k}>{rot} <input type="number" step="0.01" key={x.chave + k + x.e[k]} defaultValue={x.e[k].toFixed(3)} onBlur={ev => {
+                            const v = parseFloat(ev.target.value.replace(',', '.')); if (!isFinite(v) || Math.abs(v - x.e[k]) < 0.0005) return;
+                            setAj({ ...aj, escadaVao: { ...(aj.escadaVao || {}), [x.chave]: { ...(aj.escadaVao?.[x.chave] || {}), [k]: v } } }); }} /></label>)}
+                          {aj.escadaVao?.[x.chave] && <button onClick={() => { const m = { ...(aj.escadaVao || {}) }; delete m[x.chave]; setAj({ ...aj, escadaVao: m }); }}>Voltar ao vão reconhecido</button>}
+                          <p className="dica">Use para levar a borda do vão até a junta das lajes que já foram produzidas: as lajes em volta ficam iguais e só a do lado do vão muda.</p>
+                        </div>}
                         {x.viga && <div>+ viga de borda do vão: {x.viga.o === 'H' ? 'horizontal' : 'vertical'} de {br(x.viga.e - x.viga.s)} m, de parede a parede (apoia a laje que fica do lado do vão; apoia em parede ou linha de piso)</div>}
                         <button onClick={() => setAj({ ...aj, naoEscada: x.ligada ? [...(aj.naoEscada || []), x.chave] : (aj.naoEscada || []).filter(k => k !== x.chave) })}>{x.ligada ? 'não é escada (fechar laje)' : 'abrir o vão de novo'}</button></div>)}
                     <p className="dica">Reconhecida pelos degraus desenhados (5 ou mais, espaçados por igual) ou, na helicoidal/caracol, pelo contorno de 1,00 a 2,60 m com o texto ESCADA perto. O vão vai de parede a parede e leva o patamar junto; a laje do pavimento de cima não é afetada.</p>
@@ -1542,7 +1551,7 @@ export default function App() {
                 <label className="botao">Abrir só os ajustes das LAJES (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try {
                   const j = JSON.parse(await f.text()), sa = (j.config?.ajustes ?? j.ajustes ?? {}) as Partial<Ajustes>;
                   // só o que é da laje: giro, inteira, emendas, juntar, fora, espessuras, treliças, numeração fixa e armação; paredes e vigas ficam como estão
-                  const K = ['lajeGiro', 'lajeInteira', 'lajeEmendas', 'lajeJuntar', 'lajeFora', 'lajeEspAmb', 'lajeEspPainel', 'lajeEspPav', 'laje16', 'trelicasPainel', 'lajeNumFixa', 'arm', 'naoEscada'] as const;
+                  const K = ['lajeGiro', 'lajeInteira', 'lajeEmendas', 'lajeJuntar', 'lajeFora', 'lajeEspAmb', 'lajeEspPainel', 'lajeEspPav', 'laje16', 'trelicasPainel', 'lajeNumFixa', 'arm', 'naoEscada', 'escadaVao'] as const;
                   const novo = { ...aj } as Record<string, unknown>; for (const k of K) if (k in sa) novo[k] = (sa as Record<string, unknown>)[k];
                   setAj(novo as unknown as Ajustes); alert('Ajustes das lajes aplicados. Paredes e vigas não foram mexidas.');
                 } catch (er) { alert('Arquivo inválido: ' + (er as Error).message); } e.target.value = ''; }} /></label>
