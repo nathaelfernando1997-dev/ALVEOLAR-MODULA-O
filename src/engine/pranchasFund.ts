@@ -2,7 +2,8 @@
 // Desenho em mm de papel com y para baixo (como no papel); a Folha guarda com y para cima.
 import { Folha, type Pagina } from './folhaDoc.ts';
 import type { OpBloco, OpEstaca, Locacao } from './fundacao.ts';
-import type { Canaleta } from './canaleta.ts';
+import { CANALETA, type Canaleta } from './canaleta.ts';
+const CANALETA_LARG = CANALETA.larg;
 
 const PT = 72 / 25.4;
 const K = '#000000', CZ = '#777777';
@@ -293,6 +294,55 @@ export function folhaBaseParedes(I: InfoProj, o: BaseParedes, folha: string): Pa
     '5. Concreto da cinta igual ao do painel (mín. C25). Aço CA-50 e CA-60 (ø4.2 e ø5.0).'];
   d.T(24, 246, 'NOTAS', 3, { b: true }); notas.forEach((t, i) => d.T(24, 252 + i * 3.9, t, 2.2));
   carimbo(d, I, 'FUNDAÇÃO — CINTA DAS PORTAS E BASE DAS PAREDES', 'INDICADAS', folha);
+  return d.F;
+}
+
+// ================= FUND-07: planta cotada da base de canaleta (A1, escala grande) =================
+export function folhaCanaletaPlanta(I: InfoProj, c: Canaleta, blocos: { x: number; y: number }[], folha: string): Pagina {
+  const h = CANALETA_LARG / 2;
+  const xs = c.segs.flatMap(s => s.o === 'H' ? [s.a, s.b] : [s.c - h, s.c + h]), ys = c.segs.flatMap(s => s.o === 'V' ? [s.a, s.b] : [s.c - h, s.c + h]);
+  const x0 = Math.min(...xs) - 1.6, x1 = Math.max(...xs) + 0.8, y0 = Math.min(...ys) - 0.8, y1 = Math.max(...ys) + 1.6;
+  let best: { w: number; h: number; e: number } | null = null;
+  for (const [w, hh] of [[594, 841], [841, 594]]) for (const e of [50, 75, 100, 125, 150]) { const k = 1000 / e; if ((x1 - x0) * k <= w - 40 && (y1 - y0) * k <= hh - 135) { if (!best || e < best.e) best = { w, h: hh, e }; break; } }
+  best ??= { w: 841, h: 594, e: 200 };
+  const d = new D(best.w, best.h), k = 1000 / best.e, ox = (best.w - (x1 - x0) * k) / 2, oy = 70;
+  const X = (x: number) => ox + (x - x0) * k, Y = (y: number) => oy + (y1 - y) * k;
+  const cm = (v: number) => String(Math.round(v * 100));
+  for (const b of blocos) d.R(X(b.x - 0.25), Y(b.y + 0.25), 0.5 * k, 0.5 * k, 0.2, CZ, [1, 0.8]);
+  for (const s of c.pecas) {
+    const [a0, a1, b0, b1] = s.o === 'H' ? [s.a, s.b, s.c - h, s.c + h] : [s.c - h, s.c + h, s.a, s.b];
+    d.R(X(a0), Y(b1), (a1 - a0) * k, (b1 - b0) * k, 0.12, K, undefined, s.cortada ? '#8c8c8c' : '#cfcfcf');
+  }
+  const fs = 2.6, off = 3.2;
+  // comprimento de cada trecho de canaleta (de face a face, como vai no chão); H cotado em cima, V à esquerda
+  for (const s of c.segs) {
+    if (s.o === 'H') { const y = Y(s.c + h) - off; d.L(X(s.a), y, X(s.b), y, 0.15); tick(d, X(s.a), y); tick(d, X(s.b), y); d.L(X(s.a), y - 0.8, X(s.a), Y(s.c + h), 0.1); d.L(X(s.b), y - 0.8, X(s.b), Y(s.c + h), 0.1); d.T((X(s.a) + X(s.b)) / 2, y - 0.8, cm(s.b - s.a), fs, { a: 'middle', b: true }); }
+    else { const x = X(s.c - h) - off; d.L(x, Y(s.a), x, Y(s.b), 0.15); tick(d, x, Y(s.a)); tick(d, x, Y(s.b)); d.L(x + 0.8, Y(s.a), X(s.c - h), Y(s.a), 0.1); d.L(x + 0.8, Y(s.b), X(s.c - h), Y(s.b), 0.1); d.T(x - 0.8, (Y(s.a) + Y(s.b)) / 2, cm(s.b - s.a), fs, { a: 'middle', b: true, rot: 90 }); }
+  }
+  // vãos sem canaleta (portas) na mesma linha: cota em cinza
+  const linhas = new Map<string, typeof c.segs>();
+  for (const s of c.segs) { const kk = s.o + Math.round(s.c * 100); linhas.set(kk, [...(linhas.get(kk) ?? []), s]); }
+  for (const ss of linhas.values()) {
+    ss.sort((p, q) => p.a - q.a);
+    for (let i = 0; i + 1 < ss.length; i++) { const a = ss[i].b, b = ss[i + 1].a, s = ss[i]; if (b - a < 0.05 || b - a > 1.3) continue;   // só vão de porta, na mesma linha de cota do trecho
+      if (s.o === 'H') { const y = Y(s.c + h) - off; d.L(X(a), y, X(b), y, 0.15, CZ); tick(d, X(a), y); tick(d, X(b), y); d.T((X(a) + X(b)) / 2, y - 0.8, `porta ${cm(b - a)}`, 2.2, { a: 'middle', c: CZ }); }
+      else { const x = X(s.c - h) - off; d.L(x, Y(a), x, Y(b), 0.15, CZ); tick(d, x, Y(a)); tick(d, x, Y(b)); d.T(x - 0.8, (Y(a) + Y(b)) / 2, `porta ${cm(b - a)}`, 2.2, { a: 'middle', c: CZ, rot: 90 }); }
+    }
+  }
+  // cotas de locação: eixo de cada linha de canaleta, acumulado a partir da primeira (em cima e à esquerda)
+  const juntar = (v: number[]) => { const o = [...new Set(v.map(x => Math.round(x * 100) / 100))].sort((a, b) => a - b); return o.filter((x, i) => i === 0 || x - o[i - 1] > 0.05); };
+  const cx = juntar(c.segs.filter(s => s.o === 'V').map(s => s.c)), cy = juntar(c.segs.filter(s => s.o === 'H').map(s => s.c));
+  const yT = Y(y1) + 4, xL = X(x0) + 4;
+  d.T(X(cx[0]), yT - 5, 'eixos das canaletas (cotas acumuladas em cm a partir do 1º eixo)', 2.4, { b: true });
+  for (const v of cx) { d.L(X(v), yT, X(v), yT + 6, 0.12, CZ, [1, 0.8]); d.Cf(X(v), yT + 6, 0.4); d.T(X(v) - 0.6, yT + 5, cm(v - cx[0]), 2.3, { a: 'end', rot: 90 }); }
+  for (const v of cy) { d.L(xL, Y(v), xL + 6, Y(v), 0.12, CZ, [1, 0.8]); d.Cf(xL + 6, Y(v), 0.4); d.T(xL + 5, Y(v) - 0.6, cm(v - cy[0]), 2.3, { a: 'end' }); }
+  d.T(xL, Y(cy[0]) + 4, '0 = eixo de baixo', 2, { c: CZ });
+  d.T(24, 30, 'FUND-07 — PLANTA DA BASE DE CANALETA (COTADA)', 9, { b: true });
+  d.T(24, 40, `Canaleta 14 × 19 × 39 · ${c.pecas.length} peças (${c.pecas.filter(p => p.cortada).length} cortadas, em cinza escuro) · ${br(c.L, 1)} m corridos · escala 1:${best.e}`, 4.4);
+  d.T(24, 48, 'Medidas em cm. Cota preta = comprimento de cada trecho de canaleta, de face a face (nos cantos vai até a face de fora da outra canaleta).', 4);
+  d.T(24, 55, 'Cota cinza "porta" = vão sem canaleta. Em cima e à esquerda: posição do eixo de cada linha de canaleta, acumulada. Tracejado: blocos 50 × 50.', 4);
+  d.T(24, 62, 'Nos encontros a fiada horizontal passa direto e a vertical para na face dela. Detalhe, corte e quantitativo: ver a folha seguinte.', 4);
+  carimbo(d, I, 'FUNDAÇÃO — PLANTA COTADA DA BASE DE CANALETA', `1:${best.e}`, folha);
   return d.F;
 }
 

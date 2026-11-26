@@ -1124,7 +1124,7 @@ export default function App() {
               const I = { obra: projNome || base, resp: 'Eng. Nathael Fernando Miranda dos Santos · CREA 1020724730D-GO', empresa: 'Estruttura Projetos e Construções', data: new Date().toLocaleDateString('pt-BR'), revisao: aj.arm?.revisao };
               const nAp = pts.filter(p => p.tipo === 'apoio').length, n = pts.length - nAp, ehBase = resOk && !fund.baldrame && !!resFund;
               const tipoE = TIPOS_ESTACA.find(t => t[0] === fund.tipo)?.[1].toLowerCase() ?? '';
-              const nomes = ['FUND-01', 'FUND-02', ...(resOk ? ['FUND-02'] : []), ...(ehBase ? ['FUND-03'] : []), ...(can ? ['FUND-07'] : []), 'FUND-04', 'FUND-05', 'FUND-06'];
+              const nomes = ['FUND-01', 'FUND-02', ...(resOk ? ['FUND-02'] : []), ...(ehBase ? ['FUND-03'] : []), ...(can ? ['FUND-07', 'FUND-07'] : []), 'FUND-04', 'FUND-05', 'FUND-06'];
               const tot = String(nomes.length).padStart(2, '0'); let k = 0; const fol = () => `${nomes[k]} · ${String(++k).padStart(2, '0')}/${tot}`;
               const pares = pts.filter(p => p.par && p.n < p.par), dPar = pares.length ? Math.max(...pares.map(p => { const q = pts.find(r => r.n === p.par)!; return Math.hypot(p.x - q.x, p.y - q.y); })) : 0;
               const pags = [P.folhaEstacaBloco(I, oe, ob, n, n - 2 * pares.length + nAp, [{ L: oe.comp, n }], { baldrame: !!fund.baldrame }, fol(), { n: pares.length, comp: Math.ceil((dPar + ob.lado) * 20) / 20 })];
@@ -1137,7 +1137,7 @@ export default function App() {
                 const T = resFund.trechos, Hs = tf.map(t => t.H).sort((a, b) => a - b);
                 pags.push(P.folhaBaseParedes(I, { portas: [...grupos.values()], LW: tf.reduce((s, t) => s + t.e - t.s, 0), tela10: T.some(t => t.Tparede > TELA25), nTrechosTela: T.filter(t => t.Tparede > TELA25).length, nTrechosCinta: T.filter(t => t.Tparede > TELA10).length, Tporta: Math.max(0, ...T.map(t => t.Tporta)), Tparede: Math.max(0, ...T.map(t => t.Tparede)), H: Hs[Math.floor(Hs.length / 2)] ?? 3 }, fol()));
               }
-              if (can) pags.push(P.folhaCanaleta(I, can, [], pts.map(p => ({ x: p.x, y: p.y })), fol()));
+              if (can) { const bl = pts.map(p => ({ x: p.x, y: p.y })); pags.push(P.folhaCanaletaPlanta(I, can, bl, fol()), P.folhaCanaleta(I, can, [], bl, fol())); }
               pags.push(...P.folhasBloco3D(I, oe, ob, [fol(), fol(), fol()]));
               baixarBin(`${projNome || base} - Fundacao (pranchas).pdf`, paginasParaPdf(pags), 'application/pdf');
             };
