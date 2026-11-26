@@ -13,7 +13,7 @@ export interface Vao { x0: number; x1: number; y0: number; y1: number; porta: bo
 export interface Trel { n: number; vert: boolean; pos: number; i0: number; i1: number; tipo: string; borda?: boolean }
 // reforço da laje embaixo de parede do pavimento de cima (sem parede embaixo): faixa maciça (sem isopor) + ferro extra embaixo
 export interface Reforco { modo: 'longo' | 'atravessa'; pos: number; i0: number; i1: number; faixa: number; n: number; bit: number; porNerv: boolean; q: number; Md: number; Vd: number; ok: boolean; macico: boolean; txt: string }
-export interface PecaArm { L: number; Hx: (x: number) => number; ab: Vao[]; slots: [number, number][]; zon: [number, number][]; bars: Barra[]; sobParede: number[]; T: Trel[]; esp: number; ref?: Reforco[] }
+export interface PecaArm { L: number; Hx: (x: number) => number; ab: Vao[]; slots: [number, number][]; zon: [number, number][]; bars: Barra[]; sobParede: number[]; T: Trel[]; esp: number; ref?: Reforco[]; bitPos?: number }   // bitPos: positivo (L1 e L4) escolhido pela verificação
 export interface VigaTrel { id: string; pav: string; o: 'H' | 'V'; c: number; a: number; b: number; n?: number }
 
 export const COB = 0.025, PASSO_H = 0.25, PASSO_T = 0.30, ESTR = 0.20, PIL = 0.12, NEG_FRAC = 0.25, FAIXA_PAREDE = 0.20;
@@ -199,7 +199,7 @@ export const GF = 1.4, Q_USO = 1.5, G_REV = 1.0;
 const PSI2 = 0.3, ALFA_F = 1.32, FCJ = 15;
 const fcd = FCK / GC / 10, fyd50 = 50 / GS, fyd60 = 60 / GS, fctm = 0.3 * FCK ** (2 / 3) / 10, fctd = 0.7 * fctm / GC;
 const Eci = 5600 * Math.sqrt(FCK) / 10, Ecs = (0.8 + 0.2 * FCK / 80) * Eci, fbd = 2.25 * fctd;
-const AS: Record<string, number> = { '4.2': 0.139, '5': 0.196, '6.3': 0.312, '8': 0.503 };
+const AS: Record<string, number> = { '4.2': 0.139, '5': 0.196, '6.3': 0.312, '8': 0.503, '10': 0.785, '12.5': 1.227 };
 function secao(esp = 14, b = 15, cap = 2.5, bw = 3) {
   const hw = esp - 2 * cap, y = esp / 2;
   return { A: 2 * b * cap + bw * hw, y, I: 2 * (b * cap ** 3 / 12 + b * cap * (y - cap / 2) ** 2) + bw * hw ** 3 / 12 };
@@ -289,6 +289,14 @@ export function relacao(a: PecaArm, nal: number, laje: boolean): Relacao {
   return out;
 }
 export const ALCA_KEY = 'ø8,0 CA-25';
-export const bitDe = (k: string, laje: boolean, tg: string): number | string => fam(k) === 'T' ? tg : fam(k) === 'A' ? ALCA_KEY : (laje ? POSL : POS)[fam(k)][0];
-export const kgmDe = (k: string, laje: boolean, tg: string) => fam(k) === 'T' ? TG_KG[tg] ?? 0.886 : fam(k) === 'A' ? 0.395 : KG[String(bitDe(k, laje, tg))];
-export const kgRel = (rel: Relacao, laje: boolean, tg: string) => rel.reduce((s, [k, L]) => s + L.reduce((t, [c, q]) => t + c / 100 * q * kgmDe(k, laje, tg), 0), 0);
+// pos: bitola do positivo da laje (L1 e L4) escolhida na verificação; sem ela vale a do padrão (ø6,3)
+export const bitDe = (k: string, laje: boolean, tg: string, pos?: number): number | string => fam(k) === 'T' ? tg : fam(k) === 'A' ? ALCA_KEY : laje && pos && (fam(k) === 'L1' || fam(k) === 'L4') ? pos : (laje ? POSL : POS)[fam(k)][0];
+export const kgmDe = (k: string, laje: boolean, tg: string, pos?: number) => fam(k) === 'T' ? TG_KG[tg] ?? 0.886 : fam(k) === 'A' ? 0.395 : KG[String(bitDe(k, laje, tg, pos))];
+export const kgRel = (rel: Relacao, laje: boolean, tg: string, pos?: number) => rel.reduce((s, [k, L]) => s + L.reduce((t, [c, q]) => t + c / 100 * q * kgmDe(k, laje, tg, pos), 0), 0);
+// positivo da laje: o menor entre ø6,3, ø8,0 e ø10,0 que passa na verificação (flexão, flecha, cortante e ancoragem)
+export const BITS_POS = [6.3, 8, 10];
+export function escolherPositivo(a: PecaArm, esp: number, apoio = 0.06): { bit: number; ok: boolean } {
+  const nn = new Set(a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, Lc = a.Hx(0);
+  for (const bit of BITS_POS) { const c = verLaje(Lc, a.L, nn, esp, bit, apoio); if (c.ok_As && c.ok_f && c.ok_V && c.ok_anc) return { bit, ok: true }; }
+  return { bit: BITS_POS[BITS_POS.length - 1], ok: false };
+}

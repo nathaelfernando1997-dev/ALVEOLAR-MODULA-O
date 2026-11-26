@@ -5,6 +5,7 @@ import { Folha, type Pagina } from './folhaDoc.ts';
 import {
   armarParede, armarLaje, trelicasDoPainel, alcas, relacao, pesoPeca, verLaje, verParede, manuseio, tgDaEsp, comp, fam, bitDe, kgmDe, kgRel,
   POS, POSL, COB, ALCA_CAP, COEF_ICA, ALCA_KEY, TG_KG, pp, G_REV, Q_USO, GF, lb, type PecaArm, type Relacao, type VigaTrel,
+  escolherPositivo,
 } from './armacao.ts';
 
 export interface EntradaArm {
@@ -66,7 +67,7 @@ function vista(F: Folha, a: PecaArm, alc: [number, number, number][], X0: number
   const vis = new Set<string>(), PD = laje ? POSL : POS;
   for (const b of a.bars) {
     const k = `${b.f}|${b.x0.toFixed(4)}|${b.y0.toFixed(4)}|${b.x1.toFixed(4)}|${b.y1.toFixed(4)}`; if (vis.has(k)) continue; vis.add(k);
-    const dx = b.f === 'L2' || b.f === 'L7' ? 0.014 : 0, [x0, y0] = P(b.x0 + dx, b.y0), [x1, y1] = P(b.x1 + dx, b.y1), bt = PD[b.f]?.[0] ?? 4.2;
+    const dx = b.f === 'L2' || b.f === 'L7' ? 0.014 : 0, [x0, y0] = P(b.x0 + dx, b.y0), [x1, y1] = P(b.x1 + dx, b.y1), bt = laje && a.bitPos && (b.f === 'L1' || b.f === 'L4') ? a.bitPos : PD[b.f]?.[0] ?? 4.2;
     F.seg(x0, y0, x1, y1, bt < 5 ? 0.45 : bt < 6 ? 0.6 : 0.85, COR[b.f]);
   }
   for (const t of a.T) {
@@ -128,7 +129,7 @@ function chamadas(F: Folha, a: PecaArm, rel: Relacao, alc: [number, number, numb
     if (f === 'A') { if (!alc.length) continue; const pt = laje ? P(alc[alc.length - 1][0], alc[alc.length - 1][1]) : P(...[...alc].sort((p, r) => r[1] - p[1] || r[0] - p[0])[0].slice(0, 2) as [number, number]); alvo.push({ pt, txt: `${q} ø8,0 CA-25 liso · ${c} cm`, f, y: pt[1], k, c }); continue; }
     if (f === 'T') { const t = a.T.find(t => Math.round((t.i1 - t.i0 - 2 * COB) * 100) === c) ?? a.T[0]; const m = t.i0 + (t.i1 - t.i0) * 0.6, pt = t.vert ? P(t.pos, m) : P(m, t.pos); alvo.push({ pt, txt: `${q} ${tg} · ${c} cm`, f, y: pt[1], k, c }); continue; }
     let bs = a.bars.filter(b => b.f === f && Math.round(comp(b) * 100) === c); if (!bs.length) bs = a.bars.filter(b => b.f === f);
-    const bit = 'ø' + br(PD[f][0], 1), qtxt = DUAS_FACES.has(f) && q % 2 === 0 && q > 2 ? `2×${q / 2}` : String(q);
+    const bit = 'ø' + br(laje && a.bitPos && (f === 'L1' || f === 'L4') ? a.bitPos : PD[f][0], 1), qtxt = DUAS_FACES.has(f) && q % 2 === 0 && q > 2 ? `2×${q / 2}` : String(q);
     const i = idx.get(f) ?? 0; idx.set(f, i + 1);
     let pt: [number, number], txt: string;
     const xs = [...new Set(bs.map(b => Math.round(b.x0 * 1000) / 1000))].sort((p, r) => p - r), ys = [...new Set(bs.map(b => Math.round(b.y0 * 1000) / 1000))].sort((p, r) => p - r);
@@ -210,7 +211,7 @@ function corteA(F: Folha, a: PecaArm, X0: number, Y0: number, laje: boolean) {
   F.t(X0 + W / 2, Y0 - 3, 'cobrimento 2,5 cm' + (laje ? ' · L1/L4 embaixo · L7/L2/L5 em cima' : ' · as 2 faces iguais · pilar N3 + estribo N4'), 4.8, { ha: 'center', va: 'top', color: '#333333' });
 }
 
-function tabela(F: Folha, rel: Relacao, qtd: number, X0: number, Ytop: number, laje: boolean, tg: string, esp: number, W = 137) {
+function tabela(F: Folha, rel: Relacao, qtd: number, X0: number, Ytop: number, laje: boolean, tg: string, esp: number, W = 137, pos?: number) {
   const nl = rel.reduce((s, [, L]) => s + L.length, 0), cols: [string, number][] = [['POS.', 12], ['BIT.', 14], ['QUANT.', 13], ['C. UNIT.', 15], ['C. TOT. (m)', 18], ['PESO (kg)', 17]], h = Math.min(5.2, 66 / Math.max(1, nl));
   F.t(X0 + W / 2, Ytop + 1.6, `RELAÇÃO DO AÇO — POR PEÇA (x ${qtd} peça${qtd > 1 ? 's' : ''})`, 6.8, { ha: 'center', bold: true });
   F.r(X0, Ytop - 4.2, W, 4.2, { fill: '#1f3b57', stroke: '#1f3b57', lw: 0.5 });
@@ -219,8 +220,8 @@ function tabela(F: Folha, rel: Relacao, qtd: number, X0: number, Ytop: number, l
   F.t(x + (X0 + W - x) / 2, Ytop - 2.1, 'FORMA (cm)', 5, { ha: 'center', va: 'center', color: '#ffffff', bold: true });
   let y = Ytop - 4.2, kgT = 0;
   for (const [k, L] of rel) for (const [c, q] of L) {
-    y -= h; const f = fam(k), kg = c / 100 * q * kgmDe(k, laje, tg); kgT += kg;
-    const bt = bitDe(k, laje, tg), vals = [k, f === 'A' ? 'ø8,0 L' : bitTxt(bt), String(q), String(c), br(c * q / 100), br(kg)];
+    y -= h; const f = fam(k), kg = c / 100 * q * kgmDe(k, laje, tg, pos); kgT += kg;
+    const bt = bitDe(k, laje, tg, pos), vals = [k, f === 'A' ? 'ø8,0 L' : bitTxt(bt), String(q), String(c), br(c * q / 100), br(kg)];
     x = X0;
     cols.forEach(([cc, w], i) => { F.t(x + w / 2, y + h / 2, vals[i], 5.4, { ha: 'center', va: 'center', color: cc === 'POS.' ? COR[f] : INK, bold: cc === 'POS.' }); x += w; });
     const fx = x + 3, fw = X0 + W - fx - 3, ym = y + h / 2;
@@ -259,7 +260,8 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
   const vigasT = E.vigas;
   if (laje) for (const p of E.pl) {
     const esp = E.espLaje(p), tg = tgDaEsp(esp), T = trelicasDoPainel(p, vigasT, tg), a = armarLaje(p, T, R, esp, E.trelBorda16 && esp >= 0.16 - 1e-6, cargaLinha(p.pav));
-    const k = JSON.stringify([esp, Math.round(p.larg * 100), Math.round(p.comp * 100), p.dente ?? null, a.T.map(t => [t.vert, Math.round(t.pos * 100), Math.round(t.i0 * 100), Math.round(t.i1 * 100)]).sort(), (a.ref ?? []).map(r => r.txt)]);
+    a.bitPos = escolherPositivo(a, esp, R.lajeApoio ?? 0.06).bit;   // positivo pela verificação (ø6,3 → ø8,0 → ø10,0)
+    const k = JSON.stringify([esp, a.bitPos, Math.round(p.larg * 100), Math.round(p.comp * 100), p.dente ?? null, a.T.map(t => [t.vert, Math.round(t.pos * 100), Math.round(t.i0 * 100), Math.round(t.i1 * 100)]).sort(), (a.ref ?? []).map(r => r.txt)]);
     const g = grupos.get(k); if (g) { g.g.push(p); continue; }
     const area = p.comp * p.larg - (p.dente ? (p.dente.x1 - p.dente.x0) * (p.dente.y1 - p.dente.y0) : 0), w = pesoPeca(p.larg, p.comp, area, [], esp, R);
     const fIso = (R.isoporLarg ?? 0.12) / ((R.isoporLarg ?? 0.12) + (R.isoporEspaco ?? 0.03)) * (R.isoporAlt ?? 0.09);   // m³ de isopor por m² de laje
@@ -280,7 +282,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
   const ver = tipos.map(t => {
     const L = t.a.L, Lc = t.a.Hx(0);
     if (laje) {
-      const nn = new Set(t.a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, c = verLaje(Lc, L, nn, t.esp, PD.L1[0], R.lajeApoio ?? 0.06), mh = manuseio(Lc * 0.6, t.esp);
+      const nn = new Set(t.a.bars.filter(b => b.f === 'L1').map(b => Math.round(b.x0 * 1000))).size, c = verLaje(Lc, L, nn, t.esp, t.a.bitPos ?? PD.L1[0], R.lajeApoio ?? 0.06), mh = manuseio(Lc * 0.6, t.esp);
       return { ok: c.ok_As && c.ok_f && c.ok_V && c.ok_anc && mh.ok, txt: `Md ${br(c.Md)} kN.m · As ${br(c.As_nec)} <= ${br(c.As_ef)} cm² · flecha ${br(c.f)} <= ${br(c.flim)} cm · Vd ${br(c.Vd)} <= ${br(c.VRd)} kN/nerv. · ancoragem ${br(c.ancor_disp / 10, 1)} >= ${br(c.lb_min / 10, 0)} cm · içamento ${br(mh.sigma)} <= ${br(mh.lim)} MPa` };
     }
     const pvi = Math.min(...t.g.map(q => idxPav.get(q.pav) ?? 0)), c = verParede(Lc, t.esp, cargaParede(pvi, Lc)), mh = manuseio(Lc, t.esp);
@@ -292,12 +294,12 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
   {
     const F = new Folha(); moldura(F, `NOTAS GERAIS — ${laje ? 'LAJES' : 'PAREDES'}`, `DETALHAMENTO DA ARMAÇÃO — ${laje ? 'LAJES' : 'PAREDES'}`, 1, TOTAL, '—', E);
     const N = laje ? [
-      'MATERIAIS: concreto fck 30 MPa · aço CA-50 (ø6,3 e ø8,0) e CA-60 (ø4,2 e ø5,0) · alças de içamento em aço CA-25 liso ø8,0 · treliças TG conforme espessura.',
+      `MATERIAIS: concreto fck 30 MPa · aço CA-50 (ø6,3, ø8,0${tipos.some(t => (t.a.bitPos ?? 0) >= 10) ? ' e ø10,0' : ''}) e CA-60 (ø4,2 e ø5,0) · alças de içamento em aço CA-25 liso ø8,0 · treliças TG conforme espessura.`,
       'COBRIMENTO: 2,5 cm (pastilhas de 2,5 cm embaixo; apoios na camada de cima).',
       `ESPESSURAS: ${[...new Set(tipos.map(t => cm(t.esp)))].join(' / ')} cm · isopor 12 x 9 cm a cada 15 cm · capas de concreto em cima e embaixo do isopor.`,
-      `POSITIVO (L1): ø${br(PD.L1[0], 1)} em cada nervura, com gancho a 90° nas 2 pontas subindo até a capa de cima.`,
+      `POSITIVO (L1 nas nervuras e L4 nas bordas): ${[...new Set(tipos.map(t => t.a.bitPos ?? PD.L1[0]))].sort((x, y) => x - y).map(v => 'ø' + br(v, 1)).join(' / ')} conforme o vão (o sistema escolhe o menor que passa na verificação; ver cada folha), com gancho a 90° nas 2 pontas subindo até a capa de cima.`,
       'EM CIMA: L2 ø8,0 nas pontas (1/4 do vão) e L7 ø5,0 corrido; nas nervuras embaixo de parede do pavimento de cima, L2 ø8,0 corrido.',
-      'BORDA: 2 ø6,3 embaixo (L4, com gancho) + 2 ø8,0 em cima (L5) em cada lateral · L3 ø4,2 atravessado a cada 30 cm (2 faces).',
+      'BORDA: 2 barras embaixo (L4, com gancho, mesma bitola do positivo da peça) + 2 ø8,0 em cima (L5) em cada lateral · L3 ø4,2 atravessado a cada 30 cm (2 faces).',
       'TRELIÇAS: embaixo das paredes do pavimento de cima, na posição de cada folha' + (E.trelBorda16 ? '; lajes de 16 cm ou mais: treliça também nas 2 laterais de cada painel.' : '.'),
       'REFORÇO SOB PAREDE DE CIMA (L8 ø10 / L9 ø12,5): onde a parede do pavimento de cima fica em cima da laje sem parede embaixo, faixa maciça (sem isopor) e ferro a mais embaixo, conforme a folha de cada laje.',
       'ALÇAS: 4 na face de cima (6 ou 8 nos painéis pesados, com parte maciça), pernas de 50 cm ao longo da nervura, laço saindo 8 cm.',
@@ -320,7 +322,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     F.t(15, y, 'HIPÓTESES DE CÁLCULO (NBR 6118 / NBR 9062 / NBR 6120)', 8, { bold: true }); y -= 7;
     for (const s of [`Concreto fck 30 MPa (γc 1,4) · aço CA-50/CA-60 (γs 1,15) · ações γf ${br(GF, 1)} · revestimento ${br(G_REV, 1)} kN/m² · sobrecarga ${br(Q_USO, 1)} kN/m².`,
       laje ? 'Laje: painel biapoiado, vão = comprimento do painel, seção I por nervura (15 cm); flecha na combinação quase permanente com fluência (L/250).' : 'Parede: compressão com redução simplificada de 0,6 (esbeltez/excentricidade) e carga dos pavimentos de cima (paredes + lajes).',
-      `Ancoragem: lb ø4,2 = ${br(lb(4.2, 60) / 10, 0)} cm · ø6,3 = ${br(lb(6.3) / 10, 0)} cm · ø8,0 = ${br(lb(8) / 10, 0)} cm (boa aderência).`,
+      `Ancoragem: lb ø4,2 = ${br(lb(4.2, 60) / 10, 0)} cm · ø6,3 = ${br(lb(6.3) / 10, 0)} cm · ø8,0 = ${br(lb(8) / 10, 0)} cm · ø10,0 = ${br(lb(10) / 10, 0)} cm (boa aderência).`,
       'Paredes do pavimento de cima apoiadas na laje: reforço com treliça na posição indicada (e faixa maciça quando indicada no projeto).']) { F.t(15, y, s, 6.2); y -= 6; }
     F.t(15, y - 4, `ÍNDICE: ${NT} tipos (${pref}-01 a ${pref}-${String(NT).padStart(2, '0')}) · ${tipos.reduce((s, t) => s + t.g.length, 0)} peças · folhas 02 a ${String(NT + 1).padStart(2, '0')} · resumo do aço na folha ${String(TOTAL - 1).padStart(2, '0')} · verificações na folha ${String(TOTAL).padStart(2, '0')}.`, 6.6, { bold: true });
     pags.push(F);
@@ -344,7 +346,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     });
     if (!laje) F.t(15, 100.5, 'AS DUAS FACES SÃO IGUAIS: esta armação vale para a face de baixo (na mesa) e para a face de cima · em cada face o N2 (deitado) vai por FORA e o N1 (em pé) por DENTRO, na nervura', 5.6, { bold: true, color: '#1e8449' });
     F.seg(15, 97, 405, 97, 0.3, '#999999');
-    const { kgT } = tabela(F, t.rel, qtd, 15, 88, laje, t.tg, t.esp);
+    const { kgT } = tabela(F, t.rel, qtd, 15, 88, laje, t.tg, t.esp, undefined, t.a.bitPos);
     const kpa = t.kg * COEF_ICA / t.ntrab, xd = 158;
     F.t(xd, 91, 'DADOS DA PEÇA', 6.4, { bold: true });
     [`Medida: ${cm(L)} x ${cm(Hm)} x ${cm(t.esp)} cm`, `Peso: ${br(t.kg, 0)} kg · concreto ${br(t.vol, 3)} m³`, `Aço: ${br(kgT, 1)} kg por peça`,
@@ -366,7 +368,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const ok = ver[it].ok && kpa <= ALCA_CAP && (t.a.ref ?? []).every(r => r.ok);
     F.t(xd, 35.5, ok ? `Cálculo conferido ✓ (verificações na folha ${String(TOTAL).padStart(2, '0')})` : 'ATENÇÃO: verificação não atendida — ver folha de verificações', 5.6, { color: ok ? '#1e8449' : '#b03a2e', bold: true });
     corteA(F, a, 262, 64, laje);
-    for (const q of g) for (const [k, Lr] of t.rel) for (const [c, n] of Lr) linhas.push({ pav: nomePav.get(q.pav) ?? q.pav, codigo: cod(q), tipo: nome, pos: k, bit: bitDe(k, laje, t.tg), qtd: n, c: c / 100 });
+    for (const q of g) for (const [k, Lr] of t.rel) for (const [c, n] of Lr) linhas.push({ pav: nomePav.get(q.pav) ?? q.pav, codigo: cod(q), tipo: nome, pos: k, bit: bitDe(k, laje, t.tg, t.a.bitPos), qtd: n, c: c / 100 });
     pags.push(F);
   });
   // ---- resumo do aço ----
@@ -378,13 +380,13 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     cab(0); let col = 0, yy = 262;
     tipos.forEach((t, i) => {
       yy -= 3.6; if (yy < 75) { col++; yy = 262 - 3.6; cab(col * 140); }
-      const ka = kgRel(t.rel, laje, t.tg), dx = col * 140, Hm = Math.max(t.a.Hx(0), t.a.Hx(t.a.L));
+      const ka = kgRel(t.rel, laje, t.tg, t.a.bitPos), dx = col * 140, Hm = Math.max(t.a.Hx(0), t.a.Hx(t.a.L));
       ([[15, `${pref}-${String(i + 1).padStart(2, '0')}`], [35, `${cm(t.a.L)} x ${cm(Hm)}`], [72, String(t.g.length)], [84, `${br(t.kg, 0)} kg`], [104, `${br(ka, 1)} kg`], [124, `${br(ka * t.g.length, 1)} kg`]] as [number, string][])
         .forEach(([x, s]) => F.t(x + dx, yy, s, 5.6));
       areaTot += t.area * t.g.length;
       for (const [k, Lr] of t.rel) for (const [c, q] of Lr) {
-        const b = bitDe(k, laje, t.tg), key = String(b), o = TB.get(key) ?? { b, m: 0, kg: 0 };
-        o.m += c / 100 * q * t.g.length; o.kg += c / 100 * q * t.g.length * kgmDe(k, laje, t.tg); TB.set(key, o);
+        const b = bitDe(k, laje, t.tg, t.a.bitPos), key = String(b), o = TB.get(key) ?? { b, m: 0, kg: 0 };
+        o.m += c / 100 * q * t.g.length; o.kg += c / 100 * q * t.g.length * kgmDe(k, laje, t.tg, t.a.bitPos); TB.set(key, o);
       }
     });
     const yb = 66, xs = [15, 37, 55, 77, 99];
