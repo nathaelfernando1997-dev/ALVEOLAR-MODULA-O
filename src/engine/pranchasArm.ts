@@ -280,7 +280,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const al = alcas(a, w.kg, false);
     grupos.set(k, { g: [p], a, rel: relacao(a, al.pts.length, false), kg: w.kg, vol: w.vol, area: w.area, alc: al.pts, ntrab: al.ntrab, tg: 'TG8', esp: espPar });
   }
-  const tipos = [...grupos.values()], pref = laje ? 'LJ' : 'PA', NT = tipos.length, TOTAL = NT + 3;
+  const tipos = [...grupos.values()], pref = laje ? 'LJ' : 'PA', NT = tipos.length, TOTAL = 2 * NT + 3;   // 2 folhas por tipo: jogo inferior (VI · HI) e jogo superior (VS · HS)
   const cod = (p: Painel | PainelLaje) => laje ? E.codL(p as PainelLaje) : E.codP(p as Painel);
   const pags: Pagina[] = [], linhas: LinhaAco[] = [];
   // verificações por tipo
@@ -330,14 +330,14 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       laje ? 'Laje: painel biapoiado, vão = comprimento do painel, seção I por nervura (15 cm); flecha na combinação quase permanente com fluência (L/250).' : 'Parede: compressão com redução simplificada de 0,6 (esbeltez/excentricidade) e carga dos pavimentos de cima (paredes + lajes).',
       `Ancoragem: lb ø4,2 = ${br(lb(4.2, 60) / 10, 0)} cm · ø6,3 = ${br(lb(6.3) / 10, 0)} cm · ø8,0 = ${br(lb(8) / 10, 0)} cm · ø10,0 = ${br(lb(10) / 10, 0)} cm (boa aderência).`,
       'Paredes do pavimento de cima apoiadas na laje: reforço com treliça na posição indicada (e faixa maciça quando indicada no projeto).']) { F.t(15, y, s, 6.2); y -= 6; }
-    F.t(15, y - 4, `ÍNDICE: ${NT} tipos (${pref}-01 a ${pref}-${String(NT).padStart(2, '0')}) · ${tipos.reduce((s, t) => s + t.g.length, 0)} peças · folhas 02 a ${String(NT + 1).padStart(2, '0')} · resumo do aço na folha ${String(TOTAL - 1).padStart(2, '0')} · verificações na folha ${String(TOTAL).padStart(2, '0')}.`, 6.6, { bold: true });
+    F.t(15, y - 4, `ÍNDICE: ${NT} tipos (${pref}-01 a ${pref}-${String(NT).padStart(2, '0')}) · ${tipos.reduce((s, t) => s + t.g.length, 0)} peças · folhas 02 a ${String(2 * NT + 1).padStart(2, '0')} (2 por tipo: inferior e superior) · resumo do aço na folha ${String(TOTAL - 1).padStart(2, '0')} · verificações na folha ${String(TOTAL).padStart(2, '0')}.`, 6.6, { bold: true });
     pags.push(F);
   }
   // ---- tipos ----
-  tipos.forEach((t, it) => {
+  tipos.forEach((t, it) => [0, 1].forEach(jogo => {
     const F = new Folha(), a = t.a, g = t.g, qtd = g.length, L = a.L, Hm = Math.max(a.Hx(0), a.Hx(L)), nome = `${pref}-${String(it + 1).padStart(2, '0')}`;
-    const esc = [20, 25, 30, 40, 50, 75, 100].find(e => L * 1000 / e <= 34 && Hm * 1000 / e <= 130) ?? 100, m = 1000 / esc;   // 4 vistas lado a lado
-    moldura(F, `ARMAÇÃO ${laje ? 'DA LAJE' : 'DO PAINEL'} ${nome}`, `${laje ? 'LAJE' : 'PAREDE'} TIPO ${nome} — ${cm(L)} x ${cm(Hm)}${laje ? ' x ' + cm(t.esp) : ''} cm — ${qtd} peça${qtd > 1 ? 's' : ''}`, it + 2, TOTAL, `vistas 1:${esc} · corte 1:10`, E);
+    const esc = [20, 25, 30, 40, 50, 75].find(e => L * 1000 / e <= 97 && Hm * 1000 / e <= 130) ?? 75, m = 1000 / esc;   // 2 vistas por folha
+    moldura(F, `ARMAÇÃO ${laje ? 'DA LAJE' : 'DO PAINEL'} ${nome}`, `${laje ? 'LAJE' : 'PAREDE'} TIPO ${nome} — ${cm(L)} x ${cm(Hm)}${laje ? ' x ' + cm(t.esp) : ''} cm — ${qtd} peça${qtd > 1 ? 's' : ''} — ${jogo ? 'FOLHA 2/2: JOGO SUPERIOR (VS · HS)' : 'FOLHA 1/2: JOGO INFERIOR (VI · HI)'}`, 2 + 2 * it + jogo, TOTAL, `vistas 1:${esc} · corte 1:10`, E);
     const cods = g.map(cod).join(', ');
     F.t(15, 267.5, 'PEÇAS DESTE TIPO:', 6.2, { bold: true }); F.t(45, 267.5, cods.length < 150 ? cods : cods.slice(0, 150) + ' …', 6.6, { bold: true, color: '#1f3b57' });
     // 4 vistas, uma para cada camada e direção, na ordem de montagem
@@ -345,10 +345,10 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       ['3º  VS · VERTICAL SUPERIOR + ALÇAS', ['VS1', 'VS3', 'VS2', 'A'], '#1a5276'], ['4º  HS · HORIZONTAL SUPERIOR', ['HS'], '#3949ab']]
       : [['1º  VI · VERTICAL INFERIOR + PILARES', ['VI', 'PL', 'ES'], '#b03a2e'], ['2º  HI · HORIZONTAL INFERIOR + VERGAS', ['HI', 'VG', 'CV'], '#d35400'],
       ['3º  VS · VERTICAL SUPERIOR + ALÇAS', ['VS', 'A'], '#1a5276'], ['4º  HS · HORIZONTAL SUPERIOR', ['HS'], '#3949ab']];
-    const W = L * m, X0 = 24, passo = 96, Y0 = 118 + (130 - Hm * m) / 2;
-    GR.forEach(([tit, fams, cor], i) => {
+    const W = L * m, X0 = 36, passo = Math.max(W + 74 + 26, 185), Y0 = 118 + (130 - Hm * m) / 2;
+    GR.slice(2 * jogo, 2 * jogo + 2).forEach(([tit, fams, cor], i) => {
       const x0 = X0 + i * passo, as: PecaArm = { ...a, bars: a.bars.filter(b => fams.includes(b.f)), T: fams.includes('T') ? a.T : [] };
-      F.r(x0 - 6, Y0 + Hm * m + 7.5, passo - 6, 6.2, { fill: cor, stroke: cor, lw: 0 }); F.t(x0 - 4, Y0 + Hm * m + 10.6, tit, 6.2, { va: 'center', color: '#ffffff', bold: true });
+      F.r(x0 - 6, Y0 + Hm * m + 7.5, Math.max(W + 70, 120), 6.6, { fill: cor, stroke: cor, lw: 0 }); F.t(x0 - 4, Y0 + Hm * m + 10.8, tit, 7, { va: 'center', color: '#ffffff', bold: true });
       const alc = fams.includes('A') ? t.alc : [], P = vista(F, as, alc, x0, Y0, m, laje);
       const rl: Relacao = t.rel.filter(([k, , fi]) => fams.includes(fi ?? fam(k)));
       chamadas(F, as, rl, alc, P, x0 + W + 6, Y0 - 2, Y0 + Hm * m + 2, laje, t.tg);
@@ -362,7 +362,7 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       laje ? `Alças: ${t.alc.length} na face de cima` : `Alças: ${t.alc.length / 2} em cima + ${t.alc.length / 2} embaixo`, `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`]
       .forEach((s, i) => F.t(xd, 86.5 - i * 3.9, s, 5.8));
     F.t(xd, 64, 'ORDEM DE MONTAGEM', 6.4, { bold: true });
-    (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. INFERIORES (vista 1º): VI e HI', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. SUPERIORES (vista 2º): VS e HS', '6. Alças na face de cima · conferir e concretar']
+    (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. Jogo INFERIOR (folha 1/2): VI e HI', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. Jogo SUPERIOR (folha 2/2): VS e HS', '6. Alças na face de cima · conferir e concretar']
       : ['1. Espaçadores de 2,5 cm na forma', '2. INFERIOR: HI deitado nos espaçadores, VI em pé por cima', '3. Pilares (PL + estribos ES) e vergas (VG / CV)', '4. Isopor entre as nervuras (VI fica na nervura)', '5. SUPERIOR: VS nas nervuras, HS deitado por cima', '6. Alças · conferir e concretar'])
       .forEach((s, i) => F.t(xd, 59.5 - i * 3.9, s, 5.6));
     if (laje && t.a.ref?.length) {
@@ -377,9 +377,9 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const ok = ver[it].ok && kpa <= ALCA_CAP && (t.a.ref ?? []).every(r => r.ok);
     F.t(xd, 35.5, ok ? `Cálculo conferido ✓ (verificações na folha ${String(TOTAL).padStart(2, '0')})` : 'ATENÇÃO: verificação não atendida — ver folha de verificações', 5.6, { color: ok ? '#1e8449' : '#b03a2e', bold: true });
     corteA(F, a, 262, 64, laje);
-    for (const q of g) for (const [k, Lr, fi] of t.rel) for (const [c, n] of Lr) linhas.push({ pav: nomePav.get(q.pav) ?? q.pav, codigo: cod(q), tipo: nome, pos: k, bit: bitDe(fi ?? k, laje, t.tg, t.a.bitPos), qtd: n, c: c / 100 });
+    if (jogo === 0) for (const q of g) for (const [k, Lr, fi] of t.rel) for (const [c, n] of Lr) linhas.push({ pav: nomePav.get(q.pav) ?? q.pav, codigo: cod(q), tipo: nome, pos: k, bit: bitDe(fi ?? k, laje, t.tg, t.a.bitPos), qtd: n, c: c / 100 });
     pags.push(F);
-  });
+  }));
   // ---- resumo do aço ----
   const TB = new Map<string, { b: number | string; m: number; kg: number }>();
   let kgTot = 0, areaTot = 0;

@@ -558,8 +558,8 @@ export default function App() {
         ps: laje ? [] : [peca as Painel], pl: laje ? [peca as PainelLaje] : [], vigas: calc.vigas.filter(v => v.tipo === 'trelica'), regras,
         espLaje: (q: PainelLaje) => espDaLaje(aj)(q) ?? regras.lajeEsp ?? 0.14, balanco: balancoLaje(calc.ps), codP: (q: Painel) => codigoParede(q, sg), codL: (q: PainelLaje) => codigoLaje(q, sg),
         liberado: aj.arm?.liberado ?? true, trelBorda16: aj.arm?.trelBorda16 ?? true, revisao: aj.arm?.revisao };
-      const d = detalhar(E, laje), pg = d.paginas[1] ?? d.paginas[0];
-      return { svg: paginaParaSvg(pg), resumo: `Folha do tipo desta peça · aço ${br(d.kg, 1)} kg${d.avisos.length ? ' · ' + d.avisos.join(' · ') : ''}` };
+      const d = detalhar(E, laje), pgs = d.paginas.length > 3 ? d.paginas.slice(1, 3) : [d.paginas[1] ?? d.paginas[0]];   // as 2 folhas do tipo: jogo inferior e superior
+      return { svg: pgs.map(paginaParaSvg).join(''), resumo: `Folha do tipo desta peça · aço ${br(d.kg, 1)} kg${d.avisos.length ? ' · ' + d.avisos.join(' · ') : ''}` };
     };
     const p = calc.ps.find(q => codigoParede(q, sg) === cod);
     if (p) {

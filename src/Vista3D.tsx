@@ -93,12 +93,12 @@ export default function Vista3D(props: Props3D) {
     if (!ferr?.svg) return;
     const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${selCod ?? ''} · ferragem</title>
 <style>html,body{margin:0;height:100%;background:#e9ecef;overflow:hidden;font-family:Arial,sans-serif}#v{position:absolute;inset:0;cursor:grab;touch-action:none}#v.arr{cursor:grabbing}
-#f{position:absolute;left:0;top:0;transform-origin:0 0;background:#fff;box-shadow:0 2px 12px #0003}#f svg{display:block;width:100%;height:100%}
+#f{position:absolute;left:0;top:0;transform-origin:0 0}#f svg{display:block;width:100%;height:auto;background:#fff;box-shadow:0 2px 12px #0003;margin-bottom:40px}
 #d{position:fixed;left:10px;bottom:10px;background:#fff;border:1px solid #ccd;border-radius:6px;padding:5px 9px;font-size:13px;color:#333}</style></head>
 <body><div id="v"><div id="f">${ferr.svg}</div></div><div id="d">Bolinha do mouse: zoom · arrastar: mover · duplo clique: ver a folha toda</div>
 <script>
 const v=document.getElementById('v'),f=document.getElementById('f'),sv=f.querySelector('svg');
-const vb=(sv.getAttribute('viewBox')||'0 0 420 297').split(/[ ,]+/).map(Number),W=1600,H=W*vb[3]/vb[2];f.style.width=W+'px';f.style.height=H+'px';
+const W=1600;f.style.width=W+'px';const H=f.offsetHeight||W*0.7;
 let k=1,x=0,y=0;const ap=()=>{f.style.transform='translate('+x+'px,'+y+'px) scale('+k+')'};
 const todo=()=>{k=Math.min(innerWidth/W,innerHeight/H)*0.96;x=(innerWidth-W*k)/2;y=(innerHeight-H*k)/2;ap()};todo();addEventListener('resize',todo);
 v.addEventListener('wheel',e=>{e.preventDefault();const z=Math.exp(-e.deltaY*0.0009),k2=Math.min(40,Math.max(0.05,k*z));x=e.clientX-(e.clientX-x)*k2/k;y=e.clientY-(e.clientY-y)*k2/k;k=k2;ap()},{passive:false});
