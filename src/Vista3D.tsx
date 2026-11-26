@@ -59,7 +59,11 @@ function caixas(o: Props3D): Caixa[] {
     }
     // pilar: do piso até o topo da laje do pavimento
     for (const pl of (o.pilares || []).filter(q => q.pav === pav.id)) {
-      const zt = pav.altura + Math.max(0, ...lajes.map(o.espLaje)), cod = `${sig}-pilar ${pl.nome}`;
+      // topo do pilar: o topo da viga mais alta que chega nele (sem viga, o topo da laje)
+      const eL = Math.max(0, ...lajes.map(o.espLaje)), vs = (o.vigas || []).filter(v => v.pav === pav.id && (v.o === 'H'
+        ? v.c > pl.y0 - 0.01 && v.c < pl.y1 + 0.01 && [v.a, v.b].some(u => u > pl.x0 - 0.02 && u < pl.x1 + 0.02)
+        : v.c > pl.x0 - 0.01 && v.c < pl.x1 + 0.01 && [v.a, v.b].some(u => u > pl.y0 - 0.02 && u < pl.y1 + 0.02)));
+      const zt = pav.altura + (vs.length ? Math.max(...vs.map(v => v.abaixo ? 0 : eL)) : eL), cod = `${sig}-pilar ${pl.nome}`;
       out.push({ pav: pav.id, tipo: 'parede', cod, txt: `${cod} · pilar ${Math.round((pl.x1 - pl.x0) * 100)} × ${Math.round((pl.y1 - pl.y0) * 100)} cm · ${pav.nome}`, ab: true, grossa: false, x0: pl.x0 + dx, x1: pl.x1 + dx, y0: pl.y0 + dy, y1: pl.y1 + dy, z0: zp, z1: zp + zt });
     }
     // vigas: topo no nível do topo da laje, na largura e altura da viga
