@@ -21,7 +21,7 @@ export interface InfoPeca { titulo: string; linhas: [string, string][]; ferragem
 export interface Fund3D { pav: string; pts: { n: number; x: number; y: number; tipo: string; par?: number; cobre?: [number, number][] }[]; lado: number; alt: number; furo: number; comp: number;
   can: { o: 'H' | 'V'; c: number; a: number; b: number; cortada: boolean }[] | null; canAlt: number }
 
-type Caixa = { pav: string; tipo: 'parede' | 'laje'; cod: string; txt: string; ab: boolean; grossa: boolean; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number };
+type Caixa = { pav: string; tipo: 'parede' | 'laje'; cod: string; txt: string; ab: boolean; grossa: boolean; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number; topo?: [number, number] };   // topo: parede com topo inclinado (telhado), altura na ponta de menor e de maior coordenada
 
 // peças em caixas (parede com abertura vira pedaços em volta do vão)
 function caixas(o: Props3D): Caixa[] {
@@ -49,7 +49,10 @@ function caixas(o: Props3D): Caixa[] {
         const c = p.c + (p.o === 'H' ? dy : dx);
         const [x0, x1, y0, y1] = p.o === 'H' ? [s0 + dx, s1 + dx, c - T / 2, c + T / 2] : [c - T / 2, c + T / 2, s0 + dy, s1 + dy];
         const zb = zp + (p.z0 ?? 0) - (p.desce ?? 0);   // parede que desce no vazio: o pedaço a mais fica embaixo, no nível da laje de baixo
-        out.push({ pav: pav.id, tipo: 'parede', cod, txt, ab: p.recortes.length > 0, grossa: false, x0, y0, z0: zb + h0, x1, y1, z1: zb + h1 });
+        // topo inclinado (telhado em caimento): o pedaço que chega no topo acompanha a inclinação, como na modulação
+        const ch = p.chanfro, hAt = (u: number) => ch ? ch.ha + (ch.hb - ch.ha) * (u - p.a) / ((p.b - p.a) || 1) : p.H;
+        const topo: [number, number] | undefined = ch && h1 >= p.H - 1e-3 ? [zb + hAt(s0), zb + hAt(s1)] : undefined;
+        out.push({ pav: pav.id, tipo: 'parede', cod, txt, ab: p.recortes.length > 0, grossa: false, x0, y0, z0: zb + h0, x1, y1, z1: topo ? Math.max(...topo) : zb + h1, topo });
       }
     }
     for (const q of lajes) {
@@ -142,9 +145,14 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       const lx = c.x1 - c.x0 > c.y1 - c.y0 ? c.x1 - c.x0 - gg : c.x1 - c.x0 - gg - eP, ly = c.x1 - c.x0 > c.y1 - c.y0 ? c.y1 - c.y0 - gg - eP : c.y1 - c.y0 - gg;
       m.scale.set(Math.max(lx, 0.01), Math.max(ly, 0.01), Math.max(c.z1 - c.z0 - 2 * eL, 0.01));
       m.position.set((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, (c.z0 + c.z1) / 2);
+      if (c.topo) {   // corta o topo da caixa na inclinação do telhado
+        const g2 = box.clone(), pos = g2.attributes.position, H = c.x1 - c.x0 > c.y1 - c.y0, zc = (c.z0 + c.z1) / 2, lz = c.z1 - c.z0;
+        for (let k = 0; k < pos.count; k++) if (pos.getZ(k) > 0) { const t = (H ? pos.getX(k) : pos.getY(k)) + 0.5; pos.setZ(k, (c.topo[0] + (c.topo[1] - c.topo[0]) * t - zc) / lz); }
+        pos.needsUpdate = true; g2.computeVertexNormals(); m.geometry = g2;
+      }
       m.castShadow = true; m.receiveShadow = c.tipo === 'laje';   // parede não recebe sombra: a luz rasante fazia riscos (acne) nas faces
       m.userData = { cod: c.cod, txt: c.txt, mat: m.material };
-      m.add(new THREE.LineSegments(aresta, EM));
+      m.add(new THREE.LineSegments(c.topo ? new THREE.EdgesGeometry(m.geometry) : aresta, EM));
       const g = grupos.get(c.pav)!; (c.tipo === 'laje' ? g.l : g.p).add(m); pick.push(m);
       bb.expandByPoint(new THREE.Vector3(c.x0, c.y0, c.z0)).expandByPoint(new THREE.Vector3(c.x1, c.y1, c.z1));
     }
@@ -164,7 +172,12 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       for (const sg of [-1, 1]) {
         const nrm = H ? new THREE.Vector3(0, sg, 0) : new THREE.Vector3(sg, 0, 0), dir = nrm.clone().negate().cross(UP), off = L / 2 - mg - W / 2;
         const m = plq(n, W); m.setRotationFromMatrix(new THREE.Matrix4().makeBasis(dir, UP, nrm));
-        m.position.set((b.x0 + b.x1) / 2 + dir.x * off + nrm.x * ((b.x1 - b.x0) / 2 + 0.002), (b.y0 + b.y1) / 2 + dir.y * off + nrm.y * ((b.y1 - b.y0) / 2 + 0.002), b.z1 - mg - hh / 2);
+        const px = (b.x0 + b.x1) / 2 + dir.x * off, py = (b.y0 + b.y1) / 2 + dir.y * off;
+        // parede inclinada: a plaquinha acompanha o topo no ponto onde ela fica (o lado da plaquinha + a metade dela, que é onde o topo é mais baixo)
+        const zTop = (u: number) => { const q = cx.find(c => c.cod === cod && c.topo && (H ? c.x0 <= u && u <= c.x1 : c.y0 <= u && u <= c.y1));
+          return q?.topo ? q.topo[0] + (q.topo[1] - q.topo[0]) * ((u - (H ? q.x0 : q.y0)) / ((H ? q.x1 - q.x0 : q.y1 - q.y0) || 1)) : b.z1; };
+        const u0 = H ? px : py, zt = Math.min(zTop(u0 - W / 2), zTop(u0 + W / 2));
+        m.position.set(px + nrm.x * ((b.x1 - b.x0) / 2 + 0.002), py + nrm.y * ((b.y1 - b.y0) / 2 + 0.002), zt - mg - hh / 2);
         m.userData.cod = cod; g.p.add(m); etqs.push(m);
       }
     }
