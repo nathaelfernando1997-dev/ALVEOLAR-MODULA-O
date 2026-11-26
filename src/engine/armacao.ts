@@ -268,7 +268,15 @@ export function alcas(a: PecaArm, kg: number, laje: boolean): { pts: [number, nu
   }
   // parede alta: tirar da mesa pelas pontas não passa → 4 alças de desforma na face de cima, a 21% da altura de cada ponta
   const Hm = Math.max(Hx(0), Hx(L)), face: [number, number, number][] = [];
-  if (!manuseio(Hm, a.esp).ok) { const xf = nerv.length > 2 ? [nerv[1], nerv[nerv.length - 2]] : [L / 4, 3 * L / 4]; for (const y of [0.21 * Hm, 0.79 * Hm]) for (const x of xf) face.push([x, y, 0]); }
+  if (!manuseio(Hm, a.esp).ok) {
+    // só em concreto: numa nervura ou no pilar fora de porta/janela, o mais perto de 1/4 e 3/4 da largura
+    const cands = [...new Set([...nerv, ...a.zon.map(([z0, z1]) => Math.round((z0 + z1) / 2 * 1000) / 1000)])].sort((p, q) => p - q);
+    for (const y of [0.21 * Hm, 0.79 * Hm]) {
+      const ok = cands.filter(x => !a.ab.some(v => v.x0 - 0.05 < x && x < v.x1 + 0.05 && v.y0 - 0.10 < y && y < v.y1 + 0.10));
+      const esq = ok.filter(x => x < L / 2).sort((p, q) => Math.abs(p - L / 4) - Math.abs(q - L / 4))[0], dir = ok.filter(x => x > L / 2).sort((p, q) => Math.abs(p - 3 * L / 4) - Math.abs(q - 3 * L / 4))[0];
+      for (const x of [esq ?? Math.min(...ok, L / 4), dir ?? Math.max(...ok, 3 * L / 4)]) face.push([x, y, 0]);
+    }
+  }
   let por = L >= 1.80 - 1e-6 ? 4 : L >= 1.20 - 1e-6 ? 3 : 2;
   if (kg * COEF_ICA / por > ALCA_CAP) por = 5;
   if (kg * COEF_ICA / por > ALCA_CAP) por = 6;

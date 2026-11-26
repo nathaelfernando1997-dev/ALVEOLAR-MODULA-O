@@ -362,7 +362,9 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
     const kpa = t.kg * COEF_ICA / t.ntrab, xd = 158;
     F.t(xd, 91, 'DADOS DA PEÇA', 6.4, { bold: true });
     [`Medida: ${cm(L)} x ${cm(Hm)} x ${cm(t.esp)} cm`, `Peso: ${br(t.kg, 0)} kg · concreto ${br(t.vol, 3)} m³`, `Aço: ${br(kgT, 1)} kg por peça`,
-      laje ? `Alças: ${t.alc.length} na face de cima` : (() => { const nf = t.alc.filter(p => p[2] === 0).length, nb = (t.alc.length - nf) / 2; return `Alças: ${nb} em cima + ${nb} embaixo${nf ? ` + ${nf} na face (desforma)` : ''}`; })(), `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`]
+      laje ? `Alças: ${t.alc.length} na face de cima` : (() => { const nf = t.alc.filter(p => p[2] === 0).length, nb = (t.alc.length - nf) / 2; return `Alças: ${nb} em cima + ${nb} embaixo${nf ? ` + ${nf} na face (desforma)` : ''}`; })(), `Espaçadores: ${Math.ceil(t.area * 4)} pastilhas de 2,5 cm`, ...(() => { const f = t.alc.filter(p => p[2] === 0); if (laje || !f.length) return [];
+        const ys = [...new Set(f.map(p => Math.round(p[1] * 100)))].sort((p, q) => p - q), xs = [...new Set(f.map(p => Math.round(p[0] * 100)))].sort((p, q) => p - q);
+        void xs; return ys.map((y, i) => `Alças de desforma (face de cima): ${i ? `a ${Math.round(Hm * 100) - y} cm do topo` : `a ${y} cm do pé`}, a ${f.filter(p => Math.round(p[1] * 100) === y).map(p => Math.round(p[0] * 100)).sort((p, q) => p - q).join(' e ')} cm da borda esquerda`); })()]
       .forEach((s, i) => F.t(xd, 86.5 - i * 3.9, s, 5.8));
     F.t(xd, 64, 'ORDEM DE MONTAGEM', 6.4, { bold: true });
     (laje ? ['1. Espaçadores de 2,5 cm na forma', '2. Jogo INFERIOR (folha 1/2): VI e HI', '3. Treliças em cima dos ferros de baixo', '4. Isopor entre as nervuras', '5. Jogo SUPERIOR (folha 2/2): VS e HS', '6. Alças na face de cima · conferir e concretar']
