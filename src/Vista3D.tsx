@@ -132,7 +132,7 @@ export default function Vista3D(props: Props3D) {
     const sc = sol.shadow.camera; sc.left = sc.bottom = -raio * 1.1; sc.right = sc.top = raio * 1.1; sc.near = 0.5; sc.far = raio * 5; sc.updateProjectionMatrix();
     // chão: piso claro que recebe sombra + malha de 1 m bem leve
     const LC = Math.max(tam.x, tam.y) + 40;
-    const chao = new THREE.Mesh(new THREE.PlaneGeometry(LC * 3, LC * 3), new THREE.MeshStandardMaterial({ color: escuro ? 0x20262e : 0xe9ecef, roughness: 1 }));
+    const chao = new THREE.Mesh(new THREE.PlaneGeometry(LC * 3, LC * 3), new THREE.MeshStandardMaterial({ color: escuro ? 0x20262e : 0xe9ecef, roughness: 1, transparent: true }));
     chao.position.set(ctr.x, ctr.y, bb.min.z - 0.012); chao.receiveShadow = true; S.add(chao);
     const grade = new THREE.GridHelper(Math.ceil(LC), Math.ceil(LC), escuro ? 0x39424d : 0xd3d8de, escuro ? 0x2b323b : 0xdde1e6);
     grade.rotation.x = Math.PI / 2; grade.position.set(ctr.x, ctr.y, bb.min.z - 0.008);
@@ -165,7 +165,7 @@ export default function Vista3D(props: Props3D) {
       g.p.visible = v && verP; g.l.visible = v && verL; g.p.position.z = g.l.position.z = i * sep + a.zc; });
     // fundação ligada: chão meio transparente e dá para olhar por baixo
     const f = !!props.fund && verF && (so ? so === props.pavs[0]?.id : vis[props.pavs[0]?.id] !== false);
-    a.gF.visible = f; (a.chao.material as THREE.MeshStandardMaterial).transparent = true; (a.chao.material as THREE.MeshStandardMaterial).opacity = f ? 0.35 : 1; a.grade.visible = !f;
+    a.gF.visible = f; const cm = a.chao.material as THREE.MeshStandardMaterial; cm.opacity = f ? 0.35 : 1; cm.depthWrite = !f; cm.needsUpdate = true; a.grade.visible = !f;
     a.O.maxPolarAngle = f ? Math.PI : Math.PI * 0.495;
   }, [vis, so, verL, verP, verF, sep, props.pavs, props.fund, cx]);
 
