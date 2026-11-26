@@ -1448,7 +1448,9 @@ const REGRA_TRELICA = 'até 15 cm TG8 · 16 cm TG12 · 20 cm TG16 · 25 cm ou ma
 const espDoAmb = (aj: Ajustes) => (amb: string) => aj.lajeEspAmb?.[amb] ?? ((aj.laje16 || []).includes(amb) ? 0.16 : undefined) ?? aj.lajeEspPav?.[amb.split('|')[0]];
 // painel de laje: chave estável pelo ambiente e pelo canto (a numeração muda); espessura do painel vale mais que a do ambiente
 const chaveLaje = (p: { amb: string; x0?: number; y0?: number }) => `${p.amb}@${(p.x0 ?? 0).toFixed(1)},${(p.y0 ?? 0).toFixed(1)}`;
-const espDaLaje = (aj: Ajustes) => (p: { amb: string; x0?: number; y0?: number }) => aj.lajeEspPainel?.[chaveLaje(p)] ?? espDoAmb(aj)(p.amb);
+// regra: laje com vão (comprimento do painel, no sentido da treliça) acima de 4,00 m vai para 16 cm — o que foi ajustado à mão vale por cima
+const VAO_LAJE16 = 4.0;
+const espDaLaje = (aj: Ajustes) => (p: { amb: string; x0?: number; y0?: number; comp?: number }) => aj.lajeEspPainel?.[chaveLaje(p)] ?? espDoAmb(aj)(p.amb) ?? ((p.comp ?? 0) > VAO_LAJE16 + 1e-6 ? 0.16 : undefined);
 function quantTrelicas(pavs: Pavimento[], calc: Calc, aj: Ajustes) {
   const out: { pav: string; tipo: keyof typeof TRELICA; pecas: number; metros: number; cortes: Map<string, number> }[] = [];
   for (const pav of pavs) {
@@ -1864,7 +1866,7 @@ function AcoesLaje({ amb, lajeSel, calc, aj, setAj, pav, espPadrao, regras }: { 
         <label>Espessura desta laje (cm)
           <input type="number" step="1" key={lajeSel} defaultValue={Math.round(e * 100)} onBlur={ev => {
             const v = parseFloat(ev.target.value.replace(',', '.')); const m = { ...(aj.lajeEspPainel || {}) };
-            const doAmb = espDoAmb(aj)(p.amb) ?? espPadrao;
+            const doAmb = espDoAmb(aj)(p.amb) ?? (p.comp > VAO_LAJE16 + 1e-6 ? 0.16 : espPadrao);   // automático (com a regra dos 4 m): diferente disso fica à mão
             if (isFinite(v) && v > 0 && Math.abs(v / 100 - doAmb) > 1e-6) m[lajeSel!] = v / 100; else delete m[lajeSel!];
             setAj({ ...aj, lajeEspPainel: m }); }} />
         </label>
