@@ -126,13 +126,26 @@ function nomear(k: string, c: number, Lc: number, esp: number, laje: boolean) {
     PL: 'pilar: pontas e lados das portas', ES: 'estribo do pilar (7 x 9 cm)', VG: 'verga (2 em cada face)', CV: 'contraverga (2 em cada face)',
     A: 'alça · metade em cima, metade embaixo' } as Record<string, string>)[f] ?? '';
 }
+// parede de topo inclinado (telhado): cada ferro em pé tem um comprimento — na prancha vira UMA posição de comprimento variável
+// (VIa, VIb… VIx → VI · C variável de x a y); o caderno da fábrica (corte e dobra) continua com cada comprimento
+function agrupaVar(rel: Relacao): Relacao {
+  const out: Relacao = [];
+  for (let i = 0; i < rel.length;) {
+    const [k, , fi] = rel[i], m = /^(.*?)([a-z])$/.exec(k), b = m ? m[1] : null;
+    let j = i + 1; if (b) while (j < rel.length && rel[j][0].replace(/[a-z]$/, '') === b && rel[j][2] === fi && /[a-z]$/.test(rel[j][0])) j++;
+    if (b && j - i > 4) { out.push([b, rel.slice(i, j).flatMap(([, L]) => L).sort((p, q) => q[0] - p[0]), fi]); i = j; }
+    else { out.push(rel[i]); i++; }
+  }
+  return out;
+}
+const varTxt = (L: [number, number][]) => L.length > 1 ? `C variável ${Math.min(...L.map(x => x[0]))} a ${Math.max(...L.map(x => x[0]))} cm` : `${L[0][0]} cm`;
 function chamadas(F: Folha, a: PecaArm, rel: Relacao, alc: [number, number, number][], P: (x: number, y: number) => [number, number], xlab: number, ybot: number, ytop: number, laje: boolean, tg: string) {
   const STEP = 8.6, alvo: { pt: [number, number]; txt: string; f: string; y: number; k: string; c: number }[] = [], idx = new Map<string, number>(), PD = laje ? POSL : POS;
   for (const [k, Lr, fi] of rel) {
-    const f = fi ?? fam(k), [c, q] = Lr[0];
+    const f = fi ?? fam(k), c = Lr[0][0], q = Lr.reduce((s, x) => s + x[1], 0), var_ = Lr.length > 1;
     if (f === 'A') { if (!alc.length) continue; const pt = laje ? P(alc[alc.length - 1][0], alc[alc.length - 1][1]) : P(...[...alc].sort((p, r) => r[1] - p[1] || r[0] - p[0])[0].slice(0, 2) as [number, number]); alvo.push({ pt, txt: `${q} ø8,0 CA-25 liso · ${c} cm`, f, y: pt[1], k, c }); continue; }
     if (f === 'T') { const t = a.T.find(t => Math.round((t.i1 - t.i0 - 2 * COB) * 100) === c) ?? a.T[0]; const m = t.i0 + (t.i1 - t.i0) * 0.6, pt = t.vert ? P(t.pos, m) : P(m, t.pos); alvo.push({ pt, txt: `${q} ${tg} · ${c} cm`, f, y: pt[1], k, c }); continue; }
-    let bs = a.bars.filter(b => b.f === f && Math.round(comp(b) * 100) === c); if (!bs.length) bs = a.bars.filter(b => b.f === f);
+    let bs = var_ ? a.bars.filter(b => b.f === f) : a.bars.filter(b => b.f === f && Math.round(comp(b) * 100) === c); if (!bs.length) bs = a.bars.filter(b => b.f === f);
     const bit = 'ø' + br(laje && a.bitPos && f === 'VI' ? a.bitPos : PD[f][0], 1), qtxt = DUAS_FACES.has(f) && q % 2 === 0 && q > 2 ? `2×${q / 2}` : String(q);
     const i = idx.get(f) ?? 0; idx.set(f, i + 1);
     let pt: [number, number], txt: string;
@@ -142,19 +155,19 @@ function chamadas(F: Folha, a: PecaArm, rel: Relacao, alc: [number, number, numb
       const fr = ({ VI: 0.22, VS: 0.62, VS1: 0.08, VS3: 0.5 } as Record<string, number>)[f] + 0.13 * i, yy = y0 + (y1 - y0) * Math.min(0.92, fr);
       const [ax, ay] = P(xs[0], yy), [bx, by] = P(xs[xs.length - 1], yy);
       F.seg(ax, ay, bx, by, 0.3, COR[f]); for (const x of xs) tick(F, P(x, yy)[0], ay, COR[f], 0.8, 0.4);
-      pt = [bx, by]; txt = `${qtxt} ${bit}` + (esp ? ` · a cada ${esp} cm` : '') + ` · ${c} cm`;
+      pt = [bx, by]; txt = `${qtxt} ${bit}` + (esp ? ` · a cada ${esp} cm` : '') + ` · ${varTxt(Lr)}`;
     } else if (['HI', 'HS', 'ES'].includes(f) && ys.length >= 2) {
       let bb = bs; if (f === 'ES') { const mx = Math.max(...bs.map(b => b.x0)); bb = bs.filter(b => b.x0 >= mx - 0.01); }
       const yv = [...new Set(bb.map(b => Math.round(b.y0 * 1000) / 1000))].sort((p, r) => p - r), esp = espac(yv);
       const x0_ = Math.max(...bb.map(b => b.x0)), x1_ = Math.min(...bb.map(b => b.x1)), xx = f !== 'ES' ? x1_ - (x1_ - x0_) * ((f === 'HS' ? 0.32 : 0.12) + 0.1 * i) : (x0_ + x1_) / 2;
       const [ax, ay] = P(xx, yv[0]), [, by] = P(xx, yv[yv.length - 1]);
       F.seg(ax, ay, ax, by, 0.3, COR[f]); for (const y of yv) tick(F, ax, P(xx, y)[1], COR[f], 0.8, 0.4);
-      pt = [ax, (ay + by) / 2]; txt = `${qtxt} ${bit}` + (esp ? ` · a cada ${esp} cm` : '') + ` · ${c} cm`;
+      pt = [ax, (ay + by) / 2]; txt = `${qtxt} ${bit}` + (esp ? ` · a cada ${esp} cm` : '') + ` · ${varTxt(Lr)}`;
     } else {
       if (['PL', 'VS2'].includes(f)) { const b = bs.filter(b => Math.round(b.x0 * 1000) / 1000 === xs[xs.length - 1])[0]; pt = P(b.x0, b.y0 + (b.y1 - b.y0) * (f !== 'VS2' ? 0.86 : 0.62)); }
       else if (['VI', 'VS', 'VS1', 'VS3'].includes(f)) { const b = bs[bs.length - 1]; pt = P(b.x0, b.y0 + (b.y1 - b.y0) * 0.5); }
       else { const b = [...bs].sort((p, r) => r.x1 - p.x1 || r.y0 - p.y0)[0]; pt = P(b.x1 - 0.05, b.y0); }
-      txt = `${qtxt} ${bit} · ${c} cm`;
+      txt = `${qtxt} ${bit} · ${varTxt(Lr)}`;
     }
     alvo.push({ pt, txt, f, y: pt[1], k, c });
   }
@@ -216,16 +229,17 @@ function corteA(F: Folha, a: PecaArm, X0: number, Y0: number, laje: boolean) {
 }
 
 function tabela(F: Folha, rel: Relacao, qtd: number, X0: number, Ytop: number, laje: boolean, tg: string, esp: number, W = 137, pos?: number) {
-  const nl = rel.reduce((s, [, L]) => s + L.length, 0), cols: [string, number][] = [['POS.', 12], ['BIT.', 14], ['QUANT.', 13], ['C. UNIT.', 15], ['C. TOT. (m)', 18], ['PESO (kg)', 17]], h = Math.min(5.2, 66 / Math.max(1, nl));
+  const nl = rel.reduce((s, [, L]) => s + (L.length > 4 ? 1 : L.length), 0), cols: [string, number][] = [['POS.', 12], ['BIT.', 14], ['QUANT.', 13], ['C. UNIT.', 15], ['C. TOT. (m)', 18], ['PESO (kg)', 17]], h = Math.min(5.2, 66 / Math.max(1, nl));
   F.t(X0 + W / 2, Ytop + 1.6, `RELAÇÃO DO AÇO — POR PEÇA (x ${qtd} peça${qtd > 1 ? 's' : ''})`, 6.8, { ha: 'center', bold: true });
   F.r(X0, Ytop - 4.2, W, 4.2, { fill: '#1f3b57', stroke: '#1f3b57', lw: 0.5 });
   let x = X0;
   for (const [c, w] of cols) { F.t(x + w / 2, Ytop - 2.1, c, 5, { ha: 'center', va: 'center', color: '#ffffff', bold: true }); x += w; }
   F.t(x + (X0 + W - x) / 2, Ytop - 2.1, 'FORMA (cm)', 5, { ha: 'center', va: 'center', color: '#ffffff', bold: true });
   let y = Ytop - 4.2, kgT = 0;
-  for (const [k, L, fi] of rel) for (const [c, q] of L) {
-    y -= h; const f = fi ?? fam(k), kg = c / 100 * q * kgmDe(f, laje, tg, pos); kgT += kg;
-    const bt = bitDe(f, laje, tg, pos), vals = [k, f === 'A' ? 'ø8,0 L' : bitTxt(bt), String(q), String(c), br(c * q / 100), br(kg)];
+  for (const [k, L0, fi] of rel) for (const [c, q, cv] of (L0.length > 4 ? [[L0[0][0], L0.reduce((s, x) => s + x[1], 0), L0] as const] : L0.map(x => [x[0], x[1], null] as const))) {
+    const ctot = cv ? cv.reduce((s, x) => s + x[0] * x[1], 0) : c * q;
+    y -= h; const f = fi ?? fam(k), kg = ctot / 100 * kgmDe(f, laje, tg, pos); kgT += kg;
+    const bt = bitDe(f, laje, tg, pos), vals = [k, f === 'A' ? 'ø8,0 L' : bitTxt(bt), String(q), cv ? `${Math.min(...cv.map(x => x[0]))}–${Math.max(...cv.map(x => x[0]))}` : String(c), br(ctot / 100), br(kg)];
     x = X0;
     cols.forEach(([cc, w], i) => { F.t(x + w / 2, y + h / 2, vals[i], 5.4, { ha: 'center', va: 'center', color: cc === 'POS.' ? COR[f] : INK, bold: cc === 'POS.' }); x += w; });
     const fx = x + 3, fw = X0 + W - fx - 3, ym = y + h / 2;
@@ -233,7 +247,7 @@ function tabela(F: Folha, rel: Relacao, qtd: number, X0: number, Ytop: number, l
     else if (f === 'T') F.l(Array.from({ length: 11 }, (_, i) => [fx + i * fw / 10, ym + (i % 2 ? 0.9 : -0.9)] as [number, number]), 0.45, COR[f]);
     else if (f === 'A') { const cx = fx + fw / 2; F.arco(cx, ym + 0.6, 1.5, 0, 180, 0.8, COR[f]); F.seg(cx - 1.5, ym + 0.6, cx - 1.5, ym - 1.6, 0.8, COR[f]); F.seg(cx + 1.5, ym + 0.6, cx + 1.5, ym - 1.6, 0.8, COR[f]); F.t(cx + 4, ym, laje ? 'pernas 50 + laço (8 fora)' : 'pernas 35 + laço', 4.4, { va: 'center' }); }
     else if (laje && (f === 'VI' || f === 'RI1' || f === 'RI2')) { const G = Math.round((esp - 0.05) * 100); F.l([[fx + 4, ym + 1.6], [fx + 4, ym - 1.2], [fx + fw - 4, ym - 1.2], [fx + fw - 4, ym + 1.6]], 0.9, COR[f]); F.t(fx + fw / 2, ym - 0.7, `${G} | ${c - 2 * G} | ${G}`, 4.4, { ha: 'center', va: 'bottom' }); }
-    else { F.seg(fx + 2, ym - 0.6, fx + fw - 2, ym - 0.6, 0.9, COR[f]); F.t(fx + fw / 2, ym - 0.1, String(c), 4.4, { ha: 'center', va: 'bottom' }); }
+    else { F.seg(fx + 2, ym - 0.6, fx + fw - 2, ym - 0.6, 0.9, COR[f]); F.t(fx + fw / 2, ym - 0.1, cv ? `variável ${Math.min(...cv.map(x => x[0]))} a ${Math.max(...cv.map(x => x[0]))} (topo inclinado)` : String(c), 4.4, { ha: 'center', va: 'bottom' }); }
     F.seg(X0, y, X0 + W, y, 0.15, '#999999');
   }
   F.r(X0, y, W, Ytop - y, { lw: 0.5 });
@@ -355,11 +369,11 @@ export function detalhar(E: EntradaArm, laje: boolean): Detalhamento {
       F.r(x0 - 6, Y0 + Hm * m + 7.5, Math.max(W + 70, 120), 6.6, { fill: cor, stroke: cor, lw: 0 }); F.t(x0 - 4, Y0 + Hm * m + 10.8, tit, 7, { va: 'center', color: '#ffffff', bold: true });
       const alc = fams.includes('A') ? t.alc : [], P = vista(F, as, alc, x0, Y0, m, laje);
       const rl: Relacao = t.rel.filter(([k, , fi]) => fams.includes(fi ?? fam(k)));
-      chamadas(F, as, rl, alc, P, x0 + W + 6, Y0 - 2, Y0 + Hm * m + 2, laje, t.tg);
+      chamadas(F, as, agrupaVar(rl), alc, P, x0 + W + 6, Y0 - 2, Y0 + Hm * m + 2, laje, t.tg);
     });
     if (!laje) F.t(15, 100.5, 'AS DUAS FACES SÃO IGUAIS: INFERIOR (VI, HI) na mesa e SUPERIOR (VS, HS) em cima · em cada face o H (deitado) vai por FORA e o V (em pé) por DENTRO, na nervura', 5.6, { bold: true, color: '#1e8449' });
     F.seg(15, 97, 405, 97, 0.3, '#999999');
-    const { kgT } = tabela(F, t.rel, qtd, 15, 88, laje, t.tg, t.esp, undefined, t.a.bitPos);
+    const { kgT } = tabela(F, agrupaVar(t.rel), qtd, 15, 88, laje, t.tg, t.esp, undefined, t.a.bitPos);
     const kpa = t.kg * COEF_ICA / t.ntrab, xd = 158;
     F.t(xd, 91, 'DADOS DA PEÇA', 6.4, { bold: true });
     [`Medida: ${cm(L)} x ${cm(Hm)} x ${cm(t.esp)} cm`, `Peso: ${br(t.kg, 0)} kg · concreto ${br(t.vol, 3)} m³`, `Aço: ${br(kgT, 1)} kg por peça`,
