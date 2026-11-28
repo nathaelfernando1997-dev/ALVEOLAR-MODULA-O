@@ -410,6 +410,7 @@ export interface Ajustes {
   cortes: Record<string, number[]>;        // cortes manuais (distância a partir do início, sem coluna)
   colunas?: Record<string, number[]>;      // cortes manuais com coluna (distância a partir do início)
   altura: Record<string, number>;          // altura manual do trecho
+  rebaixoTopo?: Record<string, { dl: number; w: number; h: number }[]>;   // rebaixo no topo de um painel (chave = a do painel): ex.: 30 cm da ponta até a janela para a viga de borda passar
   alturaPainel?: Record<string, number>;   // altura manual de um painel só (chave = trecho@início do painel), ex.: parede que baixa para a viga da sacada
   vaoTipo: Record<string, string>;         // `${trecho}@${posição}` -> tag (ex.: P04) ou "livre"
   vaoCentro?: string[];                    // vãos (mesma chave) centralizados na parede (ex.: janelas dos banheiros)

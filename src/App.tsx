@@ -609,6 +609,13 @@ export default function App() {
         P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `recorte de ${Math.round(w * 100)} × ${Math.round(desce * 100)} cm no topo: apoio da viga ${sec?.nome || `V${v.n}`}`;
       }
     }
+    // rebaixo no topo definido à mão (viga de borda apoiada em parte da parede)
+    for (const P of vazio.ps) for (const rb of aj.rebaixoTopo?.[P.chave ?? ''] || []) {
+      const dl = Math.max(0, rb.dl), w = Math.min(P.larg - dl, rb.w), h = Math.min(rb.h, P.H - 0.5);
+      if (w < 0.05 || h < 0.02) continue;
+      P.recortes.push({ tipo: 'rebaixo da viga', dl, w, base: P.H - h, h });
+      P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `rebaixo de ${Math.round(h * 100)} cm no topo, de ${br(dl)} a ${br(dl + w)} m: viga de borda`;
+    }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
   // dados de produção (etiquetas, corte de isopor/treliça, plano de carga): pesado, só nas abas que usam (e no celular pelo QR)
