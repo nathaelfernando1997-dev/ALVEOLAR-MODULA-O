@@ -670,6 +670,18 @@ export default function App() {
   const [qrAtivo, setQrAtivo] = useState(!!qr);
   const [montagem, setMontagem] = useState<Record<string, cloud.Marca>>({});
   useEffect(() => { if (qr && qrAtivo && (sess || !cloud.nuvemConfigurada) && projId !== qr.obra) abrirProjeto(qr.obra); }, [sess?.user.id]);
+  const [pend, setPend] = useState<cloud.AjustePendente[]>([]);
+  const lerPend = () => { if (projId && sess && cloud.nuvemConfigurada) cloud.ajustesPendentes(projId).then(setPend); else setPend([]); };
+  useEffect(lerPend, [projId, sess?.user.id]);
+  const resolverPend = async (p: cloud.AjustePendente, aplicar: boolean) => {
+    if (aplicar) {
+      const n = { ...aj } as unknown as Record<string, unknown>;
+      for (const [k, v] of Object.entries(p.mudancas)) if (k in AJUSTES_VAZIOS) n[k] = v;
+      setAj(n as unknown as Ajustes);
+    }
+    try { await cloud.resolverAjuste(p.id, aplicar ? 'aplicado' : 'recusado'); } catch (e) { setErro('Não consegui marcar a alteração: ' + (e as Error).message); }
+    setPend(l => l.filter(x => x.id !== p.id));
+  };
   useEffect(() => { if (projId && sess && cloud.nuvemConfigurada) cloud.lerMontagem(projId).then(setMontagem).catch(() => setMontagem({})); }, [projId, sess?.user.id]);
   // chave da obra: vai no QR para marcar a peça sem login (null = SQL das marcações ainda não rodado)
   const [chaveQR, setChaveQR] = useState<string | null>(null);
@@ -741,6 +753,13 @@ export default function App() {
         {sess && <span className="usuario">{sess.user.email} <button onClick={() => { cloud.sair(); setProjId(null); setDxf(null); setNome(''); setProjNome(''); setAba('arquivo'); }}>Sair</button></span>}
       </header>
       {lendo && <div className="carregando noprint">Abrindo o projeto… arquivos grandes podem levar alguns segundos.</div>}
+      {dxf && pend.length > 0 && <div className="caixa noprint">{pend.map(p => {
+        const mudou = p.antes && Object.keys(p.antes).some(k => JSON.stringify((aj as unknown as Record<string, unknown>)[k] ?? null) !== JSON.stringify(p.antes![k] ?? null));
+        return <div key={p.id} className="caixa-item">
+          <b>📥 Alteração enviada pelo Claude</b> ({new Date(p.criado).toLocaleString('pt-BR')}): {p.descricao}
+          {mudou && <span className="erro"> · Atenção: o projeto mudou depois que essa alteração foi preparada; confira após aplicar (dá para desfazer).</span>}
+          <button onClick={() => resolverPend(p, true)}>Aplicar</button> <button onClick={() => resolverPend(p, false)}>Recusar</button>
+        </div>; })}</div>}
       <nav className="abas noprint">{tabs.map(([k, t]) => <button key={k} className={aba === k ? 'on' : ''} disabled={k !== 'arquivo' && !dxf} onClick={() => setAba(k)}>{t}{k === 'cortes' && erros > 0 ? ` (${erros})` : ''}</button>)}</nav>
       <main>
         {aba === 'arquivo' && (

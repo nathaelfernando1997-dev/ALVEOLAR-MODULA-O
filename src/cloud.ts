@@ -232,3 +232,19 @@ export async function enviarPlantaPortal(projeto: string, dados: unknown) {
     ? 'Falta rodar no Supabase a migração 0025 do sistema de gestão (planta do portal).'
     : 'Não enviou: ' + error.message);
 }
+
+// ---- caixa de entrada: alterações enviadas pelo Claude para o dono aprovar (supabase/caixa_ajustes.sql) ----
+export interface AjustePendente { id: string; criado: string; descricao: string; mudancas: Record<string, unknown>; antes: Record<string, unknown> | null }
+
+export async function ajustesPendentes(projeto: string): Promise<AjustePendente[]> {
+  if (!sb) return [];
+  const { data, error } = await sb.from('caixa_ajustes').select('id,criado,descricao,mudancas,antes').eq('projeto', projeto).eq('status', 'pendente').order('criado');
+  if (error) return []; // tabela ainda não criada: sem caixa
+  return (data ?? []) as AjustePendente[];
+}
+
+export async function resolverAjuste(id: string, status: 'aplicado' | 'recusado') {
+  if (!sb) return;
+  const { error } = await sb.from('caixa_ajustes').update({ status, resolvido: new Date().toISOString() }).eq('id', id);
+  if (error) throw error;
+}
