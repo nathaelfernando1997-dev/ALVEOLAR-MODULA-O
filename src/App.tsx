@@ -611,7 +611,9 @@ export default function App() {
     }
     return vazio;
   }, [leitura, pavs, quadro, regras, aj]);
-  const prod = useMemo(() => leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [calc, leitura, regras, aj, ativos]);
+  // dados de produção (etiquetas, corte de isopor/treliça, plano de carga): pesado, só nas abas que usam (e no celular pelo QR)
+  const precisaProd = aba === 'impressao' || aba === 'acompanhamento' || new URLSearchParams(location.search).has('peca');
+  const prod = useMemo(() => precisaProd && leitura && (regras.motor ?? 1) >= 2 ? dadosProducao(ativos, calc, regras, aj, leitura) : null, [precisaProd, calc, leitura, regras, aj, ativos]);
   const [modoImp, setModoImp] = useState<'folhas' | 'etiquetas'>('folhas');
   const [pavsImp, setPavsImp] = useState<string[]>([]);
   // deslocamento de cada pavimento para ficar em cima do de baixo (mesmo encaixe da laje): 3D e IFC

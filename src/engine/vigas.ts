@@ -24,8 +24,18 @@ export function encaixeManual(baixo?: Pavimento, cima?: Pavimento): { dx: number
 }
 
 // deslocamento entre a planta de baixo e a de cima (as plantas costumam estar lado a lado no DXF)
+// o mesmo par de plantas é alinhado várias vezes a cada cálculo (vãos, lajes, vigas): guarda o resultado pelo conteúdo
+const cacheAlinhar = new Map<string, { dx: number; dy: number }>();
+const chaveTs = (ts: Trecho[]) => ts.map(t => `${t.o}${t.c.toFixed(3)},${t.s.toFixed(3)},${t.e.toFixed(3)}`).join(';');
 export function alinhar(baixo: Trecho[], cima: Trecho[], manual?: { dx: number; dy: number }): { dx: number; dy: number } {
   if (manual) return manual;
+  const k = chaveTs(baixo) + '|' + chaveTs(cima), m = cacheAlinhar.get(k);
+  if (m) return { ...m };
+  const r = alinharCalc(baixo, cima);
+  if (cacheAlinhar.size > 40) cacheAlinhar.clear();
+  cacheAlinhar.set(k, r); return { ...r };
+}
+function alinharCalc(baixo: Trecho[], cima: Trecho[]): { dx: number; dy: number } {
   const cands = (o: 'H' | 'V') => {
     const A = baixo.filter(t => t.o === o).map(t => t.c), B = cima.filter(t => t.o === o).map(t => t.c);
     const votos = new Map<number, number>();

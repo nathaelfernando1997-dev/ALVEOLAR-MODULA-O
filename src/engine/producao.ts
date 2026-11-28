@@ -265,8 +265,15 @@ export function planoCorte(pedacos: { comp: number; peca: string }[], barra: num
   }
   itens.sort((a, b) => b.comp - a.comp);
   const barras: { cortes: number[]; livre: number }[] = [];
+  // mesmo resultado do first-fit simples, sem varrer de novo as barras que já não servem:
+  // barra com sobra menor que o menor pedaço não recebe mais nada; e para pedaços da mesma medida, a busca continua de onde parou
+  const menor = itens.length ? itens[itens.length - 1].comp : 0;
+  let ini = 0, ptr = 0, compAnt = NaN;
   for (const it of itens) {
-    let b = barras.find(x => x.livre + 1e-6 >= it.comp);
+    while (ini < barras.length && barras[ini].livre + 1e-6 < menor) ini++;
+    if (it.comp !== compAnt) { ptr = ini; compAnt = it.comp; } else ptr = Math.max(ptr, ini);
+    while (ptr < barras.length && barras[ptr].livre + 1e-6 < it.comp) ptr++;
+    let b = barras[ptr];
     if (!b) { b = { cortes: [], livre: barra }; barras.push(b); }
     b.cortes.push(it.comp); b.livre -= it.comp + serra;
   }
