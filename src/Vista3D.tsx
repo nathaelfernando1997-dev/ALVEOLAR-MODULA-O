@@ -369,3 +369,71 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     </aside>}
   </div>;
 }
+
+// ---------- foto do 3D para as pranchas (montagem de um pavimento) ----------
+// 'paredes': as paredes do pavimento em destaque, com o número de cada painel; o que já está montado embaixo, em cinza
+// 'lajes': as lajes sobre o pavimento em destaque, com o número de cada painel; as paredes do pavimento e o de baixo, em cinza claro
+export async function fotoMontagem(props: Props3D, pav: string, modo: 'paredes' | 'lajes', W = 2000, H = 1240): Promise<string> {
+  const iPav = props.pavs.findIndex(p => p.id === pav);
+  if (iPav < 0) return '';
+  const antes = new Set(props.pavs.slice(0, iPav).map(p => p.id));
+  const cx = caixas({ ...props, vigas: [] }).filter(c => antes.has(c.pav) || (c.pav === pav && (modo === 'lajes' || c.tipo !== 'laje')));
+  const foco = (c: Caixa) => c.pav === pav && (modo === 'paredes' ? c.tipo === 'parede' : c.tipo === 'laje');
+  if (!cx.some(foco)) return '';
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const R = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
+  R.setPixelRatio(1); R.setSize(W, H, false); R.setClearColor(0xffffff, 1);
+  const S = new THREE.Scene();
+  S.add(new THREE.AmbientLight(0xffffff, 1.6), new THREE.HemisphereLight(0xffffff, 0xd8d2c6, 0.8));
+  const box = new THREE.BoxGeometry(1, 1, 1), aresta = new THREE.EdgesGeometry(box);
+  const mat = (c: number) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  const M = { paredeF: mat(0xece3d2), abF: mat(0xdccfb8), lajeF: mat(0x8fb4dc), ctxP: mat(0xdedede), ctxL: mat(0xc9ccd0) };
+  const EF = new THREE.LineBasicMaterial({ color: 0x3a3630 }), EC = new THREE.LineBasicMaterial({ color: 0x9a9a9a, transparent: true, opacity: 0.6 });
+  const bbF = new THREE.Box3(), bbT = new THREE.Box3();
+  for (const c of cx) {
+    const f = foco(c), m = new THREE.Mesh(box, f ? (c.tipo === 'laje' ? M.lajeF : c.ab ? M.abF : M.paredeF) : c.tipo === 'laje' ? M.ctxL : M.ctxP);
+    const gg = c.tipo === 'laje' ? 0.008 : 0, lx = Math.max(c.x1 - c.x0 - gg, 0.01), ly = Math.max(c.y1 - c.y0 - gg, 0.01), lz = Math.max(c.z1 - c.z0 - (c.tipo === 'laje' ? 0.006 : 0), 0.01);
+    m.scale.set(lx, ly, lz); m.position.set((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2, (c.z0 + c.z1) / 2); S.add(m);
+    const l = new THREE.LineSegments(aresta, f ? EF : EC); l.scale.copy(m.scale); l.position.copy(m.position); S.add(l);
+    const b = new THREE.Box3(new THREE.Vector3(c.x0, c.y0, c.z0), new THREE.Vector3(c.x1, c.y1, c.z1));
+    bbT.union(b); if (f) bbF.union(b);
+  }
+  // câmera como no 3D da tela (de frente pela esquerda, de cima), enquadrando o pavimento em destaque
+  const ctr = bbF.getCenter(new THREE.Vector3()), raio = bbF.getSize(new THREE.Vector3()).length() / 2;
+  const C = new THREE.PerspectiveCamera(30, W / H, 0.1, 5000); C.up.set(0, 0, 1);
+  // o lado comprido do prédio fica deitado na folha (a câmera olha mais de lado para ele)
+  const tam = bbF.getSize(new THREE.Vector3()), dir = (tam.y > tam.x ? new THREE.Vector3(-1.15, -0.5, 0.95) : new THREE.Vector3(-0.5, -1.15, 0.95)).normalize();
+  const sol = new THREE.DirectionalLight(0xffffff, 1.5); sol.position.copy(dir.clone().add(new THREE.Vector3(0.3, -0.2, 0.6))); S.add(sol);
+  C.position.copy(ctr).addScaledVector(dir, raio * 2.6); C.lookAt(ctr); C.updateMatrixWorld(); C.updateProjectionMatrix();
+  // aproxima até o destaque encher a imagem
+  const cantos = (b: THREE.Box3) => [0, 1, 2, 3, 4, 5, 6, 7].map(k => new THREE.Vector3(k & 1 ? b.max.x : b.min.x, k & 2 ? b.max.y : b.min.y, k & 4 ? b.max.z : b.min.z));
+  // ocupa: quanto do quadro o destaque usa (1 = encosta na borda); o centro da imagem vai para o centro do destaque projetado
+  let offX = 0, offY = 0;
+  const ocupa = () => { const q = cantos(bbF).map(p => p.clone().project(C)); const x0 = Math.min(...q.map(v => v.x)), x1 = Math.max(...q.map(v => v.x)), y0 = Math.min(...q.map(v => v.y)), y1 = Math.max(...q.map(v => v.y));
+    offX += (x0 + x1) / 4 * W; offY -= (y0 + y1) / 4 * H; C.setViewOffset(W, H, offX, offY, W, H); return Math.max((x1 - x0) / 2, (y1 - y0) / 2); };
+  for (let k = 0; k < 8; k++) { const d = C.position.distanceTo(ctr) * ocupa() / 0.94; C.position.copy(ctr).addScaledVector(dir, d); C.lookAt(ctr); C.updateMatrixWorld(); }
+  R.render(S, C);
+  // números das peças em destaque, por cima da imagem (no topo de cada painel)
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const g = out.getContext('2d')!; g.drawImage(cv, 0, 0);
+  const pos = new Map<string, THREE.Box3>();
+  for (const c of cx) if (foco(c)) { const b = pos.get(c.cod) ?? new THREE.Box3(); b.union(new THREE.Box3(new THREE.Vector3(c.x0, c.y0, c.z0), new THREE.Vector3(c.x1, c.y1, c.z1))); pos.set(c.cod, b); }
+  const fs = Math.round(Math.max(16, Math.min(26, W / 85))), feitos: [number, number, number, number][] = [];
+  const bate = (r: [number, number, number, number]) => feitos.some(o => r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]);
+  g.font = `bold ${fs}px Arial`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [cod, b] of pos) {
+    const t = cod.split('-').pop()!, p = new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, b.max.z).project(C);
+    const x0 = (p.x + 1) / 2 * W, y0 = (1 - p.y) / 2 * H - (modo === 'paredes' ? fs * 0.7 : 0), w = g.measureText(t).width + fs * 0.4, h = fs * 1.2;
+    // se encosta noutro número, sobe (ou desce) um pouco e liga com um traço ao ponto da peça
+    let x = x0, y = y0;
+    for (const dy of [0, -1, 1, -2, 2, -3, 3]) { const r: [number, number, number, number] = [x0 - w / 2, y0 + dy * h * 1.05 - h / 2, x0 + w / 2, y0 + dy * h * 1.05 + h / 2]; if (!bate(r) || dy === 3) { y = y0 + dy * h * 1.05; feitos.push(r); break; } }
+    const cor = modo === 'paredes' ? '#c00' : '#1a3fd6';
+    if (y !== y0) { g.strokeStyle = cor; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x0, y0 + (modo === 'paredes' ? fs * 0.7 : 0)); g.lineTo(x, y); g.stroke(); }
+    g.fillStyle = 'rgba(255,255,255,0.92)'; g.strokeStyle = cor; g.lineWidth = 2;
+    g.beginPath(); g.rect(x - w / 2, y - h / 2, w, h); g.fill(); g.stroke();
+    g.fillStyle = cor; g.fillText(t, x, y + 1);
+  }
+  const url = out.toDataURL('image/png');
+  R.dispose(); R.forceContextLoss(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose());
+  return url;
+}

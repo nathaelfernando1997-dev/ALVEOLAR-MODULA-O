@@ -7,7 +7,7 @@ import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConte
 import type { InfoVista } from './engine/draw.ts';
 import { gerarIfc } from './engine/ifc.ts';
 const Vista3D = lazy(() => import('./Vista3D.tsx'));
-import type { InfoPeca } from './Vista3D.tsx';
+import type { InfoPeca, Props3D } from './Vista3D.tsx';
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, escadas, escadasContorno, segsEscada, circsEscada, type Escada, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
 import type { LajeAmb, PainelLaje } from './engine/lajes.ts';
@@ -1600,7 +1600,7 @@ export default function App() {
             {(regras.motor ?? 1) >= 2 && <CardArmacao ativos={ativos} calc={calc} regras={regras} aj={aj} setAj={setAj} nome={projNome || nome} />}
             {(regras.motor ?? 1) >= 2 && <div className="card noprint"><Quantitativos linhas={quantitativos(ativos, calc.ps, calc.pl, regras, espDaLaje(aj))} perda={regras.perda ?? 10} /><TabelaQuantTrelicas pavs={ativos} calc={calc} aj={aj} perda={regras.perda ?? 10} /></div>}
             {modoImp === 'etiquetas' && prod ? <Etiquetas prod={(pr => pavsImp.length ? { ...pr, pecas: pr.pecas.filter(x => pavsImp.includes(x.pav)) } : pr)(soEtq.trim() ? { ...prod, pecas: (ks => prod.pecas.filter(x => ks.has(x.codigo.toUpperCase())))(new Set(soEtq.toUpperCase().split(/[\s,;]+/).filter(Boolean))) } : prod)} ativos={ativos} nome={projNome || nome} qrBase={qrBase} />
-              : prod ? <Folhas ativos={ativos} soPavs={pavsImp} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod}
+              : prod ? <Folhas p3d={props3d} ativos={ativos} soPavs={pavsImp} calc={calc} leitura={leitura} arqDe={arqDe} nome={nome} novo={(regras.motor ?? 1) >= 2} regras={regras} aj={aj} prod={prod}
                   rev={(() => { const b = (aj.revisoes || []).find(r => r.n === revBase); return b ? { base: b, dif: compararRev(b.pecas, retrato(calc, prod.sg)) } : undefined; })()} />
               : <p className="dica">As folhas de produção usam o cálculo atual (aba Regras).</p>}
           </section>
@@ -2324,7 +2324,17 @@ function girar(vb: string, html: string): { vb: string; html: string } {
 }
 function SvgFolha({ vb, html }: { vb: string; html: string }) { const g = girar(vb, html); return <svg viewBox={g.vb} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: g.html }} />; }
 
-function Folhas({ ativos: todos, soPavs, calc, leitura, arqDe, nome, novo, regras, aj, prod, rev }: { ativos: Pavimento[]; soPavs?: string[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod; rev?: { base: Revisao; dif: ReturnType<typeof compararRev> } }) {
+// foto do 3D da montagem para a prancha (o three.js só carrega quando a folha aparece)
+function Foto3D({ p3d, pav, modo }: { p3d: Props3D; pav: string; modo: 'paredes' | 'lajes' }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let vivo = true; setSrc(null);
+    import('./Vista3D.tsx').then(m => m.fotoMontagem(p3d, pav, modo)).then(u => { if (vivo) setSrc(u); }).catch(() => { if (vivo) setSrc(''); });
+    return () => { vivo = false; };
+  }, [p3d, pav, modo]);
+  return src ? <img src={src} alt={`3D ${modo}`} /> : <p className="dica">{src === null ? 'Gerando o 3D…' : 'Não consegui gerar o 3D neste navegador.'}</p>;
+}
+function Folhas({ ativos: todos, soPavs, calc, leitura, arqDe, nome, novo, regras, aj, prod, rev, p3d }: { p3d?: Props3D; ativos: Pavimento[]; soPavs?: string[]; calc: Calc; leitura: Leitura; arqDe: (b: Box) => Prim[]; nome: string; novo?: boolean; regras: Regras; aj: Ajustes; prod: Prod; rev?: { base: Revisao; dif: ReturnType<typeof compararRev> } }) {
   type F = { key: string; tit: string; body: JSX.Element; rod: string };
   // só os pavimentos escolhidos: folhas do pavimento, cargas com peças dele; as folhas gerais (isopor, mesas, conferência...) saem só com todos
   const filtra = !!soPavs?.length && soPavs.length < todos.length, ativos = filtra ? todos.filter(p => soPavs!.includes(p.id)) : todos;
@@ -2347,6 +2357,9 @@ function Folhas({ ativos: todos, soPavs, calc, leitura, arqDe, nome, novo, regra
       add(pav.id + 's', `SEQUÊNCIA DE MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
         <div className="desenho"><SvgFolha vb={q.vb} html={arqSvg(q, arqDe(pav.box)) + sequenciaConteudo(ps, ordem, q)} /></div>,
         'Círculo azul = ordem de montagem (começa num canto e segue sempre encostando em peça já montada, fechando os cantos) · vermelho = número da peça · conferir prumo e travamento a cada canto fechado');
+      if (p3d) add(pav.id + '3p', `3D DA MONTAGEM DAS PAREDES — ${pav.nome.toUpperCase()}`,
+        <div className="desenho foto3d"><Foto3D p3d={p3d} pav={pav.id} modo="paredes" /></div>,
+        'Paredes do pavimento em destaque com o número de cada painel (o mesmo da planta e da etiqueta) · em cinza: o que já está montado embaixo');
       const info = (p: Painel) => prod.infos.get(p.num)!;
       const paginas = paginarVistas(ps, p => p.larg, p => p.H + 0.45 + (0.35 + 0.26) * fPar + Math.ceil((p.aviso || '').length * fPar / (18 * (p.larg + 0.6))) * 0.13 * fPar, 3, ESC_PAREDE);
       paginas.forEach((pgx, i) => {
@@ -2374,6 +2387,9 @@ function Folhas({ ativos: todos, soPavs, calc, leitura, arqDe, nome, novo, regra
             {bi === BB.length - 1 && <tr className="tot"><td>Total</td><td></td><td></td><td>{br(P.reduce((s, p) => s + areaLaje(p), 0))}</td></tr>}
           </tbody></table>)}</div></div>,
         'Comprimento e largura com apoio em cima das paredes: 6 cm onde a parede recebe laje dos dois lados, 10 cm na borda · * = painel com dente (recorte no canto) · seta = sentido do vão · tracejado laranja = viga sugerida (conferir) · roxo = treliça');
+      if (p3d) add(pav.id + '3l', `3D DA MONTAGEM DA LAJE SOBRE O ${pav.nome.toUpperCase()}`,
+        <div className="desenho foto3d"><Foto3D p3d={p3d} pav={pav.id} modo="lajes" /></div>,
+        'Lajes em azul com o número de cada painel (o mesmo da planta e da etiqueta) · em cinza: as paredes que recebem a laje e o que está embaixo');
       const ES = escoras(LJ, regras.escoraMax ?? 1.5);
       if (ES.linhas.length) add(pav.id + 'e', `ESCORAMENTO DA LAJE SOBRE O ${pav.nome.toUpperCase()}`,
         <div className="desenho"><SvgFolha vb={q.vb} html={DEFS_LAJE + arqSvg(q, arqDe(pav.box)) + lajesConteudo(LJ, P, q) + escorasConteudo(ES.linhas, ES.vaos, q)} /></div>,
