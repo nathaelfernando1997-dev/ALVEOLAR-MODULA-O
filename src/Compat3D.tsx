@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Aba Compatibilização: 3D da tubulação (elétrico, água, esgoto), furos, caixas externas e alterações, lido de um arquivo
 // gerado à parte (formato 'alveolar-compat'). Só consulta: não muda a modulação, as pranchas nem a produção.
+// Gerado a partir do mesmo modelo do 3D da compatibilização (não editar à mão).
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -30,14 +31,16 @@ function montar(root: HTMLElement, D: any, nome: string) {
     const l=new THREE.LineSegments(ar,EM);l.scale.copy(m.scale);l.position.copy(m.position);G[0].add(m,l)}}
   // tubulação: um tubo (cilindro) por trecho, agrupado por pavimento/projeto/cor (InstancedMesh: rápido mesmo com milhares de trechos)
   const CORT=[[0xe0a800,0x1a73e8,0x2e9e44],[0xff5a36,0xff5a36,0xff5a36],[0xd9362b,0xd9362b,0xd9362b],[0x8fd19e,0x8fd19e,0x8fd19e]];
-  const cil=new THREE.CylinderGeometry(1,1,1,10);const TUB=D.pavs.map(()=>[new THREE.Group(),new THREE.Group(),new THREE.Group()]);TUB.forEach(a=>a.forEach(g=>S.add(g)));
-  {const grp={};for(let i=0;i<D.tub.length;i+=10){const k=D.tub[i]+'|'+D.tub[i+1]+'|'+D.tub[i+2];(grp[k]=grp[k]||[]).push(i)}
+  const cil=new THREE.CylinderGeometry(1,1,1,10);const PKM=new THREE.MeshBasicMaterial({visible:false});const PK=[];const TUB=D.pavs.map(()=>[new THREE.Group(),new THREE.Group(),new THREE.Group()]);TUB.forEach(a=>a.forEach(g=>S.add(g)));
+  {const grp={};for(let i=0;i<D.tub.length;i+=11){const k=D.tub[i]+'|'+D.tub[i+1]+'|'+D.tub[i+2];(grp[k]=grp[k]||[]).push(i)}
    const up=new THREE.Vector3(0,1,0),q=new THREE.Quaternion(),M4=new THREE.Matrix4(),a=new THREE.Vector3(),b=new THREE.Vector3(),dv=new THREE.Vector3(),sc=new THREE.Vector3();
    for(const k in grp){const [pv,d,c]=k.split('|').map(Number);const ids=grp[k];
     const im=new THREE.InstancedMesh(cil,new THREE.MeshStandardMaterial({color:CORT[c][d],roughness:0.45,metalness:0.1,emissive:CORT[c][d],emissiveIntensity:0.12}),ids.length);
     ids.forEach((i,j)=>{a.set(D.tub[i+3],D.tub[i+4],D.tub[i+5]);b.set(D.tub[i+6],D.tub[i+7],D.tub[i+8]);dv.subVectors(b,a);const L=dv.length();q.setFromUnitVectors(up,dv.normalize());
       sc.set(D.tub[i+9],L+D.tub[i+9]*0.6,D.tub[i+9]);M4.compose(a.clone().add(b).multiplyScalar(0.5),q,sc);im.setMatrixAt(j,M4)});
-    im.instanceMatrix.needsUpdate=true;TUB[pv][d].add(im)}}
+    im.instanceMatrix.needsUpdate=true;TUB[pv][d].add(im);
+    const pk=new THREE.InstancedMesh(cil,PKM,ids.length);ids.forEach((i,j)=>{a.set(D.tub[i+3],D.tub[i+4],D.tub[i+5]);b.set(D.tub[i+6],D.tub[i+7],D.tub[i+8]);dv.subVectors(b,a);const L=dv.length();q.setFromUnitVectors(up,dv.normalize());const rr=Math.max(D.tub[i+9]*2.5,0.06);sc.set(rr,L,rr);M4.compose(a.clone().add(b).multiplyScalar(0.5),q,sc);pk.setMatrixAt(j,M4)});
+    pk.userData.ids=ids;pk.userData.im=im;TUB[pv][d].add(pk);PK.push(pk)}}
   // pontos (caixas), colunas na parede e furos (anéis)
   const CORN={erro:0xd9362b,atencao:0xff9f1a,ok:0x2e9e44,novo:0x8e44ad,ext:0x56606b};const mc={};const MC=(c,o=1)=>mc[c+'|'+o]||(mc[c+'|'+o]=new THREE.MeshStandardMaterial({color:c,roughness:0.5,emissive:c,emissiveIntensity:0.3,transparent:o<1,opacity:o}));
   const MG=new THREE.MeshStandardMaterial({color:0x22b24c,emissive:0x22b24c,emissiveIntensity:0.35,transparent:true,opacity:0.85}),LG=new THREE.LineBasicMaterial({color:0x22b24c});
@@ -66,7 +69,11 @@ function montar(root: HTMLElement, D: any, nome: string) {
     const ne=xs.filter(x=>x[0].nv==='erro').length,nn=xs.filter(x=>x[0].nv==='novo').length,nx=xs.filter(x=>x[0].nv==='ext').length;lt.textContent=on.size?(nx?nx+' caixas · ':'')+(nn?nn+' alterações · ':'')+ne+' para corrigir · '+(xs.length-ne-nn-nx)+' de atenção':'Toque num pavimento';
     let h='',u=-1;for(const [t,i] of xs){if(t.pv!==u){u=t.pv;const q=xs.filter(x=>x[0].pv===t.pv);h+='<h3>'+D.pavs[t.pv]+' <small>'+q.filter(x=>x[0].nv==='erro').length+' corrigir · '+q.filter(x=>x[0].nv==='atencao').length+' atenção'+(q.some(x=>x[0].nv==='novo')?' · '+q.filter(x=>x[0].nv==='novo').length+' alteração':'')+(q.some(x=>x[0].nv==='ext')?' · '+q.filter(x=>x[0].nv==='ext').length+' caixas':'')+'</small></h3>'}
       const p=t.tx.split(' · ');h+='<div class="'+t.nv+'" data-i="'+i+'"><b>'+p.slice(0,3).join(' · ')+'</b><br>'+p.slice(3).join(' · ')+(t.ac?'<i>→ '+t.ac+'</i>':'')+'</div>'}lista.innerHTML=h};
-  let sel=null;const marca=i=>{if(sel&&sel.k!=='ext')sel.m.scale.multiplyScalar(1/1.8);sel=IT[i];if(sel.k!=='ext')sel.m.scale.multiplyScalar(1.8);info.innerHTML=sel.tx+(sel.ac?'<br><span class="ac">→ '+sel.ac+'</span>':'')};
+  const HL=new THREE.Mesh(cil,new THREE.MeshBasicMaterial({color:0xff2bd6,transparent:true,opacity:0.85,depthTest:false}));HL.renderOrder=9;HL.visible=false;S.add(HL);
+  const marcaTubo=(pk,j)=>{const i=pk.userData.ids[j];const m4=new THREE.Matrix4();pk.userData.im.getMatrixAt(j,m4);HL.matrixAutoUpdate=false;HL.matrix.copy(m4);
+    const sc=new THREE.Vector3(Math.max(D.tub[i+9]*1.6,0.025),1,Math.max(D.tub[i+9]*1.6,0.025));HL.matrix.scale(sc);HL.visible=true;
+    const [t1,t2]=D.ti[D.tub[i+10]].split('|');info.innerHTML='<b>'+t1+'</b>'+(t2?'<br><span class="ac">'+t2+'</span>':'')};
+  let sel=null;const marca=i=>{HL.visible=false;if(sel&&sel.k!=='ext')sel.m.scale.multiplyScalar(1/1.8);sel=IT[i];if(sel.k!=='ext')sel.m.scale.multiplyScalar(1.8);info.innerHTML=sel.tx+(sel.ac?'<br><span class="ac">→ '+sel.ac+'</span>':'')};
   lista.addEventListener('click',e=>{const d=e.target.closest('[data-i]');if(!d)return;const i=+d.dataset.i,t=IT[i];marca(i);const a=new THREE.Vector3(t.x,t.y,t.z);const dir=C.position.clone().sub(O.target).normalize();voar(a,a.clone().add(dir.multiplyScalar(t.k==='ext'?3.5+3*D.it[i][12][0]:3.5)))});
   root.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{disc[+b.dataset.d]=!disc[+b.dataset.d];aplica()});
   const tg=(id,f)=>$(id).onclick=()=>{f();aplica()};tg('vt',()=>verT=!verT);tg('vf',()=>verF=!verF);tg('vp',()=>verP=!verP);tg('pr',()=>verPr=!verPr);tg('cf',()=>soCf=!soCf);tg('ve',()=>verE=!verE);
@@ -77,7 +84,8 @@ function montar(root: HTMLElement, D: any, nome: string) {
   const foco=(x,y)=>{const h=acha(x,y,[...pecas(),...G.filter(g=>g.visible).flatMap(g=>g.children.filter(m=>m.isMesh))]);if(!h)return;const d=C.position.clone().sub(O.target);voar(h.point.clone(),h.point.clone().add(d.normalize().multiplyScalar(Math.min(d.length(),5))))};
   cv.addEventListener('pointerdown',e=>{dn=[e.clientX,e.clientY]});cv.addEventListener('dblclick',e=>foco(e.clientX,e.clientY));
   cv.addEventListener('pointerup',e=>{if(!dn||Math.hypot(e.clientX-dn[0],e.clientY-dn[1])>8)return;if(e.pointerType==='touch'){const t=performance.now();if(t-ul<320){foco(e.clientX,e.clientY);ul=0;return}ul=t}
-    const h=acha(e.clientX,e.clientY,pecas());if(h)marca(h.object.userData.i)});
+    const h=acha(e.clientX,e.clientY,pecas());if(h){marca(h.object.userData.i);return}
+    const ht=acha(e.clientX,e.clientY,PK.filter(p=>p.parent.visible));if(ht)marcaTubo(ht.object,ht.instanceId)});
   const tam=()=>{const w=root.clientWidth||1,h=root.clientHeight||1;RR.setSize(w,h,false);C.aspect=w/h;C.updateProjectionMatrix()};const ro=new ResizeObserver(tam);ro.observe(root);tam();aplica();enq(false);
   let raf=0;(function loop(){raf=requestAnimationFrame(loop);if(anim){const k=Math.min(1,(performance.now()-anim.t0)/650),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;O.target.lerpVectors(anim.a0,anim.a1,e);C.position.lerpVectors(anim.p0,anim.p1,e);if(k>=1)anim=null}O.update();RR.render(S,C)})();
   if(root.clientWidth<700){$('min').click();info.textContent='Toque nos pavimentos para somar · + abre filtros e lista · 1 dedo gira · 2 dedos aproxima'}
@@ -109,7 +117,7 @@ export default function Compat3D({ projId, projNome }: { projId: string | null; 
     <section className="card">
       <style>{CSS}</style>
       <h2>Compatibilização (elétrico, hidráulico e sanitário)</h2>
-      <p className="dica">Só para consulta: mostra por onde passa a tubulação, onde desce, onde furar, as caixas externas e as correções propostas. Não altera a modulação, as pranchas nem a produção.</p>
+      <p className="dica">Só para consulta: mostra por onde passa a tubulação, onde desce, onde furar, as caixas externas e as correções propostas. Toque num tubo para ver o que ele é e por que está ali. Não altera a modulação, as pranchas nem a produção.</p>
       {estado === 'lendo' ? <p>Carregando…</p> : <>
         <div className="acoes-compat">{entrada}
           {dados && <><span className="dica"> {dados.nome} · gerado em {dados.gerado}</span> <button onClick={async () => { await apagarCompat(chave); setDados(null); }}>Tirar deste projeto</button></>}
