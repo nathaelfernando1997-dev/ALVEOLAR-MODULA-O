@@ -85,6 +85,8 @@ export default function Vista3D(props: Props3D) {
   const ref = useRef<HTMLDivElement>(null);
   const cx = useMemo(() => caixas(props), [props]);
   const [vis, setVis] = useState<Record<string, boolean>>({});
+  // paredes e laje de cada pavimento ligadas/desligadas separadamente (montagem passo a passo)
+  const [semP, setSemP] = useState<Record<string, boolean>>({}), [semL, setSemL] = useState<Record<string, boolean>>({});
   const [so, setSo] = useState<string | null>(null);
   const [verL, setVerL] = useState(true), [verP, setVerP] = useState(true), [sep, setSep] = useState(0);
   const [sel, setSel] = useState<string | null>(null);
@@ -307,17 +309,17 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
   useEffect(() => {
     const a = api.current; if (!a) return;
     props.pavs.forEach((pv, i) => { const g = a.grupos.get(pv.id)!; const v = so ? so === pv.id : vis[pv.id] !== false;
-      g.p.visible = v && verP; g.l.visible = v && verL; g.p.position.z = g.l.position.z = i * sep + a.zc; });
+      g.p.visible = v && verP && !semP[pv.id]; g.l.visible = v && verL && !semL[pv.id]; g.p.position.z = g.l.position.z = i * sep + a.zc; });
     // fundação ligada: chão meio transparente e dá para olhar por baixo
     const f = !!props.fund && verF && (so ? so === props.pavs[0]?.id : vis[props.pavs[0]?.id] !== false);
     a.gF.visible = f; const cm = a.chao.material as THREE.MeshStandardMaterial; cm.opacity = f ? 0.35 : 1; cm.depthWrite = !f; cm.needsUpdate = true; a.grade.visible = !f;
     a.O.maxPolarAngle = f ? Math.PI : Math.PI * 0.495;
-  }, [vis, so, verL, verP, verF, sep, props.pavs, props.fund, cx]);
+  }, [vis, so, verL, verP, verF, sep, props.pavs, props.fund, cx, semP, semL]);
 
   const achar = () => {
     const k = busca.trim().toUpperCase(); if (!k) return;
     const c = cx.find(x => x.cod.toUpperCase() === k); if (!c) { setSel(`Não achei a peça ${k}`); return; }
-    setSo(null); setVis(v => ({ ...v, [c.pav]: true })); if (c.tipo === 'laje') setVerL(true); else setVerP(true);
+    setSo(null); setVis(v => ({ ...v, [c.pav]: true })); if (c.tipo === 'laje') { setVerL(true); setSemL(m => ({ ...m, [c.pav]: false })); } else { setVerP(true); setSemP(m => ({ ...m, [c.pav]: false })); }
     api.current?.marcar(c.cod); setSel(c.txt); setSelCod(c.cod);
   };
   useEffect(() => { setFerr(null); setVerDet(true); }, [selCod]);
@@ -329,6 +331,20 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       <h4>Ver</h4>
       <div className="botoes">{props.pavs.map(pv => <button key={pv.id} className={ligado(pv.id) ? 'on' : ''}
         onClick={() => so ? setSo(pv.id) : setVis(v => ({ ...v, [pv.id]: v[pv.id] === false }))}>{pv.nome}</button>)}</div>
+      <h4>Montagem por pavimento</h4>
+      <table className="v3-pavs"><tbody>{props.pavs.map(pv => <tr key={pv.id}><td>{pv.nome}</td>
+        <td><button className={!semP[pv.id] ? 'on' : ''} onClick={() => { setSo(null); setVis(v => ({ ...v, [pv.id]: true })); setVerP(true); setSemP(m => ({ ...m, [pv.id]: !m[pv.id] })); }}>Paredes</button></td>
+        <td><button className={!semL[pv.id] ? 'on' : ''} onClick={() => { setSo(null); setVis(v => ({ ...v, [pv.id]: true })); setVerL(true); setSemL(m => ({ ...m, [pv.id]: !m[pv.id] })); }}>Laje</button></td></tr>)}</tbody></table>
+      {(() => {   // passo a passo: paredes do térreo, laje do térreo, paredes do 1º, laje do 1º...
+        const passos = props.pavs.flatMap(pv => [{ pv: pv.id, l: false, nome: `paredes do ${pv.nome}` }, { pv: pv.id, l: true, nome: `laje sobre o ${pv.nome}` }]);
+        const atual = (() => { let k = -1; passos.forEach((q, i) => { if (!(q.l ? semL[q.pv] : semP[q.pv])) k = i; }); return k; })();
+        const ir = (k: number) => { k = Math.max(-1, Math.min(passos.length - 1, k)); setSo(null); setVerP(true); setVerL(true); setVis({});
+          setSemP(Object.fromEntries(props.pavs.map(pv => [pv.id, !passos.some((q, i) => i <= k && q.pv === pv.id && !q.l)])));
+          setSemL(Object.fromEntries(props.pavs.map(pv => [pv.id, !passos.some((q, i) => i <= k && q.pv === pv.id && q.l)]))); };
+        return <div className="botoes v3-passo"><button onClick={() => ir(atual - 1)} disabled={atual < 0}>◀ Voltar passo</button><button onClick={() => ir(atual + 1)} disabled={atual >= passos.length - 1}>Próximo passo ▶</button>
+          <span>{atual < 0 ? 'Nada lançado' : `Até: ${passos[atual].nome}`}</span></div>;
+      })()}
+      <h4>Ver tudo</h4>
       <div className="botoes">
         <button className={verP ? 'on' : ''} onClick={() => setVerP(!verP)}>Paredes</button>
         <button className={verL ? 'on' : ''} onClick={() => setVerL(!verL)}>Lajes</button>
