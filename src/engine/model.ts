@@ -575,17 +575,38 @@ export function trechos(L: Leitura, pav: Pavimento, quadro: Esquadria[], r: Regr
     const ja = out.some(t => t.pav === pav.id && t.vaos.some(v => v.tag === q.tag && dV(t, v, tg.x, tg.y) < 0.8 + q.larg / 2 &&
       !tags.some(o => o !== tg && o.text === tg.text && dV(t, v, o.x, o.y) < dV(t, v, tg.x, tg.y) - 0.05)));
     if (ja) continue;
-    let best: { t: Trecho; pd: number; along: number } | null = null;
+    let best: { t: Trecho; pd: number; along: number; ponta?: { lado: 's' | 'e'; face: number } } | null = null;
     for (const t of out) {
       if (t.pav !== pav.id) continue;
       const along = t.o === 'H' ? tg.x : tg.y, pd = Math.abs((t.o === 'H' ? tg.y : tg.x) - t.c);
-      if (pd > 0.45 || along < t.s - 0.1 || along > t.e + 0.1) continue;
+      if (pd > 0.45) continue;
+      // porta na ponta da parede: a parede para no batente e o vão vai até a face da parede perpendicular
+      // (a folha da porta desenhada na camada das paredes "fechou" o vão); a etiqueta fica nesse vão
+      let ponta: { lado: 's' | 'e'; face: number } | undefined;
+      if ((along > t.e + 0.1 || along < t.s - 0.1) && q.tag.startsWith('P')) {
+        const lado = along > t.e ? 'e' as const : 's' as const, v0 = t[lado];
+        const faces = out.filter(x => x.pav === pav.id && x.o !== t.o && x.s - 0.2 <= t.c && t.c <= x.e + 0.2)
+          .map(x => { const w = x.real ?? x; return lado === 'e' ? w.c - (w.esp || r.espMin) / 2 : w.c + (w.esp || r.espMin) / 2; })   // face real (sem linha de detalhe engordando a parede)
+          .filter(f => lado === 'e' ? f > v0 + 0.3 && f < v0 + q.larg + 0.35 : f < v0 - 0.3 && f > v0 - q.larg - 0.35);
+        const f = lado === 'e' ? Math.min(...faces) : Math.max(...faces);
+        const livre = faces.length && !out.some(x => x !== t && x.pav === pav.id && x.o === t.o && Math.abs(x.c - t.c) < 0.05 && x.s < Math.max(v0, f) && x.e > Math.min(v0, f));
+        if (livre && Math.abs(f - v0) >= q.larg - 0.15 && (lado === 'e' ? along <= f + 0.1 : along >= f - 0.1)) ponta = { lado, face: f };
+      }
+      if (!ponta && (along < t.s - 0.1 || along > t.e + 0.1)) continue;
+      if (ponta) { if (!best || pd < best.pd - 0.05) best = { t, pd, along, ponta }; continue; }
       // na mesma parede, prefere o pedaço do tamanho da abertura, depois o que contém a etiqueta
       const nota = (x: Trecho, al: number) => (x.e - x.s <= q.larg + 0.3 ? Math.abs(x.e - x.s - q.larg) : 1) + (al >= x.s && al <= x.e ? 0 : 0.5);
       if (!best || pd < best.pd - 0.05 || (Math.abs(pd - best.pd) <= 0.05 && nota(t, along) < nota(best.t, along))) best = { t, pd, along };
     }
     if (!best) continue;
     const { t, along } = best;
+    if (best.ponta) {
+      const { lado, face } = best.ponta, v0 = t[lado];
+      t[lado] = face;
+      t.vaos.push(vao(t.id, lado === 'e' ? { a: v0, b: face, tag: q.tag } : { a: face, b: v0, tag: q.tag }, t.H));
+      t.vaos.sort((x, y) => x.a - y.a);
+      continue;
+    }
     const livre = t.vaos.find(v => !v.tag && v.a - q.larg / 2 <= along && along <= v.b + q.larg / 2);
     // trecho do tamanho da abertura: é a própria abertura (o desenho trouxe o batente como parede)
     const m = livre ? (livre.a + livre.b) / 2 : t.e - t.s <= q.larg + 0.3 ? (t.s + t.e) / 2 : along;
