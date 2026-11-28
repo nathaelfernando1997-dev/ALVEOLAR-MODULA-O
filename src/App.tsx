@@ -609,6 +609,13 @@ export default function App() {
         P.aviso = (P.aviso ? P.aviso + ' · ' : '') + `recorte de ${Math.round(w * 100)} × ${Math.round(desce * 100)} cm no topo: apoio da viga ${sec?.nome || `V${v.n}`}`;
       }
     }
+    // painel girado (montado virado): recortes e aberturas da planta espelhados dentro do painel
+    for (const P of vazio.ps) if (P.chave && aj.painelGirado?.includes(P.chave)) {
+      const pa = Math.min(P.a, P.b), L = P.larg, m = (u: number) => 2 * pa + L - u;
+      for (const r of P.recortes) r.dl = L - r.dl - r.w;
+      for (const v of vazio.vaos) if (v.trecho === P.trecho && v.a >= pa - 0.3 && v.b <= pa + L + 0.3) { const a = m(v.b), b = m(v.a); v.a = a; v.b = b; }
+      P.aviso = (P.aviso ? P.aviso + ' · ' : '') + 'painel girado: porta e janela do outro lado';
+    }
     // rebaixo no topo definido à mão (viga de borda apoiada em parte da parede)
     for (const P of vazio.ps) for (const rb of aj.rebaixoTopo?.[P.chave ?? ''] || []) {
       const dl = Math.max(0, rb.dl), w = Math.min(P.larg - dl, rb.w), h = Math.min(rb.h, P.H - 0.5);
@@ -1576,6 +1583,20 @@ export default function App() {
                 {prod && <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-producao.csv', csvProducao(prod, ativos), 'text/csv')}>Baixar planilha de produção (CSV)</button>}
                 <button onClick={() => baixar(nome.replace(/\.dxf$/i, '') + '-ajustes.json', JSON.stringify({ camada, pavs, quadro, regras, ajustes: aj }, null, 1), 'application/json')}>Salvar ajustes (JSON)</button>
                 <label className="botao">Abrir ajustes (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; const s = JSON.parse(await f.text()) as Salvo; setCamada(s.camada); setPavs(s.pavs); setQuadro(s.quadro); setRegras(regrasDoSalvo(s.regras)); setAj({ ...AJUSTES_VAZIOS, ...s.ajustes }); }} /></label>
+                <label className="botao">Aplicar alterações (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try {
+                  // arquivo de alterações: só as chaves que mudam; listas/objetos de ajuste são somados (não apagam o que já existe)
+                  const j = JSON.parse(await f.text()) as { formato?: string; descricao?: string; mudancas?: Record<string, unknown> };
+                  if (j.formato !== 'alveolar-alteracoes' || !j.mudancas) throw new Error('não é um arquivo de alterações');
+                  if (!confirm('Aplicar estas alterações neste projeto?\n\n' + (j.descricao || '') + '\n\n(dá para desfazer com Ctrl+Z / Desfazer)')) return;
+                  const novo = { ...aj } as Record<string, unknown>;
+                  for (const [k, v] of Object.entries(j.mudancas)) {
+                    if (!(k in AJUSTES_VAZIOS) && !['vaoPos', 'rebaixoTopo', 'painelGirado', 'alturaPainel', 'colunas', 'vigaSecao', 'pilares', 'paredesManuais', 'vigasManuais', 'vaoCentro', 'naoPinar', 'viga'].includes(k)) continue;
+                    const cur = novo[k];
+                    novo[k] = Array.isArray(v) && Array.isArray(cur) && v.every(x => typeof x === 'string') ? [...new Set([...cur, ...v])]
+                      : v && typeof v === 'object' && !Array.isArray(v) && cur && typeof cur === 'object' && !Array.isArray(cur) ? { ...cur as object, ...v as object } : v;
+                  }
+                  setAj(novo as unknown as Ajustes); alert('Alterações aplicadas.');
+                } catch (er) { alert('Arquivo inválido: ' + (er as Error).message); } e.target.value = ''; }} /></label>
                 <label className="botao">Abrir só os ajustes das LAJES (JSON)<input type="file" accept=".json" hidden onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try {
                   const j = JSON.parse(await f.text()), sa = (j.config?.ajustes ?? j.ajustes ?? {}) as Partial<Ajustes>;
                   // só o que é da laje: giro, inteira, emendas, juntar, fora, espessuras, treliças, numeração fixa e armação; paredes e vigas ficam como estão
