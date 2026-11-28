@@ -66,7 +66,7 @@ function caixas(o: Props3D): Caixa[] {
       const zt = pav.altura + (vs.length ? Math.max(...vs.map(v => v.abaixo ? 0 : eL)) : eL), cod = `${sig}-pilar ${pl.nome}`;
       out.push({ pav: pav.id, tipo: 'parede', cod, txt: `${cod} · pilar ${Math.round((pl.x1 - pl.x0) * 100)} × ${Math.round((pl.y1 - pl.y0) * 100)} cm · ${pav.nome}`, ab: true, grossa: false, x0: pl.x0 + dx, x1: pl.x1 + dx, y0: pl.y0 + dy, y1: pl.y1 + dy, z0: zp, z1: zp + zt });
     }
-    // vigas: topo no nível do topo da laje, na largura e altura da viga
+    // vigas: só as escolhidas pelo engenheiro (com seção definida na aba Vigas); topo no topo da laje
     for (const v of (o.vigas || []).filter(q => q.pav === pav.id)) {
       const zt = zp + pav.altura + (v.abaixo ? 0 : Math.max(0, ...lajes.map(o.espLaje))), cod = `${sig}-${v.nome}`, h = v.larg / 2;   // embaixo da laje: topo no fundo da laje
       const [x0, x1, y0, y1] = v.o === 'H' ? [v.a, v.b, v.c - h, v.c + h] : [v.c - h, v.c + h, v.a, v.b];
