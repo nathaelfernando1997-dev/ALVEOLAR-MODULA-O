@@ -7,6 +7,7 @@ import { vistaSvg, vistaLajeSvg, extraVistaLaje, quadro as quadroDe, plantaConte
 import type { InfoVista } from './engine/draw.ts';
 import { gerarIfc } from './engine/ifc.ts';
 const Vista3D = lazy(() => import('./Vista3D.tsx'));
+const Compat3D = lazy(() => import('./Compat3D.tsx'));
 import type { InfoPeca, Props3D } from './Vista3D.tsx';
 import { siglas, codigoParede, codigoLaje, vizinhos, faceDaVista, ordemMontagem, pesoParede, pesoLaje, planoCarga, escoras, conferencia, paredesIguais, lajesIguais, planoCorte, isoporDaPeca, planoMesas } from './engine/producao.ts';
 import { ambientes, modularLajes, numerarLajes, chaveNumLaje, vaziosDeCima, escadas, escadasContorno, segsEscada, circsEscada, type Escada, areaLaje, caixaDoPonto, guardaCorpos, areaConstruida } from './engine/lajes.ts';
@@ -35,7 +36,7 @@ import qrcode from 'qrcode-generator';
 import { escurecerDxf } from './engine/cores.ts';
 import type { Projeto, Config, Pasta } from './db.ts';
 
-type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento' | 'acompanhamento' | 'v3d';
+type Aba = 'arquivo' | 'pavimentos' | 'esquadrias' | 'regras' | 'modulacao' | 'lajes' | 'vigas' | 'cortes' | 'impressao' | 'fundacao' | 'orcamento' | 'acompanhamento' | 'v3d' | 'compat';
 const br = (v: number, n = 2) => v.toFixed(n).replace('.', ',');
 // mesma planta em DWG (converte o DXF gerado)
 const baixarDwg = async (nome: string, dxf: string) => {
@@ -758,7 +759,7 @@ export default function App() {
       montadas={Object.values(montagem).filter(m => m.status === 'montada').length} total={prod?.pecas.length ?? 0}
       sair={() => { setQrAtivo(false); history.replaceState(null, '', location.pathname); }} />;
   }
-  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['fundacao', '10. Fundação'], ['orcamento', '11. Orçamento'], ['acompanhamento', '12. Produção e obra'], ['v3d', '13. Ver em 3D']];
+  const tabs: [Aba, string][] = [['arquivo', '1. Arquivo'], ['pavimentos', '2. Desenhos'], ['esquadrias', '3. Portas e janelas'], ['regras', '4. Regras'], ['modulacao', '5. Paredes'], ['lajes', '6. Lajes'], ['vigas', '7. Vigas'], ['cortes', '8. Cortes'], ['impressao', '9. Impressão e arquivos'], ['fundacao', '10. Fundação'], ['orcamento', '11. Orçamento'], ['acompanhamento', '12. Produção e obra'], ['v3d', '13. Ver em 3D'], ['compat', '14. Compatibilização']];
   const erros = avisos.filter(a => a.nivel === 'erro').length;
   return (
     <div className="app">
@@ -1546,6 +1547,7 @@ export default function App() {
           <Orcamento linhas={orcamentoAreas(ativos, calc.ts, calc.pl).map((l, i) => ({ ...l, paredes: l.paredes + calc.orcExtra.filter(x => x.pav === ativos[i].id).reduce((s, x) => s + x.area, 0) }))} ativos={ativos} pl={calc.pl} areaPav={calc.areaPav} regras={regras} setRegras={setRegras} nome={projNome || nome} />
           </>
         )}
+        {aba === 'compat' && <Suspense fallback={<p>Carregando…</p>}><Compat3D projId={projId} projNome={projNome || nome.replace(/\.(dxf|dwg|pdf|json)$/i, '')} /></Suspense>}
         {aba === 'v3d' && leitura && (
           <section className="card card-3d">
             <h2>Ver em 3D</h2>

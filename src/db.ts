@@ -72,3 +72,8 @@ export async function importarBackup(f: File): Promise<Projeto> {
   if (j.formato !== 'alveolar-modulacao' || !j.dxf) throw new Error('Arquivo de projeto inválido.');
   return criar(j.nome, j.arquivo, new Blob([j.dxf], { type: 'application/dxf' }), j.config ?? null);
 }
+
+// compatibilização (arquivo 'alveolar-compat'): guardada neste aparelho, junto do projeto; só consulta, não entra na modulação
+export async function lerCompat(projId: string): Promise<unknown> { return req((await loja('arquivos', 'readonly')).get('compat:' + projId)); }
+export async function salvarCompat(projId: string, dados: unknown) { await req((await loja('arquivos', 'readwrite')).put(dados, 'compat:' + projId)); pedirPersistencia(); }
+export async function apagarCompat(projId: string) { await req((await loja('arquivos', 'readwrite')).delete('compat:' + projId)); }
