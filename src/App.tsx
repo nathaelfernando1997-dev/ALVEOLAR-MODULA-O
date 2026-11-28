@@ -2356,9 +2356,10 @@ function SvgFolha({ vb, html }: { vb: string; html: string }) { const g = girar(
 function Foto3D({ p3d, pav, modo }: { p3d: Props3D; pav: string; modo: 'paredes' | 'lajes' }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    let vivo = true; setSrc(null);
-    import('./Vista3D.tsx').then(m => m.fotoMontagem(p3d, pav, modo)).then(u => { if (vivo) setSrc(u); }).catch(() => { if (vivo) setSrc(''); });
-    return () => { vivo = false; };
+    let vivo = true;
+    // espera um pouco depois da última alteração (digitando/clicando várias vezes não refaz as fotos a cada clique)
+    const t = setTimeout(() => import('./Vista3D.tsx').then(m => m.fotoMontagem(p3d, pav, modo)).then(u => { if (vivo) setSrc(u); }).catch(() => { if (vivo) setSrc(''); }), 900);
+    return () => { vivo = false; clearTimeout(t); };
   }, [p3d, pav, modo]);
   return src ? <img src={src} alt={`3D ${modo}`} /> : <p className="dica">{src === null ? 'Gerando o 3D…' : 'Não consegui gerar o 3D neste navegador.'}</p>;
 }

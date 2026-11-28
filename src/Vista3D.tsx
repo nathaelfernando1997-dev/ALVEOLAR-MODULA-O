@@ -83,7 +83,14 @@ function caixas(o: Props3D): Caixa[] {
 
 export default function Vista3D(props: Props3D) {
   const ref = useRef<HTMLDivElement>(null);
-  const cx = useMemo(() => caixas(props), [props]);
+  const cx0 = useMemo(() => caixas(props), [props]);
+  // a cena só é refeita quando as peças mudam de verdade (mexer em laje, numeração etc. não redesenha as paredes)
+  const cxKey = useMemo(() => cx0.map(c => `${c.cod}|${c.x0.toFixed(3)}|${c.y0.toFixed(3)}|${c.z0.toFixed(3)}|${c.x1.toFixed(3)}|${c.y1.toFixed(3)}|${c.z1.toFixed(3)}|${c.topo ?? ''}`).join(';'), [cx0]);
+  const cxRef = useRef(cx0); if (cxRef.current !== cx0 && cxKey !== cxRef.current.map(c => `${c.cod}|${c.x0.toFixed(3)}|${c.y0.toFixed(3)}|${c.z0.toFixed(3)}|${c.x1.toFixed(3)}|${c.y1.toFixed(3)}|${c.z1.toFixed(3)}|${c.topo ?? ''}`).join(';')) cxRef.current = cx0;
+  const cx = cxRef.current;
+  // motor gráfico e câmera continuam entre uma alteração e outra (não recompila, não volta a câmera para o começo)
+  const rRef = useRef<THREE.WebGLRenderer | null>(null), camRef = useRef<{ p: THREE.Vector3; t: THREE.Vector3 } | null>(null);
+  useEffect(() => () => { rRef.current?.dispose(); rRef.current?.forceContextLoss(); rRef.current?.domElement.remove(); rRef.current = null; }, []);
   const [vis, setVis] = useState<Record<string, boolean>>({});
   // paredes e laje de cada pavimento ligadas/desligadas separadamente (montagem passo a passo)
   const [semP, setSemP] = useState<Record<string, boolean>>({}), [semL, setSemL] = useState<Record<string, boolean>>({});
@@ -92,7 +99,7 @@ export default function Vista3D(props: Props3D) {
   const [sel, setSel] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const api = useRef<{ grupos: Map<string, { p: THREE.Group; l: THREE.Group }>; marcar: (cod: string | null) => void; centrar: () => void; gF: THREE.Group; chao: THREE.Mesh; grade: THREE.GridHelper; O: OrbitControls; zc: number;
-    tirar: (cod: string) => void; recolocar: () => void; limparTrena: () => void; desfazerTrena: () => void; apagarMedida: (i: number) => void; numeros: (on: boolean) => void } | null>(null);
+    tirar: (cod: string) => void; recolocar: () => void; limparTrena: () => void; desfazerTrena: () => void; apagarMedida: (i: number) => void; numeros: (on: boolean) => void; pedir: () => void } | null>(null);
   const [verN, setVerN] = useState(true); const verNRef = useRef(verN); verNRef.current = verN;
   const [verF, setVerF] = useState(true);
   // tela cheia, ferramenta (selecionar / trena), peça marcada, peças tiradas, medidas e o detalhamento da ferragem
@@ -138,8 +145,14 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
 
   useEffect(() => {
     const el = ref.current!; const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
-    const R = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true }); R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x000000, 0);
-    R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.9; el.appendChild(R.domElement);
+    let R = rRef.current;
+    if (!R) {
+      R = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true }); R.setPixelRatio(Math.min(devicePixelRatio, 2)); R.setClearColor(0x000000, 0);
+      R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.9; rRef.current = R;
+    }
+    if (R.domElement.parentElement !== el) el.appendChild(R.domElement);
+    // desenha só quando algo mudou (câmera mexendo, peça marcada, visibilidade): parado, não gasta o computador
+    let sujo = true; const pedir = () => { sujo = true; };
     const S = new THREE.Scene();   // fundo em degradê vem do CSS (.v3-tela)
     const C = new THREE.PerspectiveCamera(35, 1, 0.1, 2000); C.up.set(0, 0, 1);
     const O = new OrbitControls(C, R.domElement); O.enableDamping = true; O.dampingFactor = 0.08; O.maxPolarAngle = Math.PI * 0.495;
@@ -251,8 +264,9 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     (grade.material as THREE.Material).transparent = true; (grade.material as THREE.Material).opacity = 0.7; S.add(grade);
     S.fog = new THREE.Fog(escuro ? 0x1b2027 : 0xe9ecef, raio * 4, raio * 9);
     const centrar = () => { const d = raio * 1.5; C.position.set(ctr.x - d * 0.55, ctr.y - d * 1.1, ctr.z + d * 0.7); O.target.copy(ctr); O.update(); };
-    centrar();
-    const marcar = (cod: string | null) => { for (const m of pick) m.material = m.userData.cod === cod ? M.sel : m.userData.mat; };
+    if (camRef.current) { C.position.copy(camRef.current.p); O.target.copy(camRef.current.t); O.update(); } else centrar();
+    O.addEventListener('change', pedir);
+    const marcar = (cod: string | null) => { for (const m of pick) m.material = m.userData.cod === cod ? M.sel : m.userData.mat; pedir(); };
     // peças tiradas da vista (ficam guardadas para recolocar)
     const tiradas = new Set<THREE.Mesh>();
     const tirar = (cod: string) => { for (const m of [...pick, ...etqs]) if (m.userData.cod === cod) { m.visible = false; tiradas.add(m); } setNTiradas(new Set([...tiradas].map(m => m.userData.cod)).size); };
@@ -275,13 +289,15 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       const u = feitas.pop(); if (!u) return; tirarObjs(u); setMedidas(ms => ms.slice(0, -1));
     };
     const apagarMedida = (i: number) => { const u = feitas[i]; if (!u) return; tirarObjs(u); feitas.splice(i, 1); setMedidas(ms => ms.filter((_, j) => j !== i)); };
-    const numeros = (on: boolean) => { for (const m of etqs) m.visible = on && !tiradas.has(m); };
-    api.current = { grupos, marcar, centrar, gF, chao, grade, O, zc, tirar, recolocar, limparTrena, desfazerTrena, apagarMedida, numeros };
-    const rs = () => { const w = el.clientWidth, h = el.clientHeight; R.setSize(w, h); C.aspect = w / h; C.updateProjectionMatrix(); };
+    const numeros = (on: boolean) => { for (const m of etqs) m.visible = on && !tiradas.has(m); pedir(); };
+    const comPedido = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => { f(...a); pedir(); };
+    api.current = { grupos, marcar, centrar: comPedido(centrar), gF, chao, grade, O, zc, tirar: comPedido(tirar), recolocar: comPedido(recolocar), limparTrena: comPedido(limparTrena), desfazerTrena: comPedido(desfazerTrena), apagarMedida: comPedido(apagarMedida), numeros, pedir };
+    const rs = () => { const w = el.clientWidth, h = el.clientHeight; R!.setSize(w, h); C.aspect = w / h; C.updateProjectionMatrix(); pedir(); };
     const ro = new ResizeObserver(rs); ro.observe(el); rs();
     const rc = new THREE.Raycaster(), mp = new THREE.Vector2(); let dn: [number, number] | null = null;
     const down = (e: PointerEvent) => { dn = [e.clientX, e.clientY]; };
     const up = (e: PointerEvent) => {
+      pedir();
       if (!dn || Math.hypot(e.clientX - dn[0], e.clientY - dn[1]) > 5) return;
       const r = R.domElement.getBoundingClientRect(); mp.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
       rc.setFromCamera(mp, C);
@@ -300,8 +316,8 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
       const t = h ? (h.object.userData.txt as string) : null; setSel(t); marcar(h ? h.object.userData.cod : null); setSelCod(h ? h.object.userData.cod : null);
     };
     R.domElement.addEventListener('pointerdown', down); R.domElement.addEventListener('pointerup', up);
-    let raf = 0; const loop = () => { raf = requestAnimationFrame(loop); O.update(); R.render(S, C); }; loop();
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R.dispose(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EM.dispose(); chao.geometry.dispose(); grade.dispose(); el.removeChild(R.domElement); api.current = null; bola.dispose(); MM.dispose(); LM.dispose(); };
+    let raf = 0; const loop = () => { raf = requestAnimationFrame(loop); const mexeu = O.update(); if (mexeu || sujo) { sujo = false; R!.render(S, C); } }; loop();
+    return () => { camRef.current = { p: C.position.clone(), t: O.target.clone() }; cancelAnimationFrame(raf); ro.disconnect(); O.dispose(); R!.renderLists.dispose(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EM.dispose(); chao.geometry.dispose(); grade.dispose(); R!.domElement.removeEventListener('pointerdown', down); R!.domElement.removeEventListener('pointerup', up); O.removeEventListener('change', pedir); api.current = null; bola.dispose(); MM.dispose(); LM.dispose(); };
   }, [cx, props.pavs, props.fund]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { api.current?.numeros(verN); }, [verN, cx, props.fund]);
@@ -313,7 +329,7 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
     // fundação ligada: chão meio transparente e dá para olhar por baixo
     const f = !!props.fund && verF && (so ? so === props.pavs[0]?.id : vis[props.pavs[0]?.id] !== false);
     a.gF.visible = f; const cm = a.chao.material as THREE.MeshStandardMaterial; cm.opacity = f ? 0.35 : 1; cm.depthWrite = !f; cm.needsUpdate = true; a.grade.visible = !f;
-    a.O.maxPolarAngle = f ? Math.PI : Math.PI * 0.495;
+    a.O.maxPolarAngle = f ? Math.PI : Math.PI * 0.495; a.pedir();
   }, [vis, so, verL, verP, verF, sep, props.pavs, props.fund, cx, semP, semL]);
 
   const achar = () => {
@@ -389,15 +405,28 @@ v.addEventListener('pointermove',e=>{if(dn){x=e.clientX-dn[0];y=e.clientY-dn[1];
 // ---------- foto do 3D para as pranchas (montagem de um pavimento) ----------
 // 'paredes': as paredes do pavimento em destaque, com o número de cada painel; o que já está montado embaixo, em cinza
 // 'lajes': as lajes sobre o pavimento em destaque, com o número de cada painel; as paredes do pavimento e o de baixo, em cinza claro
-export async function fotoMontagem(props: Props3D, pav: string, modo: 'paredes' | 'lajes', W = 2000, H = 1240): Promise<string> {
+// um motor só para todas as fotos (criar um por foto travava a aba de impressão); fotos guardadas pelo conteúdo do pavimento
+let RF: THREE.WebGLRenderer | null = null;
+const fotos = new Map<string, string>();
+let fila: Promise<unknown> = Promise.resolve();
+const cxCache = new WeakMap<Props3D, Caixa[]>();
+export function fotoMontagem(props: Props3D, pav: string, modo: 'paredes' | 'lajes', W = 1700, H = 1054): Promise<string> {
+  // uma foto de cada vez, com uma folga entre elas: a tela continua respondendo enquanto as folhas aparecem
+  const r = fila.then(() => new Promise(ok => setTimeout(ok, 30))).then(() => fotoAgora(props, pav, modo, W, H));
+  fila = r.catch(() => undefined); return r;
+}
+function fotoAgora(props: Props3D, pav: string, modo: 'paredes' | 'lajes', W: number, H: number): string {
   const iPav = props.pavs.findIndex(p => p.id === pav);
   if (iPav < 0) return '';
   const antes = new Set(props.pavs.slice(0, iPav).map(p => p.id));
-  const cx = caixas({ ...props, vigas: [] }).filter(c => antes.has(c.pav) || (c.pav === pav && (modo === 'lajes' || c.tipo !== 'laje')));
+  let todas = cxCache.get(props); if (!todas) { todas = caixas({ ...props, vigas: [] }); cxCache.set(props, todas); }
+  const cx = todas.filter(c => antes.has(c.pav) || (c.pav === pav && (modo === 'lajes' || c.tipo !== 'laje')));
   const foco = (c: Caixa) => c.pav === pav && (modo === 'paredes' ? c.tipo === 'parede' : c.tipo === 'laje');
   if (!cx.some(foco)) return '';
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const R = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
+  const chave = `${pav}|${modo}|${W}x${H}|` + cx.map(c => `${c.cod}${c.ab ? '*' : ''}:${c.x0.toFixed(3)},${c.y0.toFixed(3)},${c.z0.toFixed(3)},${c.x1.toFixed(3)},${c.y1.toFixed(3)},${c.z1.toFixed(3)}`).join(';');
+  const pronta = fotos.get(chave); if (pronta) return pronta;
+  if (!RF) RF = new THREE.WebGLRenderer({ canvas: document.createElement('canvas'), antialias: true, preserveDrawingBuffer: true });
+  const R = RF, cv = R.domElement;
   R.setPixelRatio(1); R.setSize(W, H, false); R.setClearColor(0xffffff, 1);
   const S = new THREE.Scene();
   S.add(new THREE.AmbientLight(0xffffff, 1.6), new THREE.HemisphereLight(0xffffff, 0xd8d2c6, 0.8));
@@ -449,7 +478,8 @@ export async function fotoMontagem(props: Props3D, pav: string, modo: 'paredes' 
     g.beginPath(); g.rect(x - w / 2, y - h / 2, w, h); g.fill(); g.stroke();
     g.fillStyle = cor; g.fillText(t, x, y + 1);
   }
-  const url = out.toDataURL('image/png');
-  R.dispose(); R.forceContextLoss(); box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose());
-  return url;
+  const url = out.toDataURL('image/jpeg', 0.92);   // jpeg: gera bem mais rápido que png, e a folha impressa fica igual
+  box.dispose(); aresta.dispose(); Object.values(M).forEach(m => m.dispose()); EF.dispose(); EC.dispose(); R.renderLists.dispose();
+  if (fotos.size > 60) fotos.clear();
+  fotos.set(chave, url); return url;
 }
